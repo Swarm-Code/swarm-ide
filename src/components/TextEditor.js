@@ -21,14 +21,39 @@ const ContextMenu = require('./ContextMenu');
 const MouseTracker = require('./MouseTracker');
 const fileStateTracker = require('../modules/FileStateTracker');
 const performanceMonitor = require('../utils/PerformanceMonitor');
+const DiffHighlighter = require('../utils/DiffHighlighter');
+
+// Git integration
+let gitBlameService = null;
+let gitDiffService = null;
+let gitStore = null;
+
+// Lazy load Git services (will be initialized in renderer.js)
+function getGitServices() {
+    if (!gitBlameService) {
+        try {
+            const { GitBlameService } = require('../services/GitBlameService');
+            const { GitDiffService } = require('../services/GitDiffService');
+            const gitService = require('../services/GitService').getInstance();
+            gitStore = require('../modules/GitStore').getInstance();
+
+            gitBlameService = new GitBlameService(gitService);
+            gitDiffService = new GitDiffService(gitService);
+        } catch (error) {
+            console.warn('[TextEditor] Git services not available:', error.message);
+        }
+    }
+    return { gitBlameService, gitDiffService, gitStore };
+}
 
 class TextEditor {
-    constructor(container, content, filePath) {
+    constructor(container, content, filePath, options = {}) {
         console.log('[TextEditor] ========== CONSTRUCTOR ==========');
         console.log('[TextEditor] container:', container);
         console.log('[TextEditor] container dataset:', container.dataset);
         console.log('[TextEditor] filePath:', filePath);
         console.log('[TextEditor] content length:', content.length);
+        console.log('[TextEditor] options:', options);
 
         this.container = container;
         this.content = content;
@@ -41,6 +66,14 @@ class TextEditor {
         this.currentInlineCompletion = null;
         this.inlineCompletionWidget = null;
         this.contextMenu = null;
+
+        // Git integration state
+        this.gitBlameEnabled = false;
+        this.gitBlameData = null;
+        this.gitDiffEnabled = options.enableGitDiff || false; // Only enable if explicitly requested
+        this.gitDiffData = null;
+        this.diffTextMarkers = []; // Store character-level diff markers
+        this.diffLineWidgets = []; // Store deleted line widgets
 
         // Start tracking this file with hash-based modification detection
         fileStateTracker.trackFile(filePath, content);
@@ -93,6 +126,15 @@ class TextEditor {
         console.log('[TextEditor] About to call initLSP()...');
         await this.initLSP();
         console.log('[TextEditor] init() COMPLETE');
+
+        // Initialize Git integration
+        console.log('[TextEditor] About to call initGitIntegration()...');
+        try {
+            await this.initGitIntegration();
+            console.log('[TextEditor] initGitIntegration() DONE');
+        } catch (error) {
+            console.error('[TextEditor] initGitIntegration() ERROR:', error);
+        }
 
         // Update breadcrumb with initial cursor position
         setTimeout(() => {
@@ -149,6 +191,7 @@ class TextEditor {
             mode: mode,
             theme: 'monokai',
             lineNumbers: true,
+            gutters: ['CodeMirror-linenumbers', 'git-diff-gutter', 'git-blame-gutter'],
             indentUnit: 4,
             tabSize: 4,
             indentWithTabs: false,
@@ -868,10 +911,19 @@ class TextEditor {
                     .replace(/\n/g, '<br>');
                 sectionDiv.innerHTML = content;
             } else if (section.type === 'git-blame') {
-                // Future: Git blame info
-                sectionDiv.innerHTML = `<div class="hover-git-blame">${section.content}</div>`;
+                // Git blame information
+                const blame = section.content;
+                sectionDiv.className = 'hover-section hover-git-blame';
+                sectionDiv.innerHTML = `
+                    <div class="git-blame-header">
+                        <span class="git-blame-sha">${blame.shortSha}</span>
+                        <span class="git-blame-author">${blame.author}</span>
+                    </div>
+                    <div class="git-blame-summary">${blame.summary}</div>
+                    <div class="git-blame-time">${blame.relativeTime}</div>
+                `;
             } else if (section.type === 'git-history') {
-                // Future: Git history
+                // Git history (reserved for future use)
                 sectionDiv.innerHTML = `<div class="hover-git-history">${section.content}</div>`;
             }
 
@@ -916,9 +968,32 @@ class TextEditor {
             // Build sections array (extensible for future features)
             const sections = [
                 { type: 'lsp', content: content }
-                // Future: { type: 'git-blame', content: '...' }
-                // Future: { type: 'git-history', content: '...' }
             ];
+
+            // Add Git blame information if enabled
+            if (this.gitBlameEnabled && this.gitBlameData) {
+                try {
+                    const { gitBlameService } = getGitServices();
+                    if (gitBlameService) {
+                        const lineNumber = pos.line + 1; // CodeMirror uses 0-indexed lines
+                        const blameEntry = await gitBlameService.getBlameForLine(this.filePath, lineNumber);
+
+                        if (blameEntry) {
+                            sections.push({
+                                type: 'git-blame',
+                                content: {
+                                    shortSha: blameEntry.shortSha,
+                                    author: blameEntry.author,
+                                    summary: blameEntry.summary,
+                                    relativeTime: this._formatRelativeTime(blameEntry.authorTime)
+                                }
+                            });
+                        }
+                    }
+                } catch (error) {
+                    console.error('[TextEditor] Failed to get blame for hover:', error);
+                }
+            }
 
             // Render content
             const contentContainer = this.renderHoverContent(sections);
@@ -1320,6 +1395,469 @@ class TextEditor {
     }
 
     /**
+     * Format Unix timestamp to relative time string
+     * @param {number} timestamp - Unix timestamp in seconds
+     * @returns {string} Relative time string (e.g., "2 hours ago")
+     */
+    _formatRelativeTime(timestamp) {
+        const now = Math.floor(Date.now() / 1000);
+        const diff = now - timestamp;
+
+        if (diff < 60) {
+            return 'just now';
+        } else if (diff < 3600) {
+            const minutes = Math.floor(diff / 60);
+            return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+        } else if (diff < 86400) {
+            const hours = Math.floor(diff / 3600);
+            return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+        } else if (diff < 604800) {
+            const days = Math.floor(diff / 86400);
+            return `${days} day${days !== 1 ? 's' : ''} ago`;
+        } else if (diff < 2592000) {
+            const weeks = Math.floor(diff / 604800);
+            return `${weeks} week${weeks !== 1 ? 's' : ''} ago`;
+        } else if (diff < 31536000) {
+            const months = Math.floor(diff / 2592000);
+            return `${months} month${months !== 1 ? 's' : ''} ago`;
+        } else {
+            const years = Math.floor(diff / 31536000);
+            return `${years} year${years !== 1 ? 's' : ''} ago`;
+        }
+    }
+
+    /**
+     * Toggle Git blame view
+     */
+    async toggleBlame() {
+        this.gitBlameEnabled = !this.gitBlameEnabled;
+
+        if (this.gitBlameEnabled) {
+            // Load blame data for current file
+            try {
+                const { gitBlameService } = getGitServices();
+                if (gitBlameService) {
+                    console.log('[TextEditor] Loading blame data for:', this.filePath);
+                    this.gitBlameData = await gitBlameService.getBlame(this.filePath);
+                    this.renderBlameGutter();
+                }
+            } catch (error) {
+                console.error('[TextEditor] Failed to load blame data:', error);
+                this.gitBlameEnabled = false;
+            }
+        } else {
+            // Clear blame gutter
+            this.gitBlameData = null;
+            this.clearBlameGutter();
+        }
+    }
+
+    /**
+     * Render Git blame information in gutter
+     */
+    renderBlameGutter() {
+        if (!this.editor || !this.gitBlameData) return;
+
+        const lineCount = this.editor.lineCount();
+
+        for (let line = 0; line < lineCount; line++) {
+            const lineNumber = line + 1; // Git uses 1-indexed lines
+
+            // Find blame entry for this line
+            const blameEntry = this.gitBlameData.find(entry =>
+                lineNumber >= entry.lineStart && lineNumber <= entry.lineEnd
+            );
+
+            if (blameEntry) {
+                const marker = document.createElement('div');
+                marker.className = 'git-blame-gutter-marker';
+                marker.textContent = blameEntry.shortSha;
+                marker.title = `${blameEntry.author} - ${blameEntry.summary}`;
+
+                this.editor.setGutterMarker(line, 'git-blame-gutter', marker);
+            }
+        }
+    }
+
+    /**
+     * Clear Git blame gutter
+     */
+    clearBlameGutter() {
+        if (!this.editor) return;
+
+        const lineCount = this.editor.lineCount();
+        for (let line = 0; line < lineCount; line++) {
+            this.editor.setGutterMarker(line, 'git-blame-gutter', null);
+        }
+    }
+
+    /**
+     * Apply character-level highlighting to a changed line
+     * @param {number} lineNum - Line number (0-based)
+     * @param {string} content - Line content from file
+     * @param {string} oldContent - Original line content (for comparison)
+     * @param {string} changeType - 'added' or 'deleted'
+     */
+    applyCharLevelHighlight(lineNum, content, oldContent, changeType) {
+        if (!this.editor || !content || !oldContent) return;
+
+        try {
+            // Calculate character-level changes
+            const changes = DiffHighlighter.calculateCharChanges(oldContent, content);
+
+            if (changes.hasChanges) {
+                const range = changeType === 'added' ? changes.newRange : changes.oldRange;
+
+                if (range.length > 0) {
+                    console.log(`[TextEditor] 🔍 Applying char-level highlight: line ${lineNum}, start ${range.start}, length ${range.length}`);
+
+                    const marker = this.editor.markText(
+                        { line: lineNum, ch: range.start },
+                        { line: lineNum, ch: range.start + range.length },
+                        { className: changeType === 'added' ? 'git-diff-char-added' : 'git-diff-char-deleted' }
+                    );
+
+                    if (marker) {
+                        this.diffTextMarkers.push(marker);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('[TextEditor] Failed to apply char-level highlight:', error);
+        }
+    }
+
+    /**
+     * Render Git diff decorations in gutter
+     */
+    async renderDiffGutter() {
+        console.log('═══════════════════════════════════════════════════');
+        console.log('[TextEditor] 🔍 DEBUG: renderDiffGutter() START');
+        console.log('[TextEditor] 🔍 DEBUG: this.editor exists?', !!this.editor);
+        console.log('[TextEditor] 🔍 DEBUG: this.gitDiffEnabled?', this.gitDiffEnabled);
+        console.log('[TextEditor] 🔍 DEBUG: this.filePath:', this.filePath);
+
+        if (!this.editor || !this.gitDiffEnabled) {
+            console.log('[TextEditor] ❌ DEBUG: Exiting early - editor or gitDiffEnabled false');
+            return;
+        }
+
+        try {
+            const { gitDiffService } = getGitServices();
+            console.log('[TextEditor] 🔍 DEBUG: gitDiffService exists?', !!gitDiffService);
+            if (!gitDiffService) {
+                console.log('[TextEditor] ❌ DEBUG: No gitDiffService available');
+                return;
+            }
+
+            console.log('[TextEditor] 📥 Loading diff data for:', this.filePath);
+            const diffArray = await gitDiffService.getDiff(this.filePath);
+            console.log('[TextEditor] 🔍 DEBUG: diffArray received:', diffArray);
+            console.log('[TextEditor] 🔍 DEBUG: diffArray length:', diffArray?.length);
+
+            if (!diffArray || diffArray.length === 0) {
+                console.log('[TextEditor] ⚠️  No diff data available');
+                return;
+            }
+
+            this.gitDiffData = diffArray[0];
+            console.log('[TextEditor] 🔍 DEBUG: gitDiffData:', this.gitDiffData);
+            console.log('[TextEditor] 🔍 DEBUG: hunks count:', this.gitDiffData.hunks?.length || 0);
+
+            // Clear existing diff markers and line classes
+            this.clearDiffGutter();
+
+            let totalMarkersAdded = 0;
+            let totalLinesHighlighted = 0;
+
+            // Render diff markers based on hunks with character-level highlighting
+            for (const hunk of this.gitDiffData.hunks || []) {
+                console.log('[TextEditor] 🔍 DEBUG: Processing hunk:', hunk);
+                console.log('[TextEditor] 🔍 DEBUG: Hunk newStart:', hunk.newStart);
+                console.log('[TextEditor] 🔍 DEBUG: Hunk lines count:', hunk.lines.length);
+
+                let newLineNum = hunk.newStart - 1; // CodeMirror uses 0-indexed lines
+                const hunkLines = hunk.lines || [];
+
+                // Process lines and detect modifications (removed + added pairs)
+                for (let i = 0; i < hunkLines.length; i++) {
+                    const line = hunkLines[i];
+                    if (!line) {
+                        console.log('[TextEditor] ⚠️  DEBUG: Skipping null/undefined line');
+                        continue;
+                    }
+
+                    console.log('[TextEditor] 🔍 DEBUG: Processing line type:', line.type, 'at lineNum:', newLineNum, 'index:', i);
+
+                    // line.type is 'added', 'removed', or 'unchanged'
+                    if (line.type === 'added') {
+                        // Create gutter marker
+                        const marker = document.createElement('div');
+                        marker.className = 'git-diff-gutter-marker added';
+                        marker.title = 'Added line';
+                        marker.style.width = '10px';
+                        marker.style.height = '100%';
+                        marker.style.backgroundColor = '#28a745';
+
+                        console.log('[TextEditor] ➕ DEBUG: Adding ADDED marker at line', newLineNum);
+
+                        this.editor.setGutterMarker(newLineNum, 'git-diff-gutter', marker);
+
+                        // Add line background class
+                        this.editor.addLineClass(newLineNum, 'background', 'git-diff-line-added');
+
+                        // Try to find matching removed line for character-level diff
+                        // Look backwards in a small window (typically modifications are remove then add)
+                        let matchedRemoved = null;
+                        const searchWindow = 5; // Look back up to 5 lines
+                        for (let j = Math.max(0, i - searchWindow); j < i; j++) {
+                            const prevLine = hunkLines[j];
+                            if (prevLine && prevLine.type === 'removed') {
+                                // Calculate similarity to see if this is likely a modification
+                                const similarity = DiffHighlighter.calculateSimilarity(
+                                    prevLine.content || '',
+                                    line.content || ''
+                                );
+                                // If >30% similar, consider it a modification
+                                if (similarity > 0.3) {
+                                    matchedRemoved = prevLine;
+                                    console.log('[TextEditor] 🔍 Found matching removed line for char-level diff, similarity:', similarity);
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Apply character-level highlighting if we found a match
+                        if (matchedRemoved) {
+                            const currentLineContent = this.editor.getLine(newLineNum);
+                            if (currentLineContent) {
+                                this.applyCharLevelHighlight(
+                                    newLineNum,
+                                    currentLineContent,
+                                    matchedRemoved.content || '',
+                                    'added'
+                                );
+                            }
+                        }
+
+                        totalMarkersAdded++;
+                        totalLinesHighlighted++;
+                        newLineNum++;
+
+                    } else if (line.type === 'removed') {
+                        // For removed lines, insert a line widget showing the deleted content
+                        console.log('[TextEditor] ➖ DEBUG: Adding DELETED line widget at line', newLineNum);
+                        console.log('[TextEditor] ➖ DEBUG: Deleted content:', line.content);
+
+                        // Create widget element to display deleted line
+                        const widget = document.createElement('div');
+                        widget.className = 'git-diff-deleted-line';
+                        widget.style.cssText = `
+                            background-color: rgba(220, 53, 69, 0.25);
+                            border-left: 3px solid #dc3545;
+                            color: rgba(255, 255, 255, 0.6);
+                            padding: 2px 4px 2px 8px;
+                            font-family: 'Fira Code', 'Consolas', 'Monaco', monospace;
+                            font-size: 14px;
+                            line-height: 1.5;
+                            white-space: pre;
+                            text-decoration: line-through;
+                            opacity: 0.8;
+                            user-select: none;
+                            cursor: default;
+                        `;
+
+                        // Add prefix indicator
+                        const prefix = document.createElement('span');
+                        prefix.textContent = '- ';
+                        prefix.style.cssText = 'color: #dc3545; font-weight: bold; text-decoration: none;';
+                        widget.appendChild(prefix);
+
+                        // Add the deleted content
+                        const content = document.createElement('span');
+                        content.textContent = line.content || '';
+                        widget.appendChild(content);
+
+                        // Insert line widget BEFORE the current line position
+                        // This shows what was deleted at this position
+                        const lineWidget = this.editor.addLineWidget(newLineNum, widget, {
+                            coverGutter: false,
+                            noHScroll: false,
+                            above: true // Show above the current line
+                        });
+
+                        this.diffLineWidgets.push(lineWidget);
+
+                        // Add gutter marker for visual indication
+                        const marker = document.createElement('div');
+                        marker.className = 'git-diff-gutter-marker deleted';
+                        marker.title = 'Deleted line';
+                        marker.style.width = '10px';
+                        marker.style.height = '4px';
+                        marker.style.backgroundColor = '#dc3545';
+                        this.editor.setGutterMarker(newLineNum, 'git-diff-gutter', marker);
+
+                        totalMarkersAdded++;
+                        // Don't increment line number for deletions (they don't exist in the new file)
+
+                    } else if (line.type === 'unchanged') {
+                        // Context lines - don't mark them
+                        console.log('[TextEditor] ⚪ DEBUG: Skipping unchanged line', newLineNum);
+                        newLineNum++;
+                    }
+                }
+            }
+
+            console.log('[TextEditor] ✅ DEBUG: RENDER COMPLETE!');
+            console.log('[TextEditor] 📊 DEBUG: Total markers added:', totalMarkersAdded);
+            console.log('[TextEditor] 📊 DEBUG: Total lines highlighted:', totalLinesHighlighted);
+            console.log('[TextEditor] 🔍 DEBUG: Checking if gutters exist in DOM...');
+
+            // Debug: Check if gutter actually exists in DOM
+            const gutterElement = this.editor.getWrapperElement().querySelector('.git-diff-gutter');
+            console.log('[TextEditor] 🔍 DEBUG: .git-diff-gutter element:', gutterElement);
+            if (gutterElement) {
+                const computedStyle = window.getComputedStyle(gutterElement);
+                console.log('[TextEditor] 🔍 DEBUG: Gutter width:', computedStyle.width);
+                console.log('[TextEditor] 🔍 DEBUG: Gutter display:', computedStyle.display);
+                console.log('[TextEditor] 🔍 DEBUG: Gutter visibility:', computedStyle.visibility);
+                console.log('[TextEditor] 🔍 DEBUG: Gutter backgroundColor:', computedStyle.backgroundColor);
+            } else {
+                console.log('[TextEditor] ❌ DEBUG: .git-diff-gutter element NOT FOUND IN DOM!');
+            }
+
+            console.log('═══════════════════════════════════════════════════');
+        } catch (error) {
+            console.error('[TextEditor] ❌ DEBUG: ERROR in renderDiffGutter:', error);
+            console.error('[TextEditor] ❌ DEBUG: Error stack:', error.stack);
+        }
+    }
+
+    /**
+     * Clear Git diff gutter
+     */
+    clearDiffGutter() {
+        if (!this.editor) return;
+
+        // Clear gutter markers
+        const lineCount = this.editor.lineCount();
+        for (let line = 0; line < lineCount; line++) {
+            this.editor.setGutterMarker(line, 'git-diff-gutter', null);
+            // Clear line background classes
+            this.editor.removeLineClass(line, 'background', 'git-diff-line-added');
+            this.editor.removeLineClass(line, 'background', 'git-diff-line-deleted');
+            this.editor.removeLineClass(line, 'background', 'git-diff-line-modified');
+        }
+
+        // Clear all character-level text markers
+        this.diffTextMarkers.forEach(marker => {
+            try {
+                marker.clear();
+            } catch (e) {
+                // Marker might already be cleared
+            }
+        });
+        this.diffTextMarkers = [];
+
+        // Clear all deleted line widgets
+        this.diffLineWidgets.forEach(widget => {
+            try {
+                widget.clear();
+            } catch (e) {
+                // Widget might already be cleared
+            }
+        });
+        this.diffLineWidgets = [];
+    }
+
+    /**
+     * Update all Git gutters (blame and diff)
+     */
+    async updateGitGutters() {
+        if (this.gitBlameEnabled) {
+            await this.toggleBlame();
+        }
+        if (this.gitDiffEnabled) {
+            await this.renderDiffGutter();
+        }
+    }
+
+    /**
+     * Initialize Git integration for this file
+     */
+    async initGitIntegration() {
+        try {
+            const { gitStore } = getGitServices();
+            if (!gitStore) return;
+
+            // Check if we're in a Git repository
+            const repoPath = await gitStore.getCurrentRepository();
+            if (!repoPath) {
+                console.log('[TextEditor] Not in a Git repository');
+                return;
+            }
+
+            console.log('[TextEditor] Initializing Git integration for:', this.filePath);
+            console.log('[TextEditor] Repository:', repoPath);
+
+            // Render diff gutter by default
+            await this.renderDiffGutter();
+
+            // Listen for Git state changes
+            eventBus.on('git:file-changed', this.handleGitFileChanged.bind(this));
+            eventBus.on('git:branch-switched', this.handleGitBranchSwitched.bind(this));
+            eventBus.on('git:show-diff', this.handleShowDiff.bind(this));
+
+            console.log('[TextEditor] ✓ Git integration initialized successfully');
+        } catch (error) {
+            console.error('[TextEditor] Failed to initialize Git integration:', error);
+        }
+    }
+
+    /**
+     * Handle Git file changed event
+     */
+    async handleGitFileChanged(event) {
+        if (event.filePath === this.filePath) {
+            console.log('[TextEditor] Git file changed, updating gutters');
+            await this.updateGitGutters();
+        }
+    }
+
+    /**
+     * Handle Git branch switched event
+     */
+    async handleGitBranchSwitched() {
+        console.log('[TextEditor] Git branch switched, updating gutters');
+        await this.updateGitGutters();
+    }
+
+    /**
+     * Handle show diff event from GitPanel
+     */
+    async handleShowDiff(event) {
+        const { filePath } = event;
+        console.log('[TextEditor] Received git:show-diff event for:', filePath);
+
+        try {
+            // Emit file:open event to open the file in editor
+            console.log('[TextEditor] Emitting file:open event for:', filePath);
+            eventBus.emit('file:open', { path: filePath });
+
+            // Wait a moment for the file to load
+            await new Promise(resolve => setTimeout(resolve, 200));
+
+            // If this editor now has that file, show diff gutter
+            if (this.filePath === filePath) {
+                console.log('[TextEditor] File loaded, rendering diff gutter');
+                await this.renderDiffGutter();
+            }
+        } catch (error) {
+            console.error('[TextEditor] Failed to show diff:', error);
+        }
+    }
+
+    /**
      * Cleanup
      */
     destroy() {
@@ -1328,12 +1866,21 @@ class TextEditor {
             document.removeEventListener('keydown', this.saveHandler);
         }
 
+        // Remove Git event listeners
+        eventBus.off('git:file-changed', this.handleGitFileChanged);
+        eventBus.off('git:branch-switched', this.handleGitBranchSwitched);
+        eventBus.off('git:show-diff', this.handleShowDiff);
+
         // Clear timeouts
         clearTimeout(this.hoverTimeout);
         clearTimeout(this.changeTimeout);
 
         // Clear hover tooltip
         this.clearHoverTooltip();
+
+        // Clear Git gutters
+        this.clearBlameGutter();
+        this.clearDiffGutter();
 
         // Notify LSP document closed
         lspClient.didClose(this.filePath);

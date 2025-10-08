@@ -33,8 +33,8 @@ function createWindow() {
     height: 800,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false
+      contextIsolation: false,
+      nodeIntegration: true
     }
   });
 
@@ -952,6 +952,125 @@ ipcMain.handle('browser-update-bounds', async (event, tabId, bounds) => {
   } catch (error) {
     console.error('[Main] Update bounds error:', error);
     return { success: false, error: error.message };
+  }
+});
+
+// ========================================
+// Git IPC Handlers
+// ========================================
+
+const { spawn } = require('child_process');
+
+/**
+ * Execute a git command in the main process
+ * @param {string} gitPath - Git binary path
+ * @param {string[]} args - Git arguments
+ * @param {Object} options - Execution options
+ * @returns {Promise<{success: boolean, stdout?: string, stderr?: string, exitCode?: number, error?: string}>}
+ */
+async function executeGitCommand(gitPath, args, options = {}) {
+  const cwd = options.cwd || process.cwd();
+  const timeout = options.timeout || 30000;
+  const encoding = options.encoding || 'utf8';
+  const input = options.input;
+
+  return new Promise((resolve) => {
+    const gitProcess = spawn(gitPath, args, {
+      cwd: cwd,
+      env: {
+        ...process.env,
+        LANG: 'en_US.UTF-8',
+        LC_ALL: 'en_US.UTF-8'
+      }
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let didTimeout = false;
+
+    // Set up timeout
+    const timeoutId = setTimeout(() => {
+      didTimeout = true;
+      gitProcess.kill('SIGTERM');
+      setTimeout(() => {
+        if (!gitProcess.killed) {
+          gitProcess.kill('SIGKILL');
+        }
+      }, 5000);
+    }, timeout);
+
+    // Collect stdout
+    gitProcess.stdout.setEncoding(encoding);
+    gitProcess.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+
+    // Collect stderr
+    gitProcess.stderr.setEncoding(encoding);
+    gitProcess.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+
+    // Handle process completion
+    gitProcess.on('close', (code) => {
+      clearTimeout(timeoutId);
+
+      if (didTimeout) {
+        resolve({
+          success: false,
+          error: `Git command timed out after ${timeout}ms`,
+          stderr: stderr,
+          exitCode: code
+        });
+        return;
+      }
+
+      if (code !== 0) {
+        resolve({
+          success: false,
+          error: `Git command failed with exit code ${code}`,
+          stderr: stderr,
+          exitCode: code
+        });
+        return;
+      }
+
+      // Success
+      resolve({
+        success: true,
+        stdout: stdout,
+        stderr: stderr,
+        exitCode: 0
+      });
+    });
+
+    // Handle process errors
+    gitProcess.on('error', (error) => {
+      clearTimeout(timeoutId);
+      resolve({
+        success: false,
+        error: `Failed to spawn git process: ${error.message}`,
+        stderr: stderr
+      });
+    });
+
+    // Write stdin if provided
+    if (input) {
+      gitProcess.stdin.write(input);
+      gitProcess.stdin.end();
+    }
+  });
+}
+
+ipcMain.handle('git-execute', async (event, gitPath, args, options) => {
+  try {
+    const result = await executeGitCommand(gitPath, args, options);
+    return result;
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message
+    };
   }
 });
 

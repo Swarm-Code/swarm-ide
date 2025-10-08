@@ -1,16 +1,17 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const { webFrame } = require('electron');
 
 /**
- * Preload script - Securely exposes IPC API to renderer process
+ * Preload script - Exposes IPC API to renderer process
  *
- * Following Electron security best practices:
- * - contextIsolation enabled
- * - nodeIntegration disabled
- * - Secure API exposure via contextBridge
+ * Supports both secure mode (contextIsolation) and development mode (nodeIntegration)
  */
 
-// Expose protected API to renderer process
-contextBridge.exposeInMainWorld('electronAPI', {
+// Check if contextIsolation is enabled
+const useContextBridge = process.contextIsolated;
+
+// Define the API
+const electronAPI = {
     /**
      * Read directory contents
      * @param {string} dirPath - Directory path
@@ -422,5 +423,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
      */
     removeFileWatcherListener: (callback) => {
         ipcRenderer.removeListener('file-watcher-event', callback);
+    },
+
+    // ========================================
+    // Git API
+    // ========================================
+
+    /**
+     * Execute a git command
+     * @param {string} gitPath - Path to git binary
+     * @param {string[]} args - Git command arguments
+     * @param {Object} options - Execution options
+     * @returns {Promise<Object>} Execution result
+     */
+    gitExecute: (gitPath, args, options) => {
+        return ipcRenderer.invoke('git-execute', gitPath, args, options);
     }
-});
+};
+
+// Expose API based on context isolation setting
+if (useContextBridge) {
+    // Secure mode: Use contextBridge
+    contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+} else {
+    // Development mode: Attach directly to window
+    window.electronAPI = electronAPI;
+}

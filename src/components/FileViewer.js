@@ -183,19 +183,22 @@ class FileViewer {
     /**
      * Open and display a file
      * @param {string} filePath - File path
+     * @param {number} lineNumber - Optional line number to navigate to
+     * @param {boolean} enableGitDiff - Whether to enable git diff visualization
      */
-    async openFile(filePath, lineNumber = null) {
+    async openFile(filePath, lineNumber = null, enableGitDiff = false) {
         console.log('[FileViewer] ========== OPENING FILE ==========');
         console.log('[FileViewer] this:', this);
         console.log('[FileViewer] filePath:', filePath);
         console.log('[FileViewer] lineNumber:', lineNumber);
+        console.log('[FileViewer] enableGitDiff:', enableGitDiff);
         console.log('[FileViewer] viewerElement:', this.viewerElement);
         console.log('[FileViewer] viewerElement dataset:', this.viewerElement.dataset);
         console.log('[FileViewer] headerElement:', this.headerElement);
 
         // Wrap entire file opening operation with performance measurement
         return performanceMonitor.measure('FileViewer.openFile', async () => {
-            return this._openFileImpl(filePath, lineNumber);
+            return this._openFileImpl(filePath, lineNumber, enableGitDiff);
         }, { filePath });
     }
 
@@ -203,8 +206,9 @@ class FileViewer {
      * Internal implementation of file opening
      * @param {string} filePath - File path
      * @param {number} lineNumber - Optional line number to navigate to
+     * @param {boolean} enableGitDiff - Whether to enable git diff visualization
      */
-    async _openFileImpl(filePath, lineNumber = null) {
+    async _openFileImpl(filePath, lineNumber = null, enableGitDiff = false) {
         try {
             // Clean up any existing viewers
             this.cleanupViewers();
@@ -260,7 +264,7 @@ class FileViewer {
                 this.renderMarkdown(result.content, filePath);
             } else {
                 // Use TextEditor for other editable text files (or markdown if preview disabled)
-                this.renderTextEditor(result.content, filePath, lineNumber);
+                this.renderTextEditor(result.content, filePath, lineNumber, enableGitDiff);
             }
 
             this.updateHeader(filePath);
@@ -277,18 +281,20 @@ class FileViewer {
      * @param {string} content - File content
      * @param {string} filePath - File path
      * @param {number} lineNumber - Optional line number to navigate to
+     * @param {boolean} enableGitDiff - Whether to enable git diff visualization
      */
-    renderTextEditor(content, filePath, lineNumber = null) {
+    renderTextEditor(content, filePath, lineNumber = null, enableGitDiff = false) {
         console.log('[FileViewer] ========== RENDERING TEXT EDITOR ==========');
         console.log('[FileViewer] filePath:', filePath);
         console.log('[FileViewer] lineNumber:', lineNumber);
+        console.log('[FileViewer] enableGitDiff:', enableGitDiff);
         console.log('[FileViewer] viewerElement:', this.viewerElement);
         console.log('[FileViewer] viewerElement dataset:', this.viewerElement.dataset);
         console.log('[FileViewer] content length:', content.length);
         console.log('[FileViewer] content preview:', content.substring(0, 200));
 
-        // Create new text editor
-        this.textEditor = new TextEditor(this.viewerElement, content, filePath);
+        // Create new text editor with options
+        this.textEditor = new TextEditor(this.viewerElement, content, filePath, { enableGitDiff });
         console.log('[FileViewer] TextEditor instance created:', this.textEditor);
 
         // Navigate to line if specified

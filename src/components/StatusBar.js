@@ -2,7 +2,7 @@
  * StatusBar - VS Code-style bottom status bar
  *
  * Displays:
- * - Left: Current file path, line/column info
+ * - Left: Current file path, line/column info, Git branch info
  * - Right: Quick action buttons (Quick Open, Search, Find & Replace)
  *
  * Usage:
@@ -11,6 +11,25 @@
 
 const eventBus = require('../modules/EventBus');
 
+// Git integration
+let gitStore = null;
+let gitBranchService = null;
+
+// Lazy load Git services
+function getGitServices() {
+    if (!gitStore) {
+        try {
+            const gitService = require('../services/GitService').getInstance();
+            const { GitBranchService } = require('../services/GitBranchService');
+            gitStore = require('../modules/GitStore').getInstance();
+            gitBranchService = new GitBranchService(gitService);
+        } catch (error) {
+            console.warn('[StatusBar] Git services not available:', error.message);
+        }
+    }
+    return { gitStore, gitBranchService };
+}
+
 class StatusBar {
     constructor() {
         this.bar = null;
@@ -18,6 +37,9 @@ class StatusBar {
         this.rightSection = null;
         this.currentFile = null;
         this.lineInfo = null;
+        this.gitInfo = null;
+        this.currentBranch = null;
+        this.branchTracking = null;
 
         this.render();
         this.setupEventListeners();
@@ -41,6 +63,33 @@ class StatusBar {
         fileInfo.textContent = 'No file open';
 
         this.leftSection.appendChild(fileInfo);
+
+        // Git Source Control button
+        this.gitButton = document.createElement('button');
+        this.gitButton.className = 'status-bar-btn status-bar-git-btn';
+        this.gitButton.title = 'Source Control (Ctrl+Shift+G)';
+        this.gitButton.style.display = 'none'; // Hide initially until Git repo detected
+        const gitIcon = document.createElement('img');
+        gitIcon.src = 'assets/icons/git.svg';
+        gitIcon.alt = 'Git';
+        gitIcon.className = 'status-bar-icon';
+        this.gitButton.appendChild(gitIcon);
+        this.gitButton.addEventListener('click', () => {
+            eventBus.emit('git:toggle-panel');
+        });
+
+        this.leftSection.appendChild(this.gitButton);
+
+        // Git info section (branch name, tracking info)
+        this.gitInfo = document.createElement('span');
+        this.gitInfo.className = 'status-bar-git-info';
+        this.gitInfo.style.display = 'none'; // Hide initially
+        this.gitInfo.title = 'Click to switch branches';
+        this.gitInfo.addEventListener('click', () => {
+            this.showBranchSwitcher();
+        });
+
+        this.leftSection.appendChild(this.gitInfo);
 
         // Right section - action buttons
         this.rightSection = document.createElement('div');
@@ -113,6 +162,7 @@ class StatusBar {
         // Show status bar when directory is opened (IDE becomes active)
         eventBus.on('explorer:directory-opened', () => {
             this.show();
+            this.initGitInfo();
         });
 
         // Listen for file opened events
@@ -123,6 +173,19 @@ class StatusBar {
         // Listen for cursor position changes (if you implement this in TextEditor)
         eventBus.on('editor:cursor-changed', (data) => {
             this.updateLineInfo(data.line, data.column);
+        });
+
+        // Listen for Git state changes
+        eventBus.on('git:branch-switched', (data) => {
+            this.updateGitInfo(data);
+        });
+
+        eventBus.on('git:status-changed', (data) => {
+            this.updateGitInfo(data);
+        });
+
+        eventBus.on('git:repository-changed', () => {
+            this.initGitInfo();
         });
     }
 
@@ -165,6 +228,107 @@ class StatusBar {
     }
 
     /**
+     * Initialize Git info
+     */
+    async initGitInfo() {
+        try {
+            const { gitStore } = getGitServices();
+            if (!gitStore) return;
+
+            const repoPath = await gitStore.getCurrentRepository();
+            if (!repoPath) {
+                this.hideGitInfo();
+                return;
+            }
+
+            await this.updateGitInfo();
+        } catch (error) {
+            console.error('[StatusBar] Failed to initialize Git info:', error);
+            this.hideGitInfo();
+        }
+    }
+
+    /**
+     * Update Git info display
+     * @param {Object} data - Optional Git state data
+     */
+    async updateGitInfo(data) {
+        try {
+            const { gitStore, gitBranchService } = getGitServices();
+            if (!gitStore || !gitBranchService) return;
+
+            // Get current branch
+            const currentBranch = data?.branch || await gitStore.getCurrentBranch();
+            if (!currentBranch) {
+                this.hideGitInfo();
+                return;
+            }
+
+            this.currentBranch = currentBranch;
+
+            // Get branch tracking info (ahead/behind counts)
+            const branches = await gitBranchService.getLocalBranches();
+            const branchInfo = branches.find(b => b.name === currentBranch);
+
+            let displayText = `⎇ ${currentBranch}`;
+
+            if (branchInfo && branchInfo.upstream) {
+                const ahead = branchInfo.ahead || 0;
+                const behind = branchInfo.behind || 0;
+
+                if (ahead > 0 || behind > 0) {
+                    const tracking = [];
+                    if (ahead > 0) tracking.push(`↑${ahead}`);
+                    if (behind > 0) tracking.push(`↓${behind}`);
+                    displayText += ` ${tracking.join(' ')}`;
+                }
+            }
+
+            // Get modified files count
+            const status = await gitStore.getStatus();
+            const modifiedCount = status?.modifiedFiles?.length || 0;
+            const stagedCount = status?.stagedFiles?.length || 0;
+
+            if (modifiedCount > 0 || stagedCount > 0) {
+                displayText += ` (${modifiedCount + stagedCount})`;
+            }
+
+            this.gitInfo.textContent = displayText;
+            this.gitInfo.style.display = 'inline';
+
+            // Show Git button when repository is detected
+            if (this.gitButton) {
+                this.gitButton.style.display = 'inline-flex';
+            }
+
+            console.log('[StatusBar] Git info updated:', displayText);
+        } catch (error) {
+            console.error('[StatusBar] Failed to update Git info:', error);
+        }
+    }
+
+    /**
+     * Hide Git info section
+     */
+    hideGitInfo() {
+        if (this.gitInfo) {
+            this.gitInfo.style.display = 'none';
+        }
+        if (this.gitButton) {
+            this.gitButton.style.display = 'none';
+        }
+    }
+
+    /**
+     * Show branch switcher menu
+     */
+    showBranchSwitcher() {
+        console.log('[StatusBar] Showing branch switcher');
+        // Emit event to show Git branch menu
+        eventBus.emit('git:show-branch-menu');
+    }
+
+    /**
      * Show the status bar
      */
     show() {
@@ -192,6 +356,9 @@ class StatusBar {
         eventBus.off('explorer:directory-opened');
         eventBus.off('file:opened');
         eventBus.off('editor:cursor-changed');
+        eventBus.off('git:branch-switched');
+        eventBus.off('git:status-changed');
+        eventBus.off('git:repository-changed');
     }
 }
 

@@ -101,6 +101,14 @@ const globalSearch = require('./components/GlobalSearch');
 const findReplacePanel = require('./components/FindReplacePanel');
 const statusBar = require('./components/StatusBar');
 
+// Import Git components
+const GitPanel = require('./components/GitPanel');
+const GitHistoryPanel = require('./components/GitHistoryPanel');
+const CommitView = require('./components/CommitView');
+const GitBranchMenu = require('./components/GitBranchMenu');
+const GitDiffPanel = require('./components/GitDiffPanel');
+const GitBlamePanel = require('./components/GitBlamePanel');
+
 /**
  * Application Bootstrap
  */
@@ -146,6 +154,10 @@ class Application {
             // 3. Initialize UIManager
             uiManager.initialize();
             console.log('[App] ✓ UIManager initialized');
+
+            // 3.5. Initialize Git services
+            await this.initializeGitServices();
+            console.log('[App] ✓ Git services initialized');
 
             // 4. Setup global event handlers
             this.setupGlobalHandlers();
@@ -199,6 +211,24 @@ class Application {
     }
 
     /**
+     * Initialize Git services
+     */
+    async initializeGitServices() {
+        try {
+            const gitService = require('./services/GitService').getInstance();
+            const gitStore = require('./modules/GitStore').getInstance();
+
+            console.log('[App] Git services loaded');
+
+            // Git services will initialize themselves when needed
+            // They use lazy initialization pattern
+        } catch (error) {
+            console.warn('[App] Git services not available:', error.message);
+            console.warn('[App] Git functionality will be disabled');
+        }
+    }
+
+    /**
      * Initialize UI components
      */
     initializeComponents() {
@@ -224,6 +254,28 @@ class Application {
         // Create and register FileExplorer
         const explorer = new FileExplorer(fileTreeContainer, fileSystemService, config);
         uiManager.registerComponent('fileExplorer', explorer);
+
+        // Create and register Git UI components
+        try {
+            const gitPanel = new GitPanel();
+            uiManager.registerComponent('gitPanel', gitPanel);
+
+            const gitHistoryPanel = new GitHistoryPanel();
+            uiManager.registerComponent('gitHistoryPanel', gitHistoryPanel);
+
+            const gitBranchMenu = new GitBranchMenu();
+            uiManager.registerComponent('gitBranchMenu', gitBranchMenu);
+
+            const gitDiffPanel = new GitDiffPanel();
+            uiManager.registerComponent('gitDiffPanel', gitDiffPanel);
+
+            const gitBlamePanel = new GitBlamePanel();
+            uiManager.registerComponent('gitBlamePanel', gitBlamePanel);
+
+            console.log('[App] ✓ Git UI components registered');
+        } catch (error) {
+            console.warn('[App] Failed to initialize Git UI components:', error.message);
+        }
 
         // Initialize PaneManager
         this.paneManager = new PaneManager(paneContainer);
@@ -323,7 +375,7 @@ class Application {
         eventBus.on('file:selected', async (data) => {
             const activePane = this.paneManager.getActivePane();
             if (activePane) {
-                await this.openFileInPane(activePane.id, data.path, data.line);
+                await this.openFileInPane(activePane.id, data.path, data.line, data.enableGitDiff);
             }
         });
 
@@ -348,6 +400,49 @@ class Application {
         eventBus.on('workspace:activated', async (data) => {
             console.log('[App] Workspace activated:', data.workspaceId);
             await this.restoreWorkspaceLayout(data.workspace);
+        });
+
+        // Git-related event handlers
+        eventBus.on('file:saved', async (data) => {
+            try {
+                const gitStore = require('./modules/GitStore').getInstance();
+                await gitStore.refreshStatus();
+            } catch (error) {
+                console.warn('[App] Git status refresh failed:', error.message);
+            }
+        });
+
+        eventBus.on('explorer:directory-opened', async (data) => {
+            try {
+                const gitService = require('./services/GitService').getInstance();
+                const gitStore = require('./modules/GitStore').getInstance();
+
+                // Initialize Git for the opened directory
+                await gitService.initialize(data.path);
+                console.log('[App] Git initialized for directory:', data.path);
+            } catch (error) {
+                console.warn('[App] Git initialization failed:', error.message);
+            }
+        });
+
+        eventBus.on('git:toggle-blame', () => {
+            // Get active file viewer and toggle blame
+            const activePane = this.paneManager?.getActivePane();
+            if (activePane && activePane.currentFile) {
+                const editorElement = activePane.contentContainer.querySelector('[data-file-viewer-id]');
+                if (editorElement && editorElement._fileViewerInstance) {
+                    const textEditor = editorElement._fileViewerInstance.editor;
+                    if (textEditor && typeof textEditor.toggleBlame === 'function') {
+                        textEditor.toggleBlame();
+                    }
+                }
+            }
+        });
+
+        eventBus.on('git:view-commit', (data) => {
+            // Open commit view in a new tab
+            console.log('[App] Opening commit view for:', data.commit.hash);
+            this.openCommitView(data.commit, data.repositoryPath);
         });
 
         // Global keyboard shortcuts
@@ -538,11 +633,12 @@ class Application {
     /**
      * Open a file in a specific pane
      */
-    async openFileInPane(paneId, filePath, lineNumber = null) {
+    async openFileInPane(paneId, filePath, lineNumber = null, enableGitDiff = false) {
         console.log('[App] ========== OPENING FILE IN PANE ==========');
         console.log('[App] paneId:', paneId);
         console.log('[App] filePath:', filePath);
         console.log('[App] lineNumber:', lineNumber);
+        console.log('[App] enableGitDiff:', enableGitDiff);
 
         const pane = this.paneManager.getPane(paneId);
         if (!pane) {
@@ -568,7 +664,7 @@ class Application {
 
         // Open the file
         console.log('[App] Opening file in FileViewer:', filePath);
-        await viewer.openFile(filePath, lineNumber);
+        await viewer.openFile(filePath, lineNumber, enableGitDiff);
         console.log('[App] File opened successfully in FileViewer');
 
         // Get the filename for the title
@@ -583,6 +679,58 @@ class Application {
         console.log('[App] ✓ File opened in pane as tab successfully');
         console.log('[App] Container in DOM:', fileViewerContent.container.parentElement !== null);
         console.log('[App] Container display:', fileViewerContent.container.style.display);
+        console.log('[App] ========================================');
+    }
+
+    /**
+     * Open a commit view in a new tab
+     */
+    async openCommitView(commit, repositoryPath) {
+        console.log('[App] ========== OPENING COMMIT VIEW ==========');
+        console.log('[App] Commit hash:', commit.hash);
+        console.log('[App] Repository path:', repositoryPath);
+
+        // Get active pane
+        const activePane = this.paneManager?.getActivePane();
+        if (!activePane) {
+            console.error('[App] No active pane found');
+            return;
+        }
+
+        // Create commit view container
+        const commitViewContainer = document.createElement('div');
+        commitViewContainer.className = 'commit-view-container';
+        commitViewContainer.dataset.commitHash = commit.hash;
+        commitViewContainer.style.cssText = `
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        `;
+
+        // Create CommitView instance
+        console.log('[App] Creating CommitView instance');
+        const commitView = new CommitView(commitViewContainer, commit, repositoryPath);
+
+        // Store reference for debugging
+        commitViewContainer._commitViewInstance = commitView;
+
+        // Get commit title for tab
+        const commitTitle = `Commit ${commit.hash.substring(0, 7)}`;
+
+        console.log('[App] Adding commit view tab to pane');
+
+        // Add as a tab to the pane using the commit hash as unique ID
+        this.paneManager.addTab(
+            activePane.id,
+            `commit://${commit.hash}`, // Use commit:// protocol for unique ID
+            commitTitle,
+            commitViewContainer,
+            'commit-view',
+            null
+        );
+
+        console.log('[App] ✓ Commit view opened successfully');
         console.log('[App] ========================================');
     }
 
@@ -638,6 +786,7 @@ class Application {
      */
     setupIconSidebar() {
         const iconFiles = document.getElementById('icon-files');
+        const iconGit = document.getElementById('icon-git');
         const iconBrowser = document.getElementById('icon-browser');
 
         if (iconFiles) {
@@ -646,12 +795,35 @@ class Application {
 
                 // Set active state
                 iconFiles.classList.add('active');
+                if (iconGit) iconGit.classList.remove('active');
                 if (iconBrowser) iconBrowser.classList.remove('active');
 
                 // Close browser if open
                 if (this.browserInstance) {
                     this.toggleBrowser();
                 }
+
+                // Hide Git panel if visible
+                eventBus.emit('git:hide-panel');
+            });
+        }
+
+        if (iconGit) {
+            iconGit.addEventListener('click', () => {
+                console.log('[App] Git icon clicked');
+
+                // Toggle active state
+                if (iconFiles) iconFiles.classList.remove('active');
+                iconGit.classList.add('active');
+                if (iconBrowser) iconBrowser.classList.remove('active');
+
+                // Close browser if open
+                if (this.browserInstance) {
+                    this.toggleBrowser();
+                }
+
+                // Toggle Git panel
+                eventBus.emit('git:toggle-panel');
             });
         }
 
@@ -661,12 +833,16 @@ class Application {
 
                 // Toggle active state
                 if (iconFiles) iconFiles.classList.remove('active');
+                if (iconGit) iconGit.classList.remove('active');
                 iconBrowser.classList.add('active');
 
                 // Toggle browser
                 if (!this.browserInstance) {
                     this.toggleBrowser();
                 }
+
+                // Hide Git panel if visible
+                eventBus.emit('git:hide-panel');
             });
         }
     }

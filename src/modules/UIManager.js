@@ -102,7 +102,7 @@ class UIManager {
      * @param {KeyboardEvent} event - Keyboard event
      */
     handleKeyboardShortcut(event) {
-        const { ctrlKey, metaKey, key } = event;
+        const { ctrlKey, metaKey, shiftKey, key } = event;
         const modKey = ctrlKey || metaKey;
 
         // Cmd/Ctrl + O: Open folder
@@ -129,8 +129,26 @@ class UIManager {
             eventBus.emit('shortcut:open-settings');
         }
 
+        // Cmd/Ctrl + Shift + G: Toggle Git panel
+        if (modKey && shiftKey && key === 'G') {
+            event.preventDefault();
+            eventBus.emit('git:toggle-panel');
+        }
+
+        // Cmd/Ctrl + Shift + H: Toggle Git history
+        if (modKey && shiftKey && key === 'H') {
+            event.preventDefault();
+            eventBus.emit('git:toggle-history');
+        }
+
+        // Cmd/Ctrl + Shift + B: Toggle Git blame for current editor
+        if (modKey && shiftKey && key === 'B') {
+            event.preventDefault();
+            eventBus.emit('git:toggle-blame');
+        }
+
         // Emit generic keyboard event for plugins
-        eventBus.emit('ui:keyboard', { event, modKey, key });
+        eventBus.emit('ui:keyboard', { event, modKey, key, shiftKey });
     }
 
     /**
