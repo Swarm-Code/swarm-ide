@@ -153,6 +153,15 @@ class GitService {
         return this.activeRepository;
     }
 
+    /**
+     * Get repository (alias for getActiveRepository for backward compatibility)
+     *
+     * @returns {GitRepository|null}
+     */
+    getRepository() {
+        return this.activeRepository;
+    }
+
     // ============================================
     // BLAME OPERATIONS
     // ============================================

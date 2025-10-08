@@ -583,6 +583,67 @@ class GitBranchService {
         }
     }
 
+    /**
+     * Get upstream status for current branch
+     * Returns ahead/behind counts vs upstream
+     *
+     * @returns {Promise<Object>} Status object with hasUpstream, ahead, behind
+     */
+    async getUpstreamStatus() {
+        try {
+            const currentBranch = await this.getCurrentBranch();
+            if (!currentBranch) {
+                return { hasUpstream: false, ahead: 0, behind: 0 };
+            }
+
+            const repository = this.gitService.getActiveRepository();
+            if (!repository) {
+                return { hasUpstream: false, ahead: 0, behind: 0 };
+            }
+
+            // Get upstream branch name
+            let upstream;
+            try {
+                const result = await repository.client.execute([
+                    'rev-parse',
+                    '--abbrev-ref',
+                    '@{upstream}'
+                ]);
+                upstream = result.stdout.trim();
+            } catch (error) {
+                // No upstream set
+                return { hasUpstream: false, ahead: 0, behind: 0 };
+            }
+
+            // Get ahead/behind counts
+            try {
+                const result = await repository.client.execute([
+                    'rev-list',
+                    '--left-right',
+                    '--count',
+                    `${upstream}...HEAD`
+                ]);
+
+                const counts = result.stdout.trim().split('\t');
+                const behind = parseInt(counts[0]) || 0;
+                const ahead = parseInt(counts[1]) || 0;
+
+                return {
+                    hasUpstream: true,
+                    upstream,
+                    ahead,
+                    behind
+                };
+            } catch (error) {
+                console.warn('[GitBranchService] Failed to get ahead/behind counts:', error);
+                return { hasUpstream: true, upstream, ahead: 0, behind: 0 };
+            }
+        } catch (error) {
+            console.error('[GitBranchService] Failed to get upstream status:', error);
+            return { hasUpstream: false, ahead: 0, behind: 0 };
+        }
+    }
+
     // ============================================
     // BRANCH STATISTICS
     // ============================================

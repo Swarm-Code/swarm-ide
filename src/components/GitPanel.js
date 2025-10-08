@@ -1368,38 +1368,177 @@ class GitPanel {
      * Create a new branch
      */
     async createNewBranch() {
-        const branchName = prompt('Enter new branch name:');
-        if (!branchName) return;
+        // Create dialog
+        const dialog = document.createElement('div');
+        dialog.className = 'git-branch-dialog';
+        dialog.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        `;
 
-        // Validate branch name
-        if (!/^[a-zA-Z0-9_\-\/]+$/.test(branchName)) {
-            alert('Invalid branch name. Use only letters, numbers, hyphens, underscores, and slashes.');
-            return;
-        }
+        const dialogContent = document.createElement('div');
+        dialogContent.style.cssText = `
+            background-color: #1e1e1e;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 24px;
+            min-width: 400px;
+            max-width: 500px;
+        `;
 
-        const { gitStore } = getGitServices();
-        if (!gitStore) return;
+        const dialogTitle = document.createElement('h3');
+        dialogTitle.textContent = 'Create New Branch';
+        dialogTitle.style.cssText = 'margin: 0 0 16px 0; font-size: 18px;';
 
-        try {
-            console.log('[GitPanel] Creating new branch:', branchName);
-            const repoPath = gitStore.getCurrentRepository();
-            if (!repoPath) return;
+        const dialogText = document.createElement('p');
+        dialogText.textContent = 'Enter a name for the new branch:';
+        dialogText.style.cssText = 'margin: 0 0 12px 0; color: rgba(255, 255, 255, 0.8);';
 
-            const client = new GitClient(repoPath);
+        // Branch name input
+        const branchInput = document.createElement('input');
+        branchInput.type = 'text';
+        branchInput.placeholder = 'e.g., feature/new-feature';
+        branchInput.style.cssText = `
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 8px;
+            background-color: #2d2d2d;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            color: #ffffff;
+            font-size: 14px;
+            box-sizing: border-box;
+        `;
 
-            await client.execute(['checkout', '-b', branchName]);
+        // Error message
+        const errorMsg = document.createElement('div');
+        errorMsg.style.cssText = `
+            color: #f48771;
+            font-size: 12px;
+            margin-bottom: 16px;
+            min-height: 18px;
+        `;
 
-            console.log('[GitPanel] Created and switched to branch:', branchName);
-            this.currentBranch = branchName;
+        // Buttons
+        const buttonContainer = document.createElement('div');
+        buttonContainer.style.cssText = 'display: flex; gap: 8px; justify-content: flex-end;';
 
-            // Refresh the panel
-            this.refreshStatus();
-            this.loadBranches();
-            eventBus.emit('git:branch-changed', { branch: branchName });
-        } catch (error) {
-            console.error('[GitPanel] Error creating branch:', error);
-            alert(`Failed to create branch: ${error.message}`);
-        }
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.cssText = `
+            padding: 8px 16px;
+            background-color: #2d2d2d;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            color: #ffffff;
+            cursor: pointer;
+        `;
+
+        const createBtn = document.createElement('button');
+        createBtn.textContent = 'Create';
+        createBtn.style.cssText = `
+            padding: 8px 16px;
+            background-color: #0e639c;
+            border: 1px solid #0e639c;
+            border-radius: 4px;
+            color: #ffffff;
+            cursor: pointer;
+        `;
+
+        // Handle create
+        const handleCreate = async () => {
+            const branchName = branchInput.value.trim();
+            if (!branchName) {
+                errorMsg.textContent = 'Branch name cannot be empty';
+                return;
+            }
+
+            // Validate branch name
+            if (!/^[a-zA-Z0-9_\-\/]+$/.test(branchName)) {
+                errorMsg.textContent = 'Invalid branch name. Use only letters, numbers, hyphens, underscores, and slashes.';
+                return;
+            }
+
+            const { gitStore } = getGitServices();
+            if (!gitStore) {
+                dialog.remove();
+                return;
+            }
+
+            try {
+                console.log('[GitPanel] Creating new branch:', branchName);
+                const repoPath = gitStore.getCurrentRepository();
+                if (!repoPath) {
+                    dialog.remove();
+                    return;
+                }
+
+                const client = new GitClient(repoPath);
+                await client.execute(['checkout', '-b', branchName]);
+
+                console.log('[GitPanel] Created and switched to branch:', branchName);
+                this.currentBranch = branchName;
+
+                // Refresh the panel
+                this.refreshStatus();
+                this.loadBranches();
+                eventBus.emit('git:branch-changed', { branch: branchName });
+
+                // Close dialog
+                dialog.remove();
+            } catch (error) {
+                console.error('[GitPanel] Error creating branch:', error);
+                errorMsg.textContent = `Failed to create branch: ${error.message}`;
+            }
+        };
+
+        // Handle cancel
+        cancelBtn.addEventListener('click', () => {
+            dialog.remove();
+        });
+
+        // Handle create button
+        createBtn.addEventListener('click', handleCreate);
+
+        // Handle Enter key
+        branchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                handleCreate();
+            } else if (e.key === 'Escape') {
+                dialog.remove();
+            }
+        });
+
+        // Assemble dialog
+        buttonContainer.appendChild(cancelBtn);
+        buttonContainer.appendChild(createBtn);
+        dialogContent.appendChild(dialogTitle);
+        dialogContent.appendChild(dialogText);
+        dialogContent.appendChild(branchInput);
+        dialogContent.appendChild(errorMsg);
+        dialogContent.appendChild(buttonContainer);
+        dialog.appendChild(dialogContent);
+
+        // Add to DOM
+        document.body.appendChild(dialog);
+
+        // Focus input
+        setTimeout(() => branchInput.focus(), 100);
+
+        // Close on background click
+        dialog.addEventListener('click', (e) => {
+            if (e.target === dialog) {
+                dialog.remove();
+            }
+        });
     }
 
     /**
