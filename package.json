@@ -1,0 +1,42 @@
+{
+  "name": "swarm-ide",
+  "version": "1.0.0",
+  "description": "A simple Electron-based IDE for viewing files",
+  "main": "main.js",
+  "scripts": {
+    "bundle": "browserify src/renderer.js -o dist/bundle.js",
+    "start": "npm run bundle && electron .",
+    "dev": "npm run bundle && electron .",
+    "build": "electron-builder"
+  },
+  "keywords": [
+    "electron",
+    "ide",
+    "file-viewer"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@types/fluent-ffmpeg": "^2.1.27",
+    "codemirror": "^6.0.2",
+    "electron-store": "^11.0.2",
+    "ffmpeg-static": "^5.2.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "highlight.js": "^11.9.0",
+    "mammoth": "^1.11.0",
+    "marked": "^16.4.0",
+    "mermaid": "^11.12.0",
+    "pdfjs-dist": "^5.4.296",
+    "sqlite3": "^5.1.7",
+    "typescript": "^5.9.3",
+    "typescript-language-server": "^5.0.1",
+    "uuid": "^13.0.0",
+    "vscode-languageserver-protocol": "^3.17.5",
+    "vscode-languageserver-types": "^3.17.5",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "browserify": "^17.0.0",
+    "electron": "^28.0.0"
+  }
+}

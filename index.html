@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swarm IDE</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/monokai.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/shell/shell.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+</head>
+<body>
+    <!-- Full-screen Welcome Screen -->
+    <div id="welcome-container" class="welcome-container"></div>
+
+    <!-- Main IDE Container (hidden initially) -->
+    <div id="app-container" class="app-container" style="display: none;">
+        <!-- Menu Bar -->
+        <div id="menu-bar"></div>
+
+        <div class="container">
+            <!-- Icon Sidebar -->
+            <div class="icon-sidebar">
+                <button id="icon-files" class="icon-sidebar-btn active" title="Files" data-view="files">
+                    <img src="assets/icons/folder.svg" alt="Files" class="sidebar-icon">
+                </button>
+                <button id="icon-browser" class="icon-sidebar-btn" title="Browser" data-view="browser">
+                    <img src="assets/icons/web.svg" alt="Browser" class="sidebar-icon">
+                </button>
+            </div>
+
+            <!-- Sidebar for file explorer -->
+            <div class="sidebar">
+                <div class="sidebar-header">
+                    <h3>EXPLORER</h3>
+                    <div class="explorer-toolbar">
+                        <button id="btn-new-file" class="explorer-toolbar-btn" title="New File">
+                            <img src="assets/icons/file.svg" alt="New File" class="toolbar-icon">
+                        </button>
+                        <button id="btn-new-folder" class="explorer-toolbar-btn" title="New Folder">
+                            <img src="assets/icons/folder.svg" alt="New Folder" class="toolbar-icon">
+                        </button>
+                        <button id="btn-collapse-all" class="explorer-toolbar-btn" title="Collapse All">
+                            <img src="assets/icons/chevron-up.svg" alt="Collapse" class="toolbar-icon">
+                        </button>
+                        <button id="btn-refresh" class="explorer-toolbar-btn" title="Refresh">
+                            <img src="assets/icons/refresh.svg" alt="Refresh" class="toolbar-icon">
+                        </button>
+                    </div>
+                    <button id="select-folder" class="btn-folder">Open Folder</button>
+                </div>
+                <div id="file-tree" class="file-tree">
+                    <div class="empty-state">No folder opened</div>
+                </div>
+            </div>
+
+            <!-- Pane container for dynamic layout -->
+            <div id="pane-container" class="pane-container"></div>
+        </div>
+    </div>
+
+    <script src="dist/bundle.js"></script>
+</body>
+</html>
