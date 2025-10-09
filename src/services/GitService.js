@@ -104,6 +104,58 @@ class GitService {
     }
 
     /**
+     * Switch to repository at given path
+     * Handles nested git repositories
+     *
+     * @param {string} dirPath - Directory path to check
+     * @returns {Promise<boolean>} True if repository found and switched
+     */
+    async switchToPath(dirPath) {
+        try {
+            // Check if we already have this repository cached
+            if (this.repositories.has(dirPath) && this.activeRepository?.workingDirectory === dirPath) {
+                // Already on this repository
+                return true;
+            }
+
+            // Try to detect repository at this path
+            const repository = await this.detectRepository(dirPath);
+
+            if (repository) {
+                // Cache the repository
+                this.repositories.set(dirPath, repository);
+                this.activeRepository = repository;
+
+                // Load state for this repository
+                await this.loadRepositoryState(repository);
+
+                console.log('[GitService] Switched to repository:', dirPath);
+
+                // Emit repository changed event
+                EventBus.emit('git:repository-changed', {
+                    path: dirPath,
+                    hasRepository: true
+                });
+
+                return true;
+            } else {
+                // No repository at this path, clear active repository
+                this.activeRepository = null;
+
+                EventBus.emit('git:repository-changed', {
+                    path: dirPath,
+                    hasRepository: false
+                });
+
+                return false;
+            }
+        } catch (error) {
+            console.error('[GitService] Failed to switch to path:', dirPath, error);
+            return false;
+        }
+    }
+
+    /**
      * Load initial repository state
      *
      * @param {GitRepository} repository

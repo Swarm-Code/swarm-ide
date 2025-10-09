@@ -56,6 +56,13 @@ class GitPanel {
         this.currentBranch = null;
         this.branches = [];
         this.commits = [];
+        this.currentRepoPath = null;  // Cache current repository path
+
+        // Commit history lazy loading
+        this.commitsPerPage = 50;
+        this.isLoadingMoreCommits = false;
+        this.hasMoreCommits = true;
+        this.totalCommitCount = 0;
 
         // Upstream status tracking
         this.upstreamStatus = null;
@@ -453,6 +460,15 @@ class GitPanel {
         this.commitHistoryList.style.maxHeight = '300px';
         this.commitHistoryList.style.overflowY = 'auto';
 
+        // Infinite scroll for commit history
+        this.commitHistoryList.addEventListener('scroll', () => {
+            const { scrollTop, scrollHeight, clientHeight } = this.commitHistoryList;
+            // Load more when user scrolls within 50px of bottom
+            if (scrollTop + clientHeight >= scrollHeight - 50) {
+                this.loadMoreCommits();
+            }
+        });
+
         // Toggle on header click
         let historyExpanded = false;
         header.addEventListener('click', () => {
@@ -575,17 +591,53 @@ class GitPanel {
     setupEventListeners() {
         // Listen for Git status changes
         eventBus.on('git:status-changed', (data) => {
+            console.log('[GitPanel] git:status-changed event received');
             this.updateFilesList(data);
+            // Just update files list, repository changes are handled by git:repository-changed
         });
 
         // Listen for repository changes
-        eventBus.on('git:repository-changed', () => {
-            this.refreshStatus();
+        eventBus.on('git:repository-changed', (data) => {
+            console.log('[GitPanel] git:repository-changed event received:', data);
+            // Immediately update the cached repository path
+            if (data && data.path) {
+                console.log('[GitPanel] - Updating currentRepoPath from:', this.currentRepoPath, 'to:', data.path);
+                this.currentRepoPath = data.path;
+            }
+
+            // Reset lazy loading state for new repository
+            this.hasMoreCommits = true;
+            this.commits = [];
+            this.totalCommitCount = 0;
+
+            // Force immediate refresh with new path if we have a repository
+            if (data && data.hasRepository && this.isVisible) {
+                console.log('[GitPanel] - Force refreshing with new repo path');
+                // Use a small delay to ensure GitStore has updated
+                setTimeout(() => {
+                    this.loadBranches();
+                    this.loadCommitHistory();
+                }, 50);
+            }
         });
 
         // Listen for file changes
         eventBus.on('file:saved', () => {
             this.refreshStatus();
+        });
+
+        // Listen for directory navigation
+        eventBus.on('explorer:directory-opened', async (data) => {
+            console.log('[GitPanel] explorer:directory-opened event received:', data);
+            if (data && data.path) {
+                console.log('[GitPanel] Switching to path:', data.path);
+                // Switch GitService to the new directory to detect nested repos
+                const { gitService } = getGitServices();
+                if (gitService) {
+                    const switched = await gitService.switchToPath(data.path);
+                    console.log('[GitPanel] Switch result:', switched);
+                }
+            }
         });
 
         // Listen for panel toggle command
@@ -1456,7 +1508,10 @@ class GitPanel {
 
         try {
             console.log('[GitPanel] Loading branches with GitClient');
-            const repoPath = gitStore.getCurrentRepository();
+            console.log('[GitPanel] - this.currentRepoPath:', this.currentRepoPath);
+            console.log('[GitPanel] - gitStore.getCurrentRepository():', gitStore.getCurrentRepository());
+            const repoPath = this.currentRepoPath || gitStore.getCurrentRepository();
+            console.log('[GitPanel] - Using repoPath:', repoPath);
             if (!repoPath) {
                 console.warn('[GitPanel] No repository path available');
                 return;
@@ -2220,15 +2275,20 @@ class GitPanel {
     }
 
     /**
-     * Load commit history
+     * Load commit history with optional offset for lazy loading
+     * @param {number} skip - Number of commits to skip (for pagination)
      */
-    async loadCommitHistory(limit = 20) {
+    async loadCommitHistory(skip = 0) {
         const { gitService, gitStore } = getGitServices();
         if (!gitService || !gitStore) return;
 
         try {
-            console.log('[GitPanel] Loading commit history');
-            const repoPath = gitStore.getCurrentRepository();
+            const isInitialLoad = skip === 0;
+            console.log(`[GitPanel] Loading commit history (skip: ${skip}, limit: ${this.commitsPerPage})`);
+            console.log('[GitPanel] - this.currentRepoPath:', this.currentRepoPath);
+            console.log('[GitPanel] - gitStore.getCurrentRepository():', gitStore.getCurrentRepository());
+            const repoPath = this.currentRepoPath || gitStore.getCurrentRepository();
+            console.log('[GitPanel] - Using repoPath:', repoPath);
             if (!repoPath) {
                 console.warn('[GitPanel] No repository path available');
                 return;
@@ -2237,19 +2297,37 @@ class GitPanel {
             // Use Git client to get log
             const client = new GitClient(repoPath);
 
+            // Get total commit count on initial load
+            if (isInitialLoad) {
+                try {
+                    const countOutput = await client.execute(['rev-list', '--count', 'HEAD']);
+                    this.totalCommitCount = parseInt(countOutput.trim(), 10) || 0;
+                } catch (error) {
+                    this.totalCommitCount = 0;
+                }
+            }
+
             let logOutput;
             try {
-                logOutput = await client.execute([
+                const args = [
                     'log',
-                    `--max-count=${limit}`,
+                    `--max-count=${this.commitsPerPage}`,
                     '--format=%H|%an|%ae|%ad|%s',
                     '--date=iso'
-                ]);
+                ];
+
+                // Add skip parameter if not initial load
+                if (skip > 0) {
+                    args.push(`--skip=${skip}`);
+                }
+
+                logOutput = await client.execute(args);
             } catch (error) {
                 // Handle empty repository gracefully (exit code 128)
                 if (error.message && error.message.includes('does not have any commits yet')) {
                     console.log('[GitPanel] Repository has no commits yet');
                     this.commits = [];
+                    this.hasMoreCommits = false;
                     this.renderCommitHistory();
                     if (this.historyBadge) {
                         this.historyBadge.textContent = '0';
@@ -2260,7 +2338,7 @@ class GitPanel {
             }
 
             // Parse commits
-            const commits = logOutput.split('\n')
+            const newCommits = logOutput.split('\n')
                 .filter(line => line.trim())
                 .map(line => {
                     const [hash, author_name, author_email, date, ...messageParts] = line.split('|');
@@ -2273,17 +2351,44 @@ class GitPanel {
                     };
                 });
 
-            this.commits = commits;
-            this.renderCommitHistory();
+            // Check if there are more commits to load
+            this.hasMoreCommits = newCommits.length === this.commitsPerPage;
 
-            // Update count in badge
-            if (this.historyBadge) {
-                this.historyBadge.textContent = commits.length;
+            // Append or replace commits based on whether this is initial load
+            if (isInitialLoad) {
+                this.commits = newCommits;
+            } else {
+                this.commits = [...this.commits, ...newCommits];
             }
 
-            console.log('[GitPanel] Loaded', commits.length, 'commits');
+            this.renderCommitHistory();
+
+            // Update count in badge (show total count)
+            if (this.historyBadge) {
+                this.historyBadge.textContent = this.totalCommitCount;
+            }
+
+            console.log('[GitPanel] Loaded', newCommits.length, 'commits (total in repo:', this.totalCommitCount, ', loaded:', this.commits.length, ')');
         } catch (error) {
             console.error('[GitPanel] Error loading commit history:', error);
+        }
+    }
+
+    /**
+     * Load more commits when scrolling (infinite scroll)
+     */
+    async loadMoreCommits() {
+        // Prevent concurrent loading
+        if (this.isLoadingMoreCommits || !this.hasMoreCommits) {
+            return;
+        }
+
+        this.isLoadingMoreCommits = true;
+
+        try {
+            await this.loadCommitHistory(this.commits.length);
+        } finally {
+            this.isLoadingMoreCommits = false;
         }
     }
 
