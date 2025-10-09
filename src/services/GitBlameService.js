@@ -8,6 +8,7 @@
  */
 
 const EventBus = require('../modules/EventBus');
+const logger = require('../utils/Logger');
 
 class GitBlameService {
     constructor(gitService) {
@@ -28,7 +29,7 @@ class GitBlameService {
         // Cache timeout (ms) - blame data validity period
         this.cacheTimeout = 5 * 60 * 1000; // 5 minutes
 
-        console.log('[GitBlameService] Initialized');
+        logger.debug('gitBlame', '[GitBlameService] Initialized');
 
         // Listen to git events for cache invalidation
         this._setupEventListeners();
@@ -91,7 +92,7 @@ class GitBlameService {
         if (useCache) {
             const cached = this._getCachedBlame(filePath, revision);
             if (cached) {
-                console.log(`[GitBlameService] Using cached blame for: ${filePath}`);
+                logger.debug('gitBlame', `[GitBlameService] Using cached blame for: ${filePath}`);
                 return cached.entries;
             }
         }
@@ -143,13 +144,13 @@ class GitBlameService {
         try {
             const revision = options.revision || 'HEAD';
 
-            console.log(`[GitBlameService] Fetching blame for: ${filePath} @ ${revision}`);
+            logger.debug('gitBlame', `[GitBlameService] Fetching blame for: ${filePath} @ ${revision}`);
 
             // Fetch from GitService
             const entries = await this.gitService.getBlame(filePath, options);
 
             if (!entries || entries.length === 0) {
-                console.warn(`[GitBlameService] No blame data for: ${filePath}`);
+                logger.warn('gitBlame', `[GitBlameService] No blame data for: ${filePath}`);
                 return null;
             }
 
@@ -164,7 +165,7 @@ class GitBlameService {
                 timestamp: Date.now()
             });
 
-            console.log(`[GitBlameService] Cached ${entries.length} blame entries for: ${filePath}`);
+            logger.debug('gitBlame', `[GitBlameService] Cached ${entries.length} blame entries for: ${filePath}`);
 
             // Emit event
             EventBus.emit('git-blame:loaded', {
@@ -175,7 +176,7 @@ class GitBlameService {
 
             return entries;
         } catch (error) {
-            console.error(`[GitBlameService] Failed to fetch blame for ${filePath}:`, error);
+            logger.error('gitBlame', `[GitBlameService] Failed to fetch blame for ${filePath}:`, error);
             return null;
         }
     }
@@ -190,7 +191,7 @@ class GitBlameService {
      */
     async getBlameStream(filePath, onEntry, options = {}) {
         try {
-            console.log(`[GitBlameService] Streaming blame for: ${filePath}`);
+            logger.debug('gitBlame', `[GitBlameService] Streaming blame for: ${filePath}`);
 
             const entries = [];
             const wrappedCallback = (entry) => {
@@ -211,9 +212,9 @@ class GitBlameService {
                 timestamp: Date.now()
             });
 
-            console.log(`[GitBlameService] Stream complete, cached ${entries.length} entries`);
+            logger.debug('gitBlame', `[GitBlameService] Stream complete, cached ${entries.length} entries`);
         } catch (error) {
-            console.error(`[GitBlameService] Stream failed for ${filePath}:`, error);
+            logger.error('gitBlame', `[GitBlameService] Stream failed for ${filePath}:`, error);
         }
     }
 
@@ -309,7 +310,7 @@ class GitBlameService {
     async enableBlame(filePath) {
         if (!this.activeBlameFiles.has(filePath)) {
             this.activeBlameFiles.add(filePath);
-            console.log(`[GitBlameService] Blame enabled for: ${filePath}`);
+            logger.debug('gitBlame', `[GitBlameService] Blame enabled for: ${filePath}`);
 
             // Fetch blame data
             await this.getBlame(filePath, { debounce: true });
@@ -326,7 +327,7 @@ class GitBlameService {
     disableBlame(filePath) {
         if (this.activeBlameFiles.has(filePath)) {
             this.activeBlameFiles.delete(filePath);
-            console.log(`[GitBlameService] Blame disabled for: ${filePath}`);
+            logger.debug('gitBlame', `[GitBlameService] Blame disabled for: ${filePath}`);
 
             EventBus.emit('git-blame:disabled', { filePath });
         }
@@ -440,14 +441,14 @@ class GitBlameService {
 
         // Check revision match
         if (cached.revision !== revision) {
-            console.log(`[GitBlameService] Cache miss: revision mismatch for ${filePath}`);
+            logger.debug('gitBlame', `[GitBlameService] Cache miss: revision mismatch for ${filePath}`);
             return null;
         }
 
         // Check cache timeout
         const age = Date.now() - cached.timestamp;
         if (age > this.cacheTimeout) {
-            console.log(`[GitBlameService] Cache expired for ${filePath} (age: ${age}ms)`);
+            logger.debug('gitBlame', `[GitBlameService] Cache expired for ${filePath} (age: ${age}ms)`);
             this.blameCache.delete(filePath);
             return null;
         }
@@ -482,7 +483,7 @@ class GitBlameService {
     invalidateCache(filePath) {
         if (this.blameCache.has(filePath)) {
             this.blameCache.delete(filePath);
-            console.log(`[GitBlameService] Cache invalidated for: ${filePath}`);
+            logger.debug('gitBlame', `[GitBlameService] Cache invalidated for: ${filePath}`);
 
             EventBus.emit('git-blame:cache-invalidated', { filePath });
         }
@@ -494,7 +495,7 @@ class GitBlameService {
     invalidateAllCache() {
         const count = this.blameCache.size;
         this.blameCache.clear();
-        console.log(`[GitBlameService] All cache invalidated (${count} entries)`);
+        logger.debug('gitBlame', `[GitBlameService] All cache invalidated (${count} entries)`);
 
         EventBus.emit('git-blame:cache-invalidated', { all: true });
     }
@@ -517,7 +518,7 @@ class GitBlameService {
         }
 
         if (cleared > 0) {
-            console.log(`[GitBlameService] Cleared ${cleared} old cache entries`);
+            logger.debug('gitBlame', `[GitBlameService] Cleared ${cleared} old cache entries`);
         }
     }
 
@@ -558,7 +559,7 @@ class GitBlameService {
      */
     setDebounceDelay(delay) {
         this.debounceDelay = delay;
-        console.log(`[GitBlameService] Debounce delay set to: ${delay}ms`);
+        logger.debug('gitBlame', `[GitBlameService] Debounce delay set to: ${delay}ms`);
     }
 
     /**
@@ -568,7 +569,7 @@ class GitBlameService {
      */
     setCacheTimeout(timeout) {
         this.cacheTimeout = timeout;
-        console.log(`[GitBlameService] Cache timeout set to: ${timeout}ms`);
+        logger.debug('gitBlame', `[GitBlameService] Cache timeout set to: ${timeout}ms`);
     }
 
     /**
@@ -585,7 +586,7 @@ class GitBlameService {
         this.blameCache.clear();
         this.activeBlameFiles.clear();
 
-        console.log('[GitBlameService] Disposed');
+        logger.debug('gitBlame', '[GitBlameService] Disposed');
     }
 }
 

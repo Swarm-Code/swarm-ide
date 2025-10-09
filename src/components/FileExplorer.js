@@ -14,6 +14,7 @@ const stateManager = require('../modules/StateManager');
 const fileTypes = require('../utils/FileTypes');
 const pathUtils = require('../utils/PathUtils');
 const fileStateTracker = require('../modules/FileStateTracker');
+const logger = require('../utils/Logger');
 
 class FileExplorer {
     constructor(container, fileSystemService, config) {
@@ -44,7 +45,7 @@ class FileExplorer {
     setupEventListeners() {
         // Listen for folder open requests
         eventBus.on('explorer:open-folder', async (data) => {
-            console.log('[FileExplorer] Received explorer:open-folder event with path:', data.path);
+            logger.debug('fileSystem', 'Received explorer:open-folder event with path:', data.path);
             await this.openDirectory(data.path);
         });
 
@@ -57,20 +58,20 @@ class FileExplorer {
 
         // Listen for breadcrumb navigation requests
         eventBus.on('explorer:navigate-to', async (data) => {
-            console.log('[FileExplorer] Navigating to directory from breadcrumb:', data.path);
+            logger.debug('fileSystem', 'Navigating to directory from breadcrumb:', data.path);
             // Expand and scroll to the directory
             await this.expandToPath(data.path);
         });
 
         // Listen for file modification state changes to update visual indicators
         eventBus.on('file:modification-state-changed', (data) => {
-            console.log('[FileExplorer] File modification state changed:', data.path, 'isModified:', data.isModified);
+            logger.debug('fileSystem', 'File modification state changed:', data.path, 'isModified:', data.isModified);
             this.updateFileModificationIndicator(data.path, data.isModified);
         });
 
         // Listen for file system changes from file watcher
         eventBus.on('fs:file-changes', (data) => {
-            console.log('[FileExplorer] File system changes detected:', data.events.length, 'changes in', data.rootPath);
+            logger.debug('fileSystem', 'File system changes detected:', data.events.length, 'changes in', data.rootPath);
             this.handleFileSystemChanges(data.rootPath, data.events);
         });
 
@@ -116,24 +117,24 @@ class FileExplorer {
      */
     async openDirectory(dirPath) {
         try {
-            console.log('[FileExplorer] Opening directory:', dirPath);
+            logger.debug('fileSystem', 'Opening directory:', dirPath);
             this.currentPath = dirPath;
             stateManager.set('currentDirectory', dirPath);
 
             const entries = await this.fs.readDirectory(dirPath);
-            console.log('[FileExplorer] Read', entries.length, 'entries from directory');
+            logger.debug('fileSystem', 'Read', entries.length, 'entries from directory');
 
             // Filter based on config
             const filtered = this.filterEntries(entries);
-            console.log('[FileExplorer] After filtering:', filtered.length, 'entries');
+            logger.debug('fileSystem', 'After filtering:', filtered.length, 'entries');
 
             this.renderTree(filtered, dirPath);
 
-            console.log('[FileExplorer] Emitting explorer:directory-opened event');
+            logger.debug('fileSystem', 'Emitting explorer:directory-opened event');
             eventBus.emit('explorer:directory-opened', { path: dirPath, entries: filtered });
 
             // Set up file watcher for automatic refresh
-            console.log('[FileExplorer] Setting up file watcher for:', dirPath);
+            logger.debug('fileSystem', 'Setting up file watcher for:', dirPath);
             await this.fs.watchDirectory(dirPath);
 
             // Add to recent folders
@@ -141,7 +142,7 @@ class FileExplorer {
                 this.config.addRecentFolder(dirPath);
             }
         } catch (error) {
-            console.error('[FileExplorer] Error opening directory:', error);
+            logger.error('fileSystem', 'Error opening directory:', error);
             this.renderError('Failed to open directory');
         }
     }
@@ -214,7 +215,7 @@ class FileExplorer {
                 e.dataTransfer.setData('text/plain', entry.path);
                 e.dataTransfer.setData('application/x-file-path', entry.path);
                 item.classList.add('dragging');
-                console.log('[FileExplorer] Drag started for file:', entry.path);
+                logger.debug('fileSystem', 'Drag started for file:', entry.path);
 
                 // Emit event to show drag overlay
                 eventBus.emit('explorer:drag-start', { path: entry.path });
@@ -338,7 +339,7 @@ class FileExplorer {
 
             eventBus.emit('explorer:directory-expanded', { path: dirPath });
         } catch (error) {
-            console.error('[FileExplorer] Error expanding directory:', error);
+            logger.error('fileSystem', 'Error expanding directory:', error);
         }
     }
 
@@ -364,10 +365,10 @@ class FileExplorer {
      * @param {string} targetPath - Path to expand to
      */
     async expandToPath(targetPath) {
-        console.log('[FileExplorer] Expanding to path:', targetPath);
+        logger.debug('fileSystem', 'Expanding to path:', targetPath);
 
         if (!this.currentPath) {
-            console.warn('[FileExplorer] No directory open, cannot expand to path');
+            logger.warn('fileSystem', 'No directory open, cannot expand to path');
             return;
         }
 
@@ -385,7 +386,7 @@ class FileExplorer {
 
         // Get relative path from current root
         if (!targetPath.startsWith(this.currentPath)) {
-            console.warn('[FileExplorer] Target path is outside current directory');
+            logger.warn('fileSystem', 'Target path is outside current directory');
             return;
         }
 
@@ -403,7 +404,7 @@ class FileExplorer {
             const itemElement = findItemElement(currentPath);
 
             if (!itemElement) {
-                console.warn('[FileExplorer] Could not find tree item for:', currentPath);
+                logger.warn('fileSystem', 'Could not find tree item for:', currentPath);
                 continue;
             }
 
@@ -454,6 +455,27 @@ class FileExplorer {
     }
 
     /**
+     * Navigate to parent directory
+     */
+    async openParentDirectory() {
+        if (!this.currentPath) {
+            logger.warn('fileSystem', 'No current directory to navigate from');
+            return;
+        }
+
+        const parentPath = pathUtils.dirname(this.currentPath);
+
+        // Prevent navigating above root (when dirname returns same path or empty)
+        if (!parentPath || parentPath === this.currentPath || parentPath === '/') {
+            logger.warn('fileSystem', 'Already at root directory');
+            return;
+        }
+
+        logger.debug('fileSystem', `Navigating to parent directory: ${parentPath}`);
+        await this.openDirectory(parentPath);
+    }
+
+    /**
      * Handle file system changes from file watcher
      * Automatically refreshes the explorer when changes are detected
      * @param {string} rootPath - Root path being watched
@@ -465,7 +487,7 @@ class FileExplorer {
             return;
         }
 
-        console.log('[FileExplorer] Automatically refreshing due to file system changes');
+        logger.debug('fileSystem', 'Automatically refreshing due to file system changes');
 
         // Refresh the directory to show the changes
         await this.refreshCurrentDirectory();
@@ -632,6 +654,9 @@ class FileExplorer {
 
         if (entry.isDirectory) {
             options.push({ type: 'separator' });
+            options.push({ label: 'Open this folder in Swarm', icon: '📂', action: () => this.openDirectory(entry.path) });
+            options.push({ label: 'Go to parent directory', icon: '⬆️', action: () => this.openParentDirectory() });
+            options.push({ type: 'separator' });
             options.push({ label: 'Refresh', icon: '🔄', action: () => this.refreshCurrentDirectory() });
         }
 
@@ -764,7 +789,7 @@ class FileExplorer {
             operation: 'copy'
         };
 
-        console.log('[FileExplorer] Copied', this.clipboard.items.length, 'items to clipboard');
+        logger.debug('fileSystem', 'Copied', this.clipboard.items.length, 'items to clipboard');
     }
 
     /**
@@ -788,7 +813,7 @@ class FileExplorer {
             if (item) item.classList.add('cut');
         });
 
-        console.log('[FileExplorer] Cut', this.clipboard.items.length, 'items to clipboard');
+        logger.debug('fileSystem', 'Cut', this.clipboard.items.length, 'items to clipboard');
     }
 
     /**
@@ -894,7 +919,7 @@ class FileExplorer {
     async copyPath(itemPath) {
         const result = await this.fs.writeToClipboard(itemPath);
         if (result.success) {
-            console.log('[FileExplorer] Copied path to clipboard:', itemPath);
+            logger.debug('fileSystem', 'Copied path to clipboard:', itemPath);
         } else {
             alert(`Failed to copy path: ${result.error}`);
         }
@@ -912,7 +937,7 @@ class FileExplorer {
         const result = await this.fs.writeToClipboard(relativePath);
 
         if (result.success) {
-            console.log('[FileExplorer] Copied relative path to clipboard:', relativePath);
+            logger.debug('fileSystem', 'Copied relative path to clipboard:', relativePath);
         } else {
             alert(`Failed to copy relative path: ${result.error}`);
         }

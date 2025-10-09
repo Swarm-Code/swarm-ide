@@ -14,6 +14,8 @@
 const path = require('path');
 const eventBus = require('../modules/EventBus');
 const { GitClient } = require('../lib/git/GitClient');
+const debounce = require('../utils/debounce');
+const logger = require('../utils/Logger');
 
 // Git integration
 let gitStore = null;
@@ -67,6 +69,7 @@ class GitPanel {
 
         this.render();
         this.setupEventListeners();
+        this.setupAutoRefresh();
 
         // Initialize commit viewer
         this.commitViewer = new CommitViewer();
@@ -103,250 +106,23 @@ class GitPanel {
         content.style.cssText = `
             overflow-y: auto;
             flex: 1;
-        `;
-
-        // Branch switcher section
-        const branchSection = document.createElement('div');
-        branchSection.className = 'git-branch-section';
-        branchSection.style.cssText = `
-            padding: 12px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            background-color: rgba(0, 0, 0, 0.2);
-        `;
-
-        const branchHeader = document.createElement('div');
-        branchHeader.style.cssText = `
             display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 8px;
+            flex-direction: column;
         `;
 
-        const branchIcon = document.createElement('span');
-        branchIcon.textContent = '⎇';
-        branchIcon.style.cssText = 'font-size: 16px; color: #28a745;';
-
-        const branchLabel = document.createElement('span');
-        branchLabel.textContent = 'Branch';
-        branchLabel.style.cssText = 'font-weight: 500; font-size: 12px; color: rgba(255, 255, 255, 0.7);';
-
-        // Status indicators (ahead/behind)
-        this.upstreamStatusIndicator = document.createElement('span');
-        this.upstreamStatusIndicator.className = 'git-upstream-status';
-        this.upstreamStatusIndicator.style.cssText = `
-            margin-left: auto;
-            font-size: 12px;
-            display: none;
-            gap: 4px;
-            align-items: center;
-        `;
-
-        branchHeader.appendChild(branchIcon);
-        branchHeader.appendChild(branchLabel);
-        branchHeader.appendChild(this.upstreamStatusIndicator);
-
-        this.branchSelect = document.createElement('select');
-        this.branchSelect.className = 'git-branch-select';
-        this.branchSelect.style.cssText = `
-            width: 100%;
-            padding: 6px 8px;
-            background-color: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 4px;
-            color: #ffffff;
-            font-size: 13px;
-            cursor: pointer;
-            outline: none;
-        `;
-        // Style dropdown options
-        this.branchSelect.addEventListener('focus', function() {
-            const options = this.querySelectorAll('option');
-            options.forEach(opt => {
-                opt.style.backgroundColor = '#2d2d2d';
-                opt.style.color = '#ffffff';
-            });
-        });
-        this.branchSelect.addEventListener('change', (e) => this.switchBranch(e.target.value));
-
-        const branchButtons = document.createElement('div');
-        branchButtons.style.cssText = 'display: flex; gap: 4px; margin-top: 8px;';
-
-        const newBranchBtn = document.createElement('button');
-        newBranchBtn.className = 'git-btn';
-        newBranchBtn.textContent = '+ New Branch';
-        newBranchBtn.style.cssText = 'flex: 1; font-size: 11px; padding: 4px 8px;';
-        newBranchBtn.addEventListener('click', () => this.createNewBranch());
-
-        const pullBtn = document.createElement('button');
-        pullBtn.className = 'git-btn git-pull-btn';
-        pullBtn.textContent = '↓ Pull';
-        pullBtn.title = 'Pull changes from remote';
-        pullBtn.style.cssText = 'flex: 1; font-size: 11px; padding: 4px 8px;';
-        pullBtn.addEventListener('click', () => this.pullChanges());
-        this.pullBtn = pullBtn; // Store reference for loading state
-
-        const pushBtn = document.createElement('button');
-        pushBtn.className = 'git-btn git-push-btn';
-        pushBtn.textContent = '↑ Push';
-        pushBtn.title = 'Push changes to remote';
-        pushBtn.style.cssText = 'flex: 1; font-size: 11px; padding: 4px 8px;';
-        pushBtn.addEventListener('click', () => this.push());
-        this.pushBtn = pushBtn; // Store reference for loading state
-
-        const fetchBtn = document.createElement('button');
-        fetchBtn.className = 'git-btn git-fetch-btn';
-        fetchBtn.textContent = '↻ Fetch';
-        fetchBtn.title = 'Fetch changes from remote (sync icon)';
-        fetchBtn.style.cssText = 'flex: 1; font-size: 11px; padding: 4px 8px;';
-        fetchBtn.addEventListener('click', () => this.fetchChanges());
-        this.fetchBtn = fetchBtn; // Store reference for loading state
-
-        const refreshBranchBtn = document.createElement('button');
-        refreshBranchBtn.className = 'git-btn';
-        refreshBranchBtn.textContent = '↻';
-        refreshBranchBtn.title = 'Refresh branches';
-        refreshBranchBtn.style.cssText = 'padding: 4px 8px;';
-        refreshBranchBtn.addEventListener('click', () => this.loadBranches());
-
-        const renameBranchBtn = document.createElement('button');
-        renameBranchBtn.className = 'git-btn';
-        renameBranchBtn.textContent = '✎';
-        renameBranchBtn.title = 'Rename current branch';
-        renameBranchBtn.style.cssText = 'padding: 4px 8px; font-size: 14px;';
-        renameBranchBtn.addEventListener('click', () => this.renameBranch());
-
-        const deleteBranchBtn = document.createElement('button');
-        deleteBranchBtn.className = 'git-btn';
-        deleteBranchBtn.textContent = '🗑️';
-        deleteBranchBtn.title = 'Delete branch';
-        deleteBranchBtn.style.cssText = 'padding: 4px 8px; font-size: 12px;';
-        deleteBranchBtn.addEventListener('click', () => this.deleteBranch());
-
-        branchButtons.appendChild(newBranchBtn);
-        branchButtons.appendChild(pullBtn);
-        branchButtons.appendChild(pushBtn);
-        branchButtons.appendChild(fetchBtn);
-        branchButtons.appendChild(refreshBranchBtn);
-        branchButtons.appendChild(renameBranchBtn);
-        branchButtons.appendChild(deleteBranchBtn);
-
-        branchSection.appendChild(branchHeader);
-
-        const mergeBtn = document.createElement('button');
-        mergeBtn.className = 'git-btn';
-        mergeBtn.textContent = '⚡ Merge';
-        mergeBtn.title = 'Merge branch into current';
-        mergeBtn.style.cssText = 'flex: 1; font-size: 11px; padding: 4px 8px;';
-        mergeBtn.addEventListener('click', () => this.openMergeDialog());
-
-        branchButtons.appendChild(mergeBtn);
-        branchSection.appendChild(this.branchSelect);
-        branchSection.appendChild(branchButtons);
+        // Modern toolbar with icon buttons
+        const toolbar = this.createToolbar();
 
         // Commit message section
-        const commitSection = document.createElement('div');
-        commitSection.className = 'git-commit-section';
+        const commitSection = this.createCommitArea();
 
-        this.commitMessageInput = document.createElement('textarea');
-        this.commitMessageInput.className = 'git-commit-message';
-        this.commitMessageInput.placeholder = 'Commit message (Ctrl+Enter to commit)';
-        this.commitMessageInput.rows = 3;
-
-        const commitButtonsRow = document.createElement('div');
-        commitButtonsRow.className = 'git-commit-buttons';
-
-        const commitBtn = document.createElement('button');
-        commitBtn.className = 'git-btn git-btn-primary';
-        commitBtn.textContent = 'Commit';
-        commitBtn.addEventListener('click', () => this.commit());
-
-        const commitAndPushBtn = document.createElement('button');
-        commitAndPushBtn.className = 'git-btn';
-        commitAndPushBtn.textContent = 'Commit & Push';
-        commitAndPushBtn.addEventListener('click', () => this.commitAndPush());
-
-        commitButtonsRow.appendChild(commitBtn);
-        commitButtonsRow.appendChild(commitAndPushBtn);
-
-        commitSection.appendChild(this.commitMessageInput);
-        commitSection.appendChild(commitButtonsRow);
-
-        // Staged files section
-        const stagedSection = document.createElement('div');
-        stagedSection.className = 'git-section';
-
-        const stagedHeader = document.createElement('div');
-        stagedHeader.className = 'git-section-header';
-        stagedHeader.innerHTML = `
-            <span class="git-section-title">Staged Changes</span>
-            <span class="git-section-count" id="git-staged-count">0</span>
-        `;
-
-        this.stagedFilesList = document.createElement('div');
-        this.stagedFilesList.className = 'git-files-list';
-
-        stagedSection.appendChild(stagedHeader);
-        stagedSection.appendChild(this.stagedFilesList);
-
-        // Modified files section
-        const modifiedSection = document.createElement('div');
-        modifiedSection.className = 'git-section';
-
-        const modifiedHeader = document.createElement('div');
-        modifiedHeader.className = 'git-section-header';
-        modifiedHeader.innerHTML = `
-            <span class="git-section-title">Changes</span>
-            <span class="git-section-count" id="git-modified-count">0</span>
-        `;
-
-        this.modifiedFilesList = document.createElement('div');
-        this.modifiedFilesList.className = 'git-files-list';
-
-        modifiedSection.appendChild(modifiedHeader);
-        modifiedSection.appendChild(this.modifiedFilesList);
-
-        // Commit history section
-        const historySection = document.createElement('div');
-        historySection.className = 'git-section git-history-section';
-        historySection.style.cssText = 'margin-top: 8px;';
-
-        const historyHeader = document.createElement('div');
-        historyHeader.className = 'git-section-header';
-        historyHeader.style.cssText = 'cursor: pointer; user-select: none;';
-        historyHeader.innerHTML = `
-            <span class="git-section-title">▶ Commit History</span>
-            <span class="git-section-count">0</span>
-        `;
-
-        // Make history collapsible
-        let historyExpanded = false;
-        historyHeader.addEventListener('click', () => {
-            historyExpanded = !historyExpanded;
-            this.commitHistoryList.style.display = historyExpanded ? 'block' : 'none';
-            historyHeader.querySelector('.git-section-title').textContent =
-                `${historyExpanded ? '▼' : '▶'} Commit History`;
-            if (historyExpanded && this.commits.length === 0) {
-                this.loadCommitHistory();
-            }
-        });
-
-        this.commitHistoryList = document.createElement('div');
-        this.commitHistoryList.className = 'git-commits-list';
-        this.commitHistoryList.style.cssText = `
-            display: none;
-            max-height: 300px;
-            overflow-y: auto;
-        `;
-
-        historySection.appendChild(historyHeader);
-        historySection.appendChild(this.commitHistoryList);
+        // File sections container
+        const sectionsContainer = this.renderFileSections();
 
         // Assemble content
-        content.appendChild(branchSection);
+        content.appendChild(toolbar);
         content.appendChild(commitSection);
-        content.appendChild(stagedSection);
-        content.appendChild(modifiedSection);
-        content.appendChild(historySection);
+        content.appendChild(sectionsContainer);
 
         // Assemble panel
         this.panel.appendChild(header);
@@ -373,6 +149,424 @@ class GitPanel {
                 this.commit();
             }
         });
+    }
+
+    /**
+     * Create Git Panel toolbar with icon buttons matching Zed design
+     * Applies Gestalt principles: Proximity, Similarity, and Common Region
+     */
+    createToolbar() {
+        const toolbar = document.createElement('div');
+        toolbar.className = 'git-panel-toolbar';
+
+        // GESTALT: PROXIMITY - Branch management group
+        const branchContainer = document.createElement('div');
+        branchContainer.className = 'git-toolbar-branch';
+
+        const branchIcon = document.createElement('img');
+        branchIcon.src = 'assets/icons/git.svg';
+        branchIcon.alt = 'Git Branch';
+        branchIcon.className = 'branch-icon-img';
+
+        this.branchSelect = document.createElement('select');
+        this.branchSelect.className = 'branch-select';
+        this.branchSelect.title = 'Switch Branch';
+        this.branchSelect.addEventListener('change', (e) => this.switchBranch(e.target.value));
+
+        branchContainer.appendChild(branchIcon);
+        branchContainer.appendChild(this.branchSelect);
+
+        // Simplified toolbar buttons - clean and minimal
+        const pullBtn = this.createToolbarButton({
+            icon: 'folder-download.svg',
+            title: 'Pull',
+            text: 'Pull',
+            iconOnly: false,
+            onclick: () => this.pullChanges()
+        });
+        this.pullBtn = pullBtn;
+
+        const pushBtn = this.createToolbarButton({
+            icon: 'folder-upload.svg',
+            title: 'Push',
+            text: 'Push',
+            iconOnly: false,
+            onclick: () => this.push()
+        });
+        this.pushBtn = pushBtn;
+
+        const fetchBtn = this.createToolbarButton({
+            icon: 'refresh.svg',
+            title: 'Fetch',
+            text: 'Fetch',
+            iconOnly: false,
+            onclick: () => this.fetchChanges()
+        });
+        this.fetchBtn = fetchBtn;
+
+        // GESTALT: PROXIMITY - Group related actions
+        toolbar.appendChild(branchContainer);
+        toolbar.appendChild(pullBtn);
+        toolbar.appendChild(pushBtn);
+        toolbar.appendChild(fetchBtn);
+
+        return toolbar;
+    }
+
+    /**
+     * Create toolbar button with icon and optional text
+     * GESTALT: SIMILARITY - Consistent button styling
+     */
+    createToolbarButton({ icon, title, text, iconOnly = false, onclick }) {
+        const button = document.createElement('button');
+        button.className = iconOnly ? 'git-toolbar-btn-icon' : 'git-toolbar-btn';
+        button.title = title;
+
+        const img = document.createElement('img');
+        img.src = `assets/icons/${icon}`;
+        img.className = 'toolbar-icon-small';
+        img.alt = title;
+        img.onerror = () => {
+            // Fallback to text if icon not found
+            img.style.display = 'none';
+        };
+
+        button.appendChild(img);
+
+        // Only add text if not icon-only mode
+        if (!iconOnly && text) {
+            const span = document.createElement('span');
+            span.textContent = text;
+            span.className = 'toolbar-btn-text';
+            button.appendChild(span);
+        }
+
+        button.addEventListener('click', onclick);
+
+        return button;
+    }
+
+    /**
+     * Create commit area with message input and buttons
+     * GESTALT: FIGURE/GROUND - Primary actions stand out from background
+     */
+    createCommitArea() {
+        const commitSection = document.createElement('div');
+        commitSection.className = 'git-commit-area';
+
+        this.commitMessageInput = document.createElement('textarea');
+        this.commitMessageInput.className = 'git-commit-message';
+        this.commitMessageInput.placeholder = 'Commit message (Ctrl+Enter to commit)';
+        this.commitMessageInput.rows = 3;
+
+        const commitButtonsRow = document.createElement('div');
+        commitButtonsRow.className = 'git-commit-buttons';
+
+        // GESTALT: SIMILARITY - Consistent button pattern with icons
+        const commitBtn = this.createCommitButton({
+            icon: 'pre-commit.svg',
+            text: 'Commit',
+            isPrimary: false,
+            onclick: () => this.commit()
+        });
+
+        const commitAndPushBtn = this.createCommitButton({
+            icon: 'folder-upload.svg',
+            text: 'Commit & Push',
+            isPrimary: true,
+            onclick: () => this.commitAndPush()
+        });
+
+        commitButtonsRow.appendChild(commitBtn);
+        commitButtonsRow.appendChild(commitAndPushBtn);
+
+        commitSection.appendChild(this.commitMessageInput);
+        commitSection.appendChild(commitButtonsRow);
+
+        return commitSection;
+    }
+
+    /**
+     * Create commit button with icon
+     * GESTALT: FIGURE/GROUND - Visual hierarchy for primary vs secondary actions
+     */
+    createCommitButton({ icon, text, isPrimary, onclick }) {
+        const button = document.createElement('button');
+        button.className = isPrimary ? 'commit-btn-primary' : 'commit-btn';
+
+        const img = document.createElement('img');
+        img.src = `assets/icons/${icon}`;
+        img.className = 'commit-btn-icon';
+        img.alt = text;
+
+        const span = document.createElement('span');
+        span.textContent = text;
+
+        button.appendChild(img);
+        button.appendChild(span);
+        button.addEventListener('click', onclick);
+
+        return button;
+    }
+
+    /**
+     * Render file sections with badges (Zed style)
+     */
+    renderFileSections() {
+        const container = document.createElement('div');
+        container.className = 'git-sections-container';
+
+        // Staged Changes Section
+        const stagedSection = this.createFileSection({
+            id: 'staged',
+            title: 'STAGED CHANGES',
+            files: this.stagedFiles || [],
+            collapsed: false,
+            isStaged: true
+        });
+
+        // Changes Section (Unstaged)
+        const changesSection = this.createFileSection({
+            id: 'changes',
+            title: 'CHANGES',
+            files: this.modifiedFiles || [],
+            collapsed: false,
+            isStaged: false
+        });
+
+        // Commit History Section
+        const historySection = this.createCommitHistorySection();
+
+        // Store references
+        this.stagedSection = stagedSection;
+        this.changesSection = changesSection;
+        this.historySection = historySection;
+
+        container.appendChild(stagedSection);
+        container.appendChild(changesSection);
+        container.appendChild(historySection);
+
+        return container;
+    }
+
+    /**
+     * Create a collapsible file section with badge
+     */
+    createFileSection({ id, title, files, collapsed, isStaged }) {
+        const section = document.createElement('div');
+        section.className = 'git-section';
+        section.dataset.sectionId = id;
+
+        // Header with badge
+        const header = document.createElement('div');
+        header.className = 'git-section-header';
+
+        const arrow = document.createElement('span');
+        arrow.className = 'section-arrow';
+        arrow.textContent = collapsed ? '▶' : '▼';
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'section-title';
+        titleSpan.textContent = title;
+
+        const badge = document.createElement('span');
+        badge.className = 'section-badge';
+        badge.textContent = files.length;
+        badge.dataset.badgeId = id;
+
+        header.appendChild(arrow);
+        header.appendChild(titleSpan);
+        header.appendChild(badge);
+
+        // Content
+        const content = document.createElement('div');
+        content.className = 'git-section-content';
+        content.style.display = collapsed ? 'none' : 'block';
+        content.dataset.contentId = id;
+
+        // Store file list container reference
+        if (isStaged) {
+            this.stagedFilesList = content;
+        } else {
+            this.modifiedFilesList = content;
+        }
+
+        // Render files
+        files.forEach(file => {
+            const fileItem = this.createModernFileItem(file, isStaged);
+            content.appendChild(fileItem);
+        });
+
+        // Empty state
+        if (files.length === 0) {
+            const emptyMsg = document.createElement('div');
+            emptyMsg.className = 'git-empty-message';
+            emptyMsg.textContent = isStaged ? 'No staged changes' : 'No changes';
+            content.appendChild(emptyMsg);
+        }
+
+        // Toggle on header click
+        header.addEventListener('click', () => {
+            const isCollapsed = content.style.display === 'none';
+            content.style.display = isCollapsed ? 'block' : 'none';
+            arrow.textContent = isCollapsed ? '▼' : '▶';
+        });
+
+        section.appendChild(header);
+        section.appendChild(content);
+
+        return section;
+    }
+
+    /**
+     * Create commit history section
+     */
+    createCommitHistorySection() {
+        const section = document.createElement('div');
+        section.className = 'git-section git-history-section';
+
+        // Header with badge
+        const header = document.createElement('div');
+        header.className = 'git-section-header';
+        header.style.cursor = 'pointer';
+
+        const arrow = document.createElement('span');
+        arrow.className = 'section-arrow';
+        arrow.textContent = '▶';
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'section-title';
+        titleSpan.textContent = 'COMMIT HISTORY';
+
+        const badge = document.createElement('span');
+        badge.className = 'section-badge';
+        badge.textContent = '0';
+
+        header.appendChild(arrow);
+        header.appendChild(titleSpan);
+        header.appendChild(badge);
+
+        // Content
+        this.commitHistoryList = document.createElement('div');
+        this.commitHistoryList.className = 'git-section-content git-commits-list';
+        this.commitHistoryList.style.display = 'none';
+        this.commitHistoryList.style.maxHeight = '300px';
+        this.commitHistoryList.style.overflowY = 'auto';
+
+        // Toggle on header click
+        let historyExpanded = false;
+        header.addEventListener('click', () => {
+            historyExpanded = !historyExpanded;
+            this.commitHistoryList.style.display = historyExpanded ? 'block' : 'none';
+            arrow.textContent = historyExpanded ? '▼' : '▶';
+            if (historyExpanded && this.commits.length === 0) {
+                this.loadCommitHistory();
+            }
+        });
+
+        section.appendChild(header);
+        section.appendChild(this.commitHistoryList);
+
+        // Store reference to badge for updating count
+        this.historyBadge = badge;
+
+        return section;
+    }
+
+    /**
+     * Create modern file item with checkbox (Zed style)
+     */
+    createModernFileItem(file, isStaged) {
+        const item = document.createElement('div');
+        item.className = 'git-file-item';
+
+        // Checkbox (for staging/unstaging)
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'file-checkbox';
+        checkbox.checked = isStaged;
+        // Stop click propagation to prevent opening file diff (performance issue)
+        checkbox.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+        checkbox.addEventListener('change', (e) => {
+            e.stopPropagation();
+            if (e.target.checked) {
+                this.stageFile(file.path);
+            } else {
+                this.unstageFile(file.path);
+            }
+        });
+
+        // File icon (simple colored square based on status)
+        const icon = document.createElement('span');
+        icon.className = 'file-item-icon';
+        icon.textContent = this.getStatusIcon(file.status);
+        icon.title = this.getStatusLabel(file.status);
+
+        // File name
+        const name = document.createElement('span');
+        name.className = 'file-item-name';
+        name.textContent = file.path;
+        name.title = file.path;
+
+        // Status badge (M, A, D)
+        const status = document.createElement('span');
+        status.className = `file-status-badge status-${file.status}`;
+        status.textContent = file.status;
+
+        // Action buttons container (shown on hover)
+        const actions = document.createElement('div');
+        actions.className = 'git-file-actions';
+
+        if (!isStaged) {
+            // Discard button for unstaged files
+            const discardBtn = document.createElement('button');
+            discardBtn.className = 'git-file-action-btn git-file-discard-btn';
+            discardBtn.title = 'Discard';
+            discardBtn.textContent = '↺';
+            discardBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.discardFile(file.path);
+            });
+            actions.appendChild(discardBtn);
+        }
+
+        item.appendChild(checkbox);
+        item.appendChild(icon);
+        item.appendChild(name);
+        item.appendChild(status);
+        item.appendChild(actions);
+
+        // Click to open diff
+        item.addEventListener('click', () => {
+            this.openFileDiff(file.path);
+        });
+
+        return item;
+    }
+
+    /**
+     * Show stash dialog
+     */
+    async showStashDialog() {
+        const message = prompt('Enter stash message (optional):') || 'Stashed changes';
+
+        if (message !== null) {
+            const { gitService } = getGitServices();
+            if (gitService) {
+                try {
+                    await gitService.stashChanges(message);
+                    this.showSuccess(`Changes stashed: ${message}`);
+                    // gitService.stashChanges() already calls refreshStatus() internally
+                } catch (error) {
+                    console.error('[GitPanel] Stash failed:', error);
+                    this.showError('Failed to stash changes: ' + error.message);
+                }
+            } else {
+                this.showError('Git service not available');
+            }
+        }
     }
 
     /**
@@ -403,6 +597,27 @@ class GitPanel {
         eventBus.on('git:hide-panel', () => {
             this.hide();
         });
+    }
+
+    /**
+     * Setup automatic refresh when git repository changes
+     */
+    setupAutoRefresh() {
+        // Debounced refresh function (wait 1000ms after last event)
+        const debouncedRefresh = debounce(() => {
+            console.log('[GitPanel] Auto-refreshing due to repository update');
+            this.loadCommitHistory();
+            this.refreshStatus();
+        }, 1000);
+
+        // Listen for repository update events
+        eventBus.on('git:repository-updated', debouncedRefresh);
+        eventBus.on('git:push-completed', debouncedRefresh);
+        eventBus.on('git:pull-completed', debouncedRefresh);
+        eventBus.on('git:fetch-completed', debouncedRefresh);
+        eventBus.on('git:branch-switched', debouncedRefresh);
+
+        console.log('[GitPanel] Auto-refresh listeners registered');
     }
 
     /**
@@ -468,6 +683,8 @@ class GitPanel {
      * Render staged files list
      */
     renderStagedFiles() {
+        if (!this.stagedFilesList) return;
+
         this.stagedFilesList.innerHTML = '';
 
         if (this.stagedFiles.length === 0) {
@@ -475,19 +692,26 @@ class GitPanel {
             emptyMsg.className = 'git-empty-message';
             emptyMsg.textContent = 'No staged changes';
             this.stagedFilesList.appendChild(emptyMsg);
-            return;
+        } else {
+            this.stagedFiles.forEach(file => {
+                const fileItem = this.createModernFileItem(file, true);
+                this.stagedFilesList.appendChild(fileItem);
+            });
         }
 
-        this.stagedFiles.forEach(file => {
-            const fileItem = this.createFileItem(file, true);
-            this.stagedFilesList.appendChild(fileItem);
-        });
+        // Update badge count
+        const badge = this.panel?.querySelector('[data-badge-id="staged"]');
+        if (badge) {
+            badge.textContent = this.stagedFiles.length;
+        }
     }
 
     /**
      * Render modified files list
      */
     renderModifiedFiles() {
+        if (!this.modifiedFilesList) return;
+
         this.modifiedFilesList.innerHTML = '';
 
         if (this.modifiedFiles.length === 0) {
@@ -495,88 +719,20 @@ class GitPanel {
             emptyMsg.className = 'git-empty-message';
             emptyMsg.textContent = 'No changes';
             this.modifiedFilesList.appendChild(emptyMsg);
-            return;
-        }
-
-        this.modifiedFiles.forEach(file => {
-            const fileItem = this.createFileItem(file, false);
-            this.modifiedFilesList.appendChild(fileItem);
-        });
-    }
-
-    /**
-     * Create file item element
-     * @param {Object} file - File status object
-     * @param {boolean} isStaged - Whether file is staged
-     * @returns {HTMLElement} File item element
-     */
-    createFileItem(file, isStaged) {
-        const item = document.createElement('div');
-        item.className = 'git-file-item';
-
-        // File status icon
-        const statusIcon = document.createElement('span');
-        statusIcon.className = 'git-file-status';
-        statusIcon.textContent = this.getStatusIcon(file.status);
-        statusIcon.title = this.getStatusLabel(file.status);
-
-        // File name
-        const fileName = document.createElement('span');
-        fileName.className = 'git-file-name';
-        fileName.textContent = file.path;
-        fileName.title = file.path;
-
-        // Action buttons
-        const actions = document.createElement('div');
-        actions.className = 'git-file-actions';
-
-        if (isStaged) {
-            // Unstage button
-            const unstageBtn = document.createElement('button');
-            unstageBtn.className = 'git-file-action-btn';
-            unstageBtn.title = 'Unstage';
-            unstageBtn.textContent = '−';
-            unstageBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.unstageFile(file.path);
-            });
-            actions.appendChild(unstageBtn);
         } else {
-            // Stage button
-            const stageBtn = document.createElement('button');
-            stageBtn.className = 'git-file-action-btn';
-            stageBtn.title = 'Stage';
-            stageBtn.textContent = '+';
-            stageBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.stageFile(file.path);
+            this.modifiedFiles.forEach(file => {
+                const fileItem = this.createModernFileItem(file, false);
+                this.modifiedFilesList.appendChild(fileItem);
             });
-
-            // Discard button
-            const discardBtn = document.createElement('button');
-            discardBtn.className = 'git-file-action-btn git-file-discard-btn';
-            discardBtn.title = 'Discard';
-            discardBtn.textContent = '↺';
-            discardBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.discardFile(file.path);
-            });
-
-            actions.appendChild(stageBtn);
-            actions.appendChild(discardBtn);
         }
 
-        // Click to open diff
-        item.addEventListener('click', () => {
-            this.openFileDiff(file.path);
-        });
-
-        item.appendChild(statusIcon);
-        item.appendChild(fileName);
-        item.appendChild(actions);
-
-        return item;
+        // Update badge count
+        const badge = this.panel?.querySelector('[data-badge-id="changes"]');
+        if (badge) {
+            badge.textContent = this.modifiedFiles.length;
+        }
     }
+
 
     /**
      * Get status icon for file status
@@ -624,8 +780,8 @@ class GitPanel {
             if (!gitService) return;
 
             console.log('[GitPanel] Staging file:', filePath);
-            await gitService.getRepository().stage(filePath);
-            await this.refreshStatus();
+            await gitService.stage(filePath);
+            // GitService.stage() already calls refreshStatus() internally
         } catch (error) {
             console.error('[GitPanel] Failed to stage file:', error);
             this.showError('Failed to stage file: ' + error.message);
@@ -642,8 +798,8 @@ class GitPanel {
             if (!gitService) return;
 
             console.log('[GitPanel] Unstaging file:', filePath);
-            await gitService.getRepository().unstage(filePath);
-            await this.refreshStatus();
+            await gitService.unstage(filePath);
+            // GitService.unstage() already calls refreshStatus() internally
         } catch (error) {
             console.error('[GitPanel] Failed to unstage file:', error);
             this.showError('Failed to unstage file: ' + error.message);
@@ -664,8 +820,8 @@ class GitPanel {
             if (!gitService) return;
 
             console.log('[GitPanel] Discarding changes to file:', filePath);
-            await gitService.getRepository().discard(filePath);
-            await this.refreshStatus();
+            await gitService.discard(filePath);
+            // GitService.discard() already calls refreshStatus() internally
 
             // Emit event to reload file if it's open
             eventBus.emit('file:reload', { path: filePath });
@@ -681,6 +837,13 @@ class GitPanel {
      */
     openFileDiff(filePath) {
         console.log('[GitPanel] Opening file with diff:', filePath);
+
+        // Skip directories (git shows untracked directories with trailing slash)
+        if (filePath.endsWith('/')) {
+            console.log('[GitPanel] Skipping directory:', filePath);
+            this.showError('Cannot open directory. Please stage/commit individual files.');
+            return;
+        }
 
         // Convert relative path to absolute path
         const { gitStore } = getGitServices();
@@ -719,13 +882,16 @@ class GitPanel {
             if (!gitService) return;
 
             console.log('[GitPanel] Committing with message:', message);
-            await gitService.getRepository().commit(message);
+            await gitService.commit(message);
 
             // Clear commit message
             this.commitMessageInput.value = '';
 
-            // Refresh status
+            // Refresh status (gitService.commit already does this, but we want to be sure)
             await this.refreshStatus();
+
+            // **NEW: Auto-refresh commit history immediately**
+            await this.loadCommitHistory();
 
             // Emit event
             eventBus.emit('git:commit-created', { message });
@@ -1088,11 +1254,10 @@ class GitPanel {
                 repository: repoPath
             });
 
-            // Execute fetch via GitRepository
-            const repository = gitService.getRepository();
-            console.log('[GitPanel] Calling repository.fetch() for remote: origin');
+            // Execute fetch via GitService
+            console.log('[GitPanel] Calling gitService.fetch() for remote: origin');
 
-            const fetchResult = await repository.fetch('origin');
+            const fetchResult = await gitService.fetch({ remote: 'origin' });
             console.log('[GitPanel] Fetch completed successfully');
             console.log('[GitPanel] Fetch result:', fetchResult);
 
@@ -1305,9 +1470,15 @@ class GitPanel {
 
             // Get all branches
             const branchesOutput = await client.execute(['branch', '--format=%(refname:short)']);
-            const branches = branchesOutput.split('\n')
+            let branches = branchesOutput.split('\n')
                 .map(b => b.trim())
                 .filter(b => b);
+
+            // For new repos with no commits, git branch returns empty but currentBranch exists
+            // Add currentBranch to list if it's not already there
+            if (this.currentBranch && !branches.includes(this.currentBranch)) {
+                branches = [this.currentBranch];
+            }
 
             this.branches = branches;
 
@@ -1332,7 +1503,215 @@ class GitPanel {
     }
 
     /**
+     * Check if repository has uncommitted changes
+     *
+     * This checks both staged and unstaged files to determine if there are
+     * uncommitted changes that would be affected by a branch switch operation.
+     *
+     * @returns {Object} Object with hasChanges (boolean), fileCount (number),
+     *                   stagedFiles (array), and modifiedFiles (array)
+     */
+    hasUncommittedChanges() {
+        logger.debug('gitBranch', 'Checking for uncommitted changes before branch switch');
+
+        // Check if we have any staged or modified files
+        const stagedCount = this.stagedFiles?.length || 0;
+        const modifiedCount = this.modifiedFiles?.length || 0;
+        const totalCount = stagedCount + modifiedCount;
+
+        const hasChanges = totalCount > 0;
+
+        logger.debug('gitBranch', 'Uncommitted changes check result', {
+            hasChanges,
+            stagedCount,
+            modifiedCount,
+            totalCount
+        });
+
+        return {
+            hasChanges,
+            fileCount: totalCount,
+            stagedCount,
+            modifiedCount,
+            stagedFiles: this.stagedFiles || [],
+            modifiedFiles: this.modifiedFiles || []
+        };
+    }
+
+    /**
+     * Show uncommitted changes warning dialog
+     *
+     * This displays a modal dialog warning the user about uncommitted changes
+     * when attempting to switch branches. Provides three options:
+     * - Stash & Checkout: Automatically stash changes and proceed with checkout
+     * - Force Checkout: Discard uncommitted changes and proceed
+     * - Cancel: Abort the branch switch operation
+     *
+     * @param {Object} changeInfo - Object with fileCount, stagedCount, modifiedCount
+     * @param {string} targetBranch - The branch user is attempting to switch to
+     * @returns {Promise<string>} User's choice: 'stash', 'force', or 'cancel'
+     */
+    showUncommittedChangesDialog(changeInfo, targetBranch) {
+        return new Promise((resolve) => {
+            logger.debug('gitBranch', 'Showing uncommitted changes dialog', {
+                fileCount: changeInfo.fileCount,
+                targetBranch
+            });
+
+            // Create dialog backdrop
+            const dialog = document.createElement('div');
+            dialog.className = 'git-uncommitted-dialog';
+            dialog.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+            `;
+
+            // Dialog content container
+            const dialogContent = document.createElement('div');
+            dialogContent.style.cssText = `
+                background-color: #1e1e1e;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 8px;
+                padding: 24px;
+                min-width: 400px;
+                max-width: 500px;
+            `;
+
+            // Dialog title
+            const dialogTitle = document.createElement('h3');
+            dialogTitle.textContent = 'Uncommitted Changes';
+            dialogTitle.style.cssText = 'margin: 0 0 16px 0; font-size: 18px; color: #f48771;';
+
+            // Warning text
+            const dialogText = document.createElement('p');
+            dialogText.innerHTML = `
+                You have <strong>${changeInfo.fileCount} uncommitted change${changeInfo.fileCount !== 1 ? 's' : ''}</strong>
+                (${changeInfo.stagedCount} staged, ${changeInfo.modifiedCount} modified).<br><br>
+                Switching to <strong>${targetBranch}</strong> will affect these changes.<br><br>
+                What would you like to do?
+            `;
+            dialogText.style.cssText = 'margin: 0 0 20px 0; color: rgba(255, 255, 255, 0.8); line-height: 1.6;';
+
+            // Button container
+            const buttonRow = document.createElement('div');
+            buttonRow.style.cssText = 'display: flex; flex-direction: column; gap: 10px;';
+
+            // Helper function to close dialog and resolve
+            const closeAndResolve = (choice) => {
+                logger.debug('gitBranch', 'User chose:', choice);
+                dialog.remove();
+                resolve(choice);
+            };
+
+            // Stash & Checkout button (primary action)
+            const stashBtn = document.createElement('button');
+            stashBtn.className = 'git-btn git-btn-primary';
+            stashBtn.textContent = '📦 Stash & Checkout';
+            stashBtn.title = 'Save your changes to stash and switch branches';
+            stashBtn.style.cssText = `
+                padding: 10px 16px;
+                background-color: #0e639c;
+                border: none;
+                border-radius: 4px;
+                color: #ffffff;
+                font-size: 14px;
+                cursor: pointer;
+                transition: background-color 0.2s;
+            `;
+            stashBtn.addEventListener('mouseover', () => {
+                stashBtn.style.backgroundColor = '#1177bb';
+            });
+            stashBtn.addEventListener('mouseout', () => {
+                stashBtn.style.backgroundColor = '#0e639c';
+            });
+            stashBtn.addEventListener('click', () => closeAndResolve('stash'));
+
+            // Force Checkout button (destructive action)
+            const forceBtn = document.createElement('button');
+            forceBtn.className = 'git-btn';
+            forceBtn.textContent = '⚠️ Force Checkout (Discard Changes)';
+            forceBtn.title = 'Discard all uncommitted changes and switch branches';
+            forceBtn.style.cssText = `
+                padding: 10px 16px;
+                background-color: #c72e0f;
+                border: none;
+                border-radius: 4px;
+                color: #ffffff;
+                font-size: 14px;
+                cursor: pointer;
+                transition: background-color 0.2s;
+            `;
+            forceBtn.addEventListener('mouseover', () => {
+                forceBtn.style.backgroundColor = '#d84315';
+            });
+            forceBtn.addEventListener('mouseout', () => {
+                forceBtn.style.backgroundColor = '#c72e0f';
+            });
+            forceBtn.addEventListener('click', () => closeAndResolve('force'));
+
+            // Cancel button
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'git-btn';
+            cancelBtn.textContent = 'Cancel';
+            cancelBtn.title = 'Stay on current branch';
+            cancelBtn.style.cssText = `
+                padding: 10px 16px;
+                background-color: #3c3c3c;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 4px;
+                color: #ffffff;
+                font-size: 14px;
+                cursor: pointer;
+                transition: background-color 0.2s;
+            `;
+            cancelBtn.addEventListener('mouseover', () => {
+                cancelBtn.style.backgroundColor = '#4a4a4a';
+            });
+            cancelBtn.addEventListener('mouseout', () => {
+                cancelBtn.style.backgroundColor = '#3c3c3c';
+            });
+            cancelBtn.addEventListener('click', () => closeAndResolve('cancel'));
+
+            // Add buttons to container
+            buttonRow.appendChild(stashBtn);
+            buttonRow.appendChild(forceBtn);
+            buttonRow.appendChild(cancelBtn);
+
+            // Assemble dialog
+            dialogContent.appendChild(dialogTitle);
+            dialogContent.appendChild(dialogText);
+            dialogContent.appendChild(buttonRow);
+            dialog.appendChild(dialogContent);
+
+            // Close on backdrop click
+            dialog.addEventListener('click', (e) => {
+                if (e.target === dialog) {
+                    logger.debug('gitBranch', 'Dialog closed by backdrop click');
+                    closeAndResolve('cancel');
+                }
+            });
+
+            // Add to DOM
+            document.body.appendChild(dialog);
+
+            logger.info('gitBranch', 'Uncommitted changes dialog displayed');
+        });
+    }
+
+    /**
      * Switch to a different branch
+     *
+     * This method checks for uncommitted changes before switching branches.
+     * If uncommitted changes exist, it shows a dialog asking the user what to do.
+     * The user can choose to stash changes, force checkout, or cancel the operation.
      */
     async switchBranch(branchName) {
         if (!branchName || branchName === this.currentBranch) return;
@@ -1340,25 +1719,95 @@ class GitPanel {
         const { gitService, gitStore } = getGitServices();
         if (!gitService || !gitStore) return;
 
+        logger.info('gitBranch', 'Initiating branch switch', {
+            from: this.currentBranch,
+            to: branchName
+        });
+
+        // Check for uncommitted changes
+        const changeInfo = this.hasUncommittedChanges();
+        let userChoice = null;
+
+        // If there are uncommitted changes, show warning dialog
+        if (changeInfo.hasChanges) {
+            logger.warn('gitBranch', 'Uncommitted changes detected during branch switch', {
+                fileCount: changeInfo.fileCount,
+                stagedCount: changeInfo.stagedCount,
+                modifiedCount: changeInfo.modifiedCount
+            });
+
+            // Show dialog and get user's choice
+            userChoice = await this.showUncommittedChangesDialog(changeInfo, branchName);
+
+            logger.debug('gitBranch', 'User chose branch switch option', { choice: userChoice });
+
+            // Handle user's choice
+            if (userChoice === 'cancel') {
+                logger.info('gitBranch', 'Branch switch cancelled by user');
+                // Revert dropdown selection
+                this.branchSelect.value = this.currentBranch;
+                return;
+            }
+
+            if (userChoice === 'stash') {
+                // Stash changes before switching
+                logger.info('gitBranch', 'Stashing changes before branch switch');
+
+                const stashSuccess = await gitService.stashChanges(`auto-stash-before-${branchName}`);
+
+                if (!stashSuccess) {
+                    logger.error('gitBranch', 'Failed to stash changes, aborting branch switch');
+                    this.showError('Failed to stash changes. Branch switch cancelled.');
+                    this.branchSelect.value = this.currentBranch;
+                    return;
+                }
+
+                logger.info('gitBranch', 'Changes stashed successfully, proceeding with checkout');
+            } else if (userChoice === 'force') {
+                // User chose to force checkout (discard changes)
+                logger.warn('gitBranch', 'Force checkout selected, changes will be discarded');
+            }
+        }
+
         try {
-            console.log('[GitPanel] Switching to branch:', branchName);
             const repoPath = gitStore.getCurrentRepository();
-            if (!repoPath) return;
+            if (!repoPath) {
+                logger.error('gitBranch', 'No repository path available');
+                return;
+            }
 
             const client = new GitClient(repoPath);
 
-            await client.execute(['checkout', branchName]);
+            // Execute checkout (with --force if user chose force option)
+            const checkoutArgs = userChoice === 'force'
+                ? ['checkout', '--force', branchName]
+                : ['checkout', branchName];
+
+            await client.execute(checkoutArgs);
 
             this.currentBranch = branchName;
-            console.log('[GitPanel] Switched to branch:', branchName);
+
+            logger.info('gitBranch', 'Branch switched successfully', {
+                newBranch: branchName
+            });
 
             // Refresh the panel
-            this.refreshStatus();
-            this.loadBranches();
+            await this.refreshStatus();
+            await this.loadBranches();
+            await this.loadCommitHistory();
+
             eventBus.emit('git:branch-changed', { branch: branchName });
+
+            this.showSuccess(`Switched to branch: ${branchName}`);
+
         } catch (error) {
-            console.error('[GitPanel] Error switching branch:', error);
-            alert(`Failed to switch branch: ${error.message}`);
+            logger.error('gitBranch', 'Branch switch failed', {
+                branch: branchName,
+                error: error.message
+            });
+
+            this.showError(`Failed to switch branch: ${error.message}`);
+
             // Revert selection
             this.branchSelect.value = this.currentBranch;
         }
@@ -1788,12 +2237,27 @@ class GitPanel {
             // Use Git client to get log
             const client = new GitClient(repoPath);
 
-            const logOutput = await client.execute([
-                'log',
-                `--max-count=${limit}`,
-                '--format=%H|%an|%ae|%ad|%s',
-                '--date=iso'
-            ]);
+            let logOutput;
+            try {
+                logOutput = await client.execute([
+                    'log',
+                    `--max-count=${limit}`,
+                    '--format=%H|%an|%ae|%ad|%s',
+                    '--date=iso'
+                ]);
+            } catch (error) {
+                // Handle empty repository gracefully (exit code 128)
+                if (error.message && error.message.includes('does not have any commits yet')) {
+                    console.log('[GitPanel] Repository has no commits yet');
+                    this.commits = [];
+                    this.renderCommitHistory();
+                    if (this.historyBadge) {
+                        this.historyBadge.textContent = '0';
+                    }
+                    return;
+                }
+                throw error;
+            }
 
             // Parse commits
             const commits = logOutput.split('\n')
@@ -1812,10 +2276,9 @@ class GitPanel {
             this.commits = commits;
             this.renderCommitHistory();
 
-            // Update count in header
-            const countSpan = this.panel.querySelector('.git-history-section .git-section-count');
-            if (countSpan) {
-                countSpan.textContent = commits.length;
+            // Update count in badge
+            if (this.historyBadge) {
+                this.historyBadge.textContent = commits.length;
             }
 
             console.log('[GitPanel] Loaded', commits.length, 'commits');
@@ -1828,6 +2291,8 @@ class GitPanel {
      * Render commit history
      */
     renderCommitHistory() {
+        if (!this.commitHistoryList) return;
+
         this.commitHistoryList.innerHTML = '';
 
         if (this.commits.length === 0) {

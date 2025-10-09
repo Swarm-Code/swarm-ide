@@ -7,6 +7,7 @@
 
 const eventBus = require('../modules/EventBus');
 const workspaceManager = require('../services/WorkspaceManager');
+const logger = require('../utils/Logger');
 
 class WorkspacePanel {
     constructor() {
@@ -24,7 +25,7 @@ class WorkspacePanel {
     init() {
         this.createPanelElement();
         this.setupEventListeners();
-        console.log('[WorkspacePanel] Initialized');
+        logger.debug('workspaceLoad', 'Initialized');
     }
 
     /**
@@ -193,7 +194,7 @@ class WorkspacePanel {
      * Switch to a workspace
      */
     switchWorkspace(workspaceId) {
-        console.log('[WorkspacePanel] Switching to workspace:', workspaceId);
+        logger.debug('workspaceLoad', 'Switching to workspace:', workspaceId);
 
         const success = this.workspaceManager.setActiveWorkspace(workspaceId);
 
@@ -207,9 +208,9 @@ class WorkspacePanel {
             // Close panel after switching
             this.close();
 
-            console.log('[WorkspacePanel] Workspace switched successfully');
+            logger.debug('workspaceLoad', 'Workspace switched successfully');
         } else {
-            console.error('[WorkspacePanel] Failed to switch workspace');
+            logger.error('workspaceLoad', 'Failed to switch workspace');
         }
     }
 
@@ -299,7 +300,7 @@ class WorkspacePanel {
 
             // Create workspace
             const workspace = this.workspaceManager.createWorkspace(name, description, template);
-            console.log('[WorkspacePanel] Created workspace:', workspace.name);
+            logger.debug('workspaceLoad', 'Created workspace:', workspace.name);
 
             // Close dialog
             overlay.remove();
@@ -345,11 +346,11 @@ class WorkspacePanel {
         const confirmed = confirm(`Delete workspace "${workspace.name}"?\n\nThis cannot be undone.`);
 
         if (confirmed) {
-            console.log('[WorkspacePanel] Deleting workspace:', workspace.name);
+            logger.debug('workspaceLoad', 'Deleting workspace:', workspace.name);
             const success = this.workspaceManager.deleteWorkspace(workspace.id);
 
             if (success) {
-                console.log('[WorkspacePanel] Workspace deleted successfully');
+                logger.debug('workspaceLoad', 'Workspace deleted successfully');
             } else {
                 alert('Cannot delete workspace. At least one workspace must exist.');
             }
@@ -374,7 +375,7 @@ class WorkspacePanel {
         this.panel.classList.add('open');
         this.isOpen = true;
         this.renderWorkspaceList();
-        console.log('[WorkspacePanel] Opened');
+        logger.debug('workspaceLoad', 'Opened');
     }
 
     /**
@@ -383,7 +384,7 @@ class WorkspacePanel {
     close() {
         this.panel.classList.remove('open');
         this.isOpen = false;
-        console.log('[WorkspacePanel] Closed');
+        logger.debug('workspaceLoad', 'Closed');
     }
 
     /**

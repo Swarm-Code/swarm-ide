@@ -13,6 +13,7 @@
  */
 
 const eventBus = require('../modules/EventBus');
+const logger = require('../utils/Logger');
 const stateManager = require('../modules/StateManager');
 const fileTypes = require('../utils/FileTypes');
 const lspClient = require('../services/LSPClient');
@@ -40,7 +41,7 @@ function getGitServices() {
             gitBlameService = new GitBlameService(gitService);
             gitDiffService = new GitDiffService(gitService);
         } catch (error) {
-            console.warn('[TextEditor] Git services not available:', error.message);
+            logger.warn('editorChange', 'Git services not available:', error.message);
         }
     }
     return { gitBlameService, gitDiffService, gitStore };
@@ -48,12 +49,12 @@ function getGitServices() {
 
 class TextEditor {
     constructor(container, content, filePath, options = {}) {
-        console.log('[TextEditor] ========== CONSTRUCTOR ==========');
-        console.log('[TextEditor] container:', container);
-        console.log('[TextEditor] container dataset:', container.dataset);
-        console.log('[TextEditor] filePath:', filePath);
-        console.log('[TextEditor] content length:', content.length);
-        console.log('[TextEditor] options:', options);
+        logger.debug('editorInit', '========== CONSTRUCTOR ==========');
+        logger.debug('editorInit', 'container:', container);
+        logger.debug('editorInit', 'container dataset:', container.dataset);
+        logger.debug('editorInit', 'filePath:', filePath);
+        logger.debug('editorInit', 'content length:', content.length);
+        logger.debug('editorInit', 'options:', options);
 
         this.container = container;
         this.content = content;
@@ -78,9 +79,9 @@ class TextEditor {
         // Start tracking this file with hash-based modification detection
         fileStateTracker.trackFile(filePath, content);
 
-        console.log('[TextEditor] About to call init()');
+        logger.debug('editorInit', 'About to call init()');
         this.init();
-        console.log('[TextEditor] ========================================');
+        logger.debug('editorInit', '========================================');
     }
 
     /**
@@ -89,9 +90,9 @@ class TextEditor {
     async initLSP() {
         try {
             await lspClient.didOpen(this.filePath, this.content);
-            console.log('[TextEditor] LSP initialized for:', this.filePath);
+            logger.debug('lspClient', 'LSP initialized for:', this.filePath);
         } catch (error) {
-            console.error('[TextEditor] LSP init error:', error);
+            logger.error('editorChange', 'LSP init error:', error);
         }
     }
 
@@ -99,14 +100,14 @@ class TextEditor {
      * Initialize the editor
      */
     async init() {
-        console.log('[TextEditor] init() START');
+        logger.debug('editorInit', 'init() START');
 
         // Wrap render with performance measurement
         performanceMonitor.measure('TextEditor.render', () => {
             this.render();
         }, { filePath: this.filePath, contentLength: this.content.length });
 
-        console.log('[TextEditor] render() DONE');
+        logger.debug('editorInit', 'render() DONE');
 
         // Start mouse tracking with hover callback
         this.mouseTracker = new MouseTracker(this.editor, (pos, token, event) => {
@@ -115,25 +116,25 @@ class TextEditor {
         this.mouseTracker.start();
 
         this.setupEventListeners();
-        console.log('[TextEditor] setupEventListeners() DONE');
-        console.log('[TextEditor] About to call setupLSPFeatures()...');
+        logger.debug('editorInit', 'setupEventListeners() DONE');
+        logger.debug('editorInit', 'About to call setupLSPFeatures()...');
         try {
             this.setupLSPFeatures();
-            console.log('[TextEditor] setupLSPFeatures() DONE');
+            logger.debug('editorInit', 'setupLSPFeatures() DONE');
         } catch (error) {
-            console.error('[TextEditor] setupLSPFeatures() ERROR:', error);
+            logger.error('editorChange', 'setupLSPFeatures() ERROR:', error);
         }
-        console.log('[TextEditor] About to call initLSP()...');
+        logger.debug('editorInit', 'About to call initLSP()...');
         await this.initLSP();
-        console.log('[TextEditor] init() COMPLETE');
+        logger.debug('editorInit', 'init() COMPLETE');
 
         // Initialize Git integration
-        console.log('[TextEditor] About to call initGitIntegration()...');
+        logger.debug('editorInit', 'About to call initGitIntegration()...');
         try {
             await this.initGitIntegration();
-            console.log('[TextEditor] initGitIntegration() DONE');
+            logger.debug('editorInit', 'initGitIntegration() DONE');
         } catch (error) {
-            console.error('[TextEditor] initGitIntegration() ERROR:', error);
+            logger.error('editorChange', 'initGitIntegration() ERROR:', error);
         }
 
         // Update breadcrumb with initial cursor position
@@ -146,23 +147,23 @@ class TextEditor {
      * Render the editor
      */
     render() {
-        console.log('[TextEditor] ========== RENDER ==========');
-        console.log('[TextEditor] container:', this.container);
-        console.log('[TextEditor] container dataset:', this.container.dataset);
-        console.log('[TextEditor] filePath:', this.filePath);
+        logger.debug('editorInit', '========== RENDER ==========');
+        logger.debug('editorInit', 'container:', this.container);
+        logger.debug('editorInit', 'container dataset:', this.container.dataset);
+        logger.debug('editorInit', 'filePath:', this.filePath);
 
         this.container.innerHTML = '<div class="text-editor"></div>';
         const editorContainer = this.container.querySelector('.text-editor');
-        console.log('[TextEditor] editorContainer:', editorContainer);
+        logger.debug('editorInit', 'editorContainer:', editorContainer);
 
         // Determine CodeMirror mode from file extension
         const mode = this.getCodeMirrorMode();
-        console.log('[TextEditor] CodeMirror mode:', mode);
+        logger.debug('editorInit', 'CodeMirror mode:', mode);
 
         // Create CodeMirror editor (using global CodeMirror loaded via script tag)
-        console.log('[TextEditor] Creating CodeMirror instance...');
-        console.log('[TextEditor] Content size:', this.content.length, 'bytes');
-        console.log('[TextEditor] Line count:', this.content.split('\n').length);
+        logger.debug('editorInit', 'Creating CodeMirror instance...');
+        logger.debug('editorInit', 'Content size:', this.content.length, 'bytes');
+        logger.debug('editorInit', 'Line count:', this.content.split('\n').length);
 
         const renderStart = performance.now();
 
@@ -183,8 +184,8 @@ class TextEditor {
 
         const isLargeFile = lineCount > 3000; // For other optimizations
 
-        console.log('[TextEditor] Line count:', lineCount);
-        console.log('[TextEditor] Using adaptive viewportMargin:', viewportMargin);
+        logger.debug('editorInit', 'Line count:', lineCount);
+        logger.debug('editorInit', 'Using adaptive viewportMargin:', viewportMargin);
 
         this.editor = window.CodeMirror(editorContainer, {
             value: this.content,
@@ -203,14 +204,14 @@ class TextEditor {
         });
         const renderDuration = performance.now() - renderStart;
 
-        console.log('[TextEditor] CodeMirror constructor took:', renderDuration.toFixed(2), 'ms');
+        logger.debug('editorInit', 'CodeMirror constructor took:', renderDuration.toFixed(2), 'ms');
 
         // Track CodeMirror render performance
         performanceMonitor.trackCodeMirrorRender(this.filePath, this.content.length, renderDuration);
 
-        console.log('[TextEditor] CodeMirror instance created:', this.editor);
-        console.log('[TextEditor] CodeMirror DOM element:', this.editor.getWrapperElement());
-        console.log('[TextEditor] CodeMirror parent element:', this.editor.getWrapperElement().parentElement);
+        logger.debug('editorInit', 'CodeMirror instance created:', this.editor);
+        logger.debug('editorInit', 'CodeMirror DOM element:', this.editor.getWrapperElement());
+        logger.debug('editorInit', 'CodeMirror parent element:', this.editor.getWrapperElement().parentElement);
 
         // Add URL highlighting overlay
         this.setupURLHighlighting();
@@ -223,18 +224,18 @@ class TextEditor {
         setTimeout(() => {
             if (this.editor) {
                 const refreshStart = performance.now();
-                console.log('[TextEditor] Calling editor.refresh()...');
+                logger.debug('editorInit', 'Calling editor.refresh()...');
                 this.editor.refresh();
                 const refreshDuration = performance.now() - refreshStart;
-                console.log('[TextEditor] editor.refresh() took:', refreshDuration.toFixed(2), 'ms');
+                logger.debug('editorInit', 'editor.refresh() took:', refreshDuration.toFixed(2), 'ms');
 
                 if (refreshDuration > 100) {
-                    console.warn('[TextEditor] ⚠️ Slow refresh detected for:', this.filePath);
+                    logger.warn('editorChange', '⚠️ Slow refresh detected for:', this.filePath);
                 }
             }
         }, 10);
 
-        console.log('[TextEditor] ========================================');
+        logger.debug('editorInit', '========================================');
     }
 
     /**
@@ -296,7 +297,7 @@ class TextEditor {
 
                 if (pos.ch >= start && pos.ch <= end) {
                     const url = match[0];
-                    console.log('[TextEditor] Opening URL:', url);
+                    logger.debug('editorChange', 'Opening URL:', url);
 
                     // Open URL in system browser
                     if (window.electronAPI && window.electronAPI.openExternal) {
@@ -383,7 +384,7 @@ class TextEditor {
             if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('[TextEditor] Prevented default file drop');
+                logger.debug('editorChange', 'Prevented default file drop');
             }
         });
 
@@ -403,20 +404,20 @@ class TextEditor {
      * Setup context menu
      */
     setupContextMenu() {
-        console.log('[TextEditor] Setting up context menu for:', this.filePath);
+        logger.debug('editorInit', 'Setting up context menu for:', this.filePath);
         this.contextMenu = new ContextMenu();
 
         const editorWrapper = this.editor.getWrapperElement();
         editorWrapper.addEventListener('contextmenu', (e) => {
-            console.log('[TextEditor] Context menu triggered at:', e.clientX, e.clientY);
+            logger.debug('editorChange', 'Context menu triggered at:', e.clientX, e.clientY);
             e.preventDefault();
 
             const selection = this.editor.getSelection();
             const hasSelection = selection.length > 0;
 
-            console.log('[TextEditor] Has selection:', hasSelection);
+            logger.debug('editorChange', 'Has selection:', hasSelection);
             const actions = this.getContextMenuActions(hasSelection);
-            console.log('[TextEditor] Context menu actions:', actions.length);
+            logger.debug('editorChange', 'Context menu actions:', actions.length);
             this.contextMenu.show(e.clientX, e.clientY, actions);
         });
     }
@@ -475,14 +476,14 @@ class TextEditor {
     }
 
     async goToDefinition() {
-        console.log('[TextEditor] Go to Definition called');
+        logger.debug('lspClient', 'Go to Definition called');
         const cursor = this.editor.getCursor();
-        console.log('[TextEditor] Cursor position:', cursor.line, cursor.ch);
+        logger.debug('lspClient', 'Cursor position:', cursor.line, cursor.ch);
         try {
             const definition = await lspClient.definition(this.filePath, cursor.line, cursor.ch);
-            console.log('[TextEditor] Definition result:', definition);
+            logger.debug('lspClient', 'Definition result:', definition);
             if (definition) {
-                console.log('[TextEditor] Definition found:', definition);
+                logger.debug('lspClient', 'Definition found:', definition);
 
                 // Handle definition result (can be Location or Location[])
                 const location = Array.isArray(definition) ? definition[0] : definition;
@@ -506,38 +507,38 @@ class TextEditor {
                     }
                 }
             } else {
-                console.log('[TextEditor] No definition found');
+                logger.debug('lspClient', 'No definition found');
             }
         } catch (err) {
-            console.error('[TextEditor] Go to Definition error:', err);
+            logger.error('editorChange', 'Go to Definition error:', err);
         }
     }
 
     async findAllReferences() {
-        console.log('[TextEditor] Find All References called');
+        logger.debug('lspClient', 'Find All References called');
         const cursor = this.editor.getCursor();
-        console.log('[TextEditor] Cursor position:', cursor.line, cursor.ch);
+        logger.debug('lspClient', 'Cursor position:', cursor.line, cursor.ch);
         try {
             const references = await lspClient.references(this.filePath, cursor.line, cursor.ch, true);
-            console.log('[TextEditor] References result:', references);
+            logger.debug('lspClient', 'References result:', references);
             if (references && references.length > 0) {
-                console.log(`[TextEditor] Found ${references.length} references:`, references);
+                logger.debug('lspClient', `Found ${references.length} references:`, references);
 
                 // Create references panel or output to console
                 references.forEach((ref, index) => {
                     const filePath = ref.uri.replace('file://', '');
                     const line = ref.range.start.line + 1; // Display 1-indexed
                     const char = ref.range.start.character + 1;
-                    console.log(`  ${index + 1}. ${filePath}:${line}:${char}`);
+                    logger.debug('lspClient', `  ${index + 1}. ${filePath}:${line}:${char}`);
                 });
 
                 // Emit event for references panel (can be implemented later)
                 eventBus.emit('editor:references-found', references);
             } else {
-                console.log('[TextEditor] No references found');
+                logger.debug('lspClient', 'No references found');
             }
         } catch (err) {
-            console.error('[TextEditor] Find References error:', err);
+            logger.error('editorChange', 'Find References error:', err);
         }
     }
 
@@ -548,11 +549,11 @@ class TextEditor {
      */
     goToLine(lineNumber, character = 0) {
         if (!this.editor) {
-            console.warn('[TextEditor] Cannot goToLine: editor not initialized');
+            logger.warn('editorChange', 'Cannot goToLine: editor not initialized');
             return;
         }
 
-        console.log('[TextEditor] Navigating to line:', lineNumber);
+        logger.debug('editorChange', 'Navigating to line:', lineNumber);
 
         // CodeMirror uses 0-based line numbers, but search results use 1-based
         // So we need to subtract 1 from the line number
@@ -588,23 +589,23 @@ class TextEditor {
     }
 
     async renameSymbol() {
-        console.log('[TextEditor] Rename Symbol called');
+        logger.debug('lspClient', 'Rename Symbol called');
         const cursor = this.editor.getCursor();
-        console.log('[TextEditor] Cursor position:', cursor.line, cursor.ch);
+        logger.debug('lspClient', 'Cursor position:', cursor.line, cursor.ch);
 
         // Prompt user for new name
         const newName = prompt('Enter new name for symbol:');
-        console.log('[TextEditor] New name entered:', newName);
+        logger.debug('lspClient', 'New name entered:', newName);
         if (!newName || newName.trim() === '') {
-            console.log('[TextEditor] Rename cancelled');
+            logger.debug('lspClient', 'Rename cancelled');
             return;
         }
 
         try {
             const workspaceEdit = await lspClient.rename(this.filePath, cursor.line, cursor.ch, newName);
-            console.log('[TextEditor] Rename workspace edit result:', workspaceEdit);
+            logger.debug('lspClient', 'Rename workspace edit result:', workspaceEdit);
             if (workspaceEdit && workspaceEdit.changes) {
-                console.log('[TextEditor] Rename workspace edit:', workspaceEdit);
+                logger.debug('lspClient', 'Rename workspace edit:', workspaceEdit);
 
                 // Apply changes to current file
                 const fileUri = `file://${this.filePath}`;
@@ -620,27 +621,27 @@ class TextEditor {
                         this.editor.replaceRange(edit.newText, from, to);
                     });
 
-                    console.log(`[TextEditor] Applied ${edits.length} rename edits`);
+                    logger.debug('lspClient', `Applied ${edits.length} rename edits`);
                 }
 
                 // Emit event for other files (can be implemented later)
                 eventBus.emit('editor:workspace-edit', workspaceEdit);
             } else {
-                console.log('[TextEditor] No rename edits returned');
+                logger.debug('lspClient', 'No rename edits returned');
             }
         } catch (err) {
-            console.error('[TextEditor] Rename Symbol error:', err);
+            logger.error('editorChange', 'Rename Symbol error:', err);
         }
     }
 
     async formatDocument() {
-        console.log('[TextEditor] Format Document called');
+        logger.debug('lspClient', 'Format Document called');
         try {
             const edits = await lspClient.formatting(this.filePath, 4, true);
-            console.log('[TextEditor] Formatting result:', edits);
+            logger.debug('lspClient', 'Formatting result:', edits);
 
             if (edits && edits.length > 0) {
-                console.log(`[TextEditor] Applying ${edits.length} formatting edits`);
+                logger.debug('lspClient', `Applying ${edits.length} formatting edits`);
 
                 // Apply edits in reverse order to maintain positions
                 edits.sort((a, b) => b.range.start.line - a.range.start.line);
@@ -651,17 +652,17 @@ class TextEditor {
                     this.editor.replaceRange(edit.newText, from, to);
                 });
 
-                console.log('[TextEditor] Document formatted successfully');
+                logger.debug('lspClient', 'Document formatted successfully');
             } else {
                 // Fallback to basic indentation if LSP formatting not available
-                console.log('[TextEditor] LSP formatting not available, using basic indentation');
+                logger.debug('lspClient', 'LSP formatting not available, using basic indentation');
                 const lineCount = this.editor.lineCount();
                 for (let i = 0; i < lineCount; i++) {
                     this.editor.indentLine(i, 'smart');
                 }
             }
         } catch (err) {
-            console.error('[TextEditor] Format Document error:', err);
+            logger.error('editorChange', 'Format Document error:', err);
             // Fallback to basic indentation on error
             const lineCount = this.editor.lineCount();
             for (let i = 0; i < lineCount; i++) {
@@ -690,7 +691,7 @@ class TextEditor {
             const text = await navigator.clipboard.readText();
             this.editor.replaceSelection(text);
         } catch (err) {
-            console.error('[TextEditor] Paste failed:', err);
+            logger.error('editorChange', 'Paste failed:', err);
         }
     }
 
@@ -698,10 +699,10 @@ class TextEditor {
         try {
             const result = await window.electronAPI.revealInFileManager(this.filePath);
             if (!result || !result.success) {
-                console.log('[TextEditor] Reveal in File Manager not implemented');
+                logger.debug('editorChange', 'Reveal in File Manager not implemented');
             }
         } catch (err) {
-            console.log('[TextEditor] Reveal in File Manager:', this.filePath);
+            logger.debug('editorChange', 'Reveal in File Manager:', this.filePath);
         }
     }
 
@@ -709,27 +710,27 @@ class TextEditor {
      * Setup LSP features (hover, autocomplete, etc.)
      */
     setupLSPFeatures() {
-        console.log('[TextEditor] *** setupLSPFeatures() CALLED ***');
-        console.log('[TextEditor] this.editor exists:', !!this.editor);
+        logger.debug('editorInit', '*** setupLSPFeatures() CALLED ***');
+        logger.debug('editorInit', 'this.editor exists:', !!this.editor);
 
         if (!this.editor) {
-            console.log('[TextEditor] EARLY RETURN: No editor!');
+            logger.debug('editorInit', 'EARLY RETURN: No editor!');
             return;
         }
 
         // Check if LSP is enabled
         const lspEnabled = settingsPanel.get('lspEnabled');
-        console.log('[TextEditor] LSP enabled from settings:', lspEnabled);
+        logger.debug('lspClient', 'LSP enabled from settings:', lspEnabled);
 
         if (!lspEnabled) {
-            console.log('[TextEditor] EARLY RETURN: LSP disabled in settings');
+            logger.debug('editorInit', 'EARLY RETURN: LSP disabled in settings');
             return;
         }
 
-        console.log('[TextEditor] ✓ Setting up LSP features - hover, completion, etc.');
+        logger.debug('editorInit', '✓ Setting up LSP features - hover, completion, etc.');
 
         // Setup hover on mousemove
-        console.log('[TextEditor] ✓ Attaching mousemove event for hover');
+        logger.debug('editorInit', '✓ Attaching mousemove event for hover');
         this.editor.on('mousemove', (cm, event) => {
             this.handleMouseMove(event);
         });
@@ -862,30 +863,30 @@ class TextEditor {
      * Handle hover from MouseTracker
      */
     handleHover(pos, token, event) {
-        console.log('[TextEditor] handleHover called for token:', token.string, 'type:', token.type);
+        logger.debug('hover', 'handleHover called for token:', token.string, 'type:', token.type);
 
         // Clear any existing tooltip first
         this.clearHoverTooltip();
 
         // Check if hover is enabled in settings
         if (!settingsPanel.get('hoverEnabled')) {
-            console.log('[TextEditor] Hover disabled in settings');
+            logger.debug('hover', 'Hover disabled in settings');
             return;
         }
 
         // Check if file type supports hover
         if (!this.shouldEnableHover()) {
-            console.log('[TextEditor] Hover not supported for this file type');
+            logger.debug('hover', 'Hover not supported for this file type');
             return;
         }
 
         // Check if token is hoverable
         if (!this.isTokenHoverable(token)) {
-            console.log('[TextEditor] Token not hoverable:', token.string, 'type:', token.type);
+            logger.debug('hover', 'Token not hoverable:', token.string, 'type:', token.type);
             return;
         }
 
-        console.log('[TextEditor] ✓ Token is hoverable, requesting LSP hover');
+        logger.debug('hover', '✓ Token is hoverable, requesting LSP hover');
         // Show hover tooltip
         this.showHoverTooltip(pos, event);
     }
@@ -935,12 +936,12 @@ class TextEditor {
 
     async showHoverTooltip(pos, event) {
         try {
-            console.log('[TextEditor] Requesting hover at line:', pos.line, 'ch:', pos.ch);
+            logger.debug('hover', 'Requesting hover at line:', pos.line, 'ch:', pos.ch);
             const hoverInfo = await lspClient.hover(this.filePath, pos.line, pos.ch);
-            console.log('[TextEditor] Hover response:', hoverInfo);
+            logger.debug('hover', 'Hover response:', hoverInfo);
 
             if (!hoverInfo || !hoverInfo.contents) {
-                console.log('[TextEditor] No hover content received');
+                logger.debug('hover', 'No hover content received');
                 return;
             }
 
@@ -955,7 +956,7 @@ class TextEditor {
             }
 
             if (!content || content.trim().length === 0) {
-                console.log('[TextEditor] Hover content is empty');
+                logger.debug('hover', 'Hover content is empty');
                 return;
             }
 
@@ -991,7 +992,7 @@ class TextEditor {
                         }
                     }
                 } catch (error) {
-                    console.error('[TextEditor] Failed to get blame for hover:', error);
+                    logger.error('editorChange', 'Failed to get blame for hover:', error);
                 }
             }
 
@@ -1026,9 +1027,9 @@ class TextEditor {
             // Make tooltip interactive (allows scrolling)
             this.setupTooltipInteraction();
 
-            console.log('[TextEditor] ✓ Hover tooltip displayed at', left, top);
+            logger.debug('hover', '✓ Hover tooltip displayed at', left, top);
         } catch (error) {
-            console.error('[TextEditor] Hover error:', error);
+            logger.error('editorChange', 'Hover error:', error);
         }
     }
 
@@ -1203,12 +1204,12 @@ class TextEditor {
      */
     async save() {
         if (!this.isDirty) {
-            console.log('[TextEditor] No changes to save');
+            logger.debug('editorChange', 'No changes to save');
             return;
         }
 
         try {
-            console.log('[TextEditor] Saving file:', this.filePath);
+            logger.debug('editorChange', 'Saving file:', this.filePath);
             const content = this.getContent();
             const result = await window.electronAPI.saveFile(this.filePath, content);
 
@@ -1219,7 +1220,7 @@ class TextEditor {
                 // Update baseline hash in file state tracker
                 fileStateTracker.updateBaseline(this.filePath, content);
 
-                console.log('[TextEditor] ✓ File saved successfully');
+                logger.debug('editorChange', '✓ File saved successfully');
                 eventBus.emit('file:saved', { path: this.filePath });
 
                 // Notify LSP
@@ -1228,11 +1229,11 @@ class TextEditor {
                 // Show brief save confirmation
                 this.showSaveNotification();
             } else {
-                console.error('[TextEditor] Save failed:', result.error);
+                logger.error('editorChange', 'Save failed:', result.error);
                 this.showErrorNotification('Save failed: ' + result.error);
             }
         } catch (error) {
-            console.error('[TextEditor] Error saving file:', error);
+            logger.error('editorChange', 'Error saving file:', error);
             this.showErrorNotification('Error saving file');
         }
     }
@@ -1437,12 +1438,12 @@ class TextEditor {
             try {
                 const { gitBlameService } = getGitServices();
                 if (gitBlameService) {
-                    console.log('[TextEditor] Loading blame data for:', this.filePath);
+                    logger.debug('editorChange', 'Loading blame data for:', this.filePath);
                     this.gitBlameData = await gitBlameService.getBlame(this.filePath);
                     this.renderBlameGutter();
                 }
             } catch (error) {
-                console.error('[TextEditor] Failed to load blame data:', error);
+                logger.error('editorChange', 'Failed to load blame data:', error);
                 this.gitBlameEnabled = false;
             }
         } else {
@@ -1509,7 +1510,7 @@ class TextEditor {
                 const range = changeType === 'added' ? changes.newRange : changes.oldRange;
 
                 if (range.length > 0) {
-                    console.log(`[TextEditor] 🔍 Applying char-level highlight: line ${lineNum}, start ${range.start}, length ${range.length}`);
+                    logger.debug('editorChange', `🔍 Applying char-level highlight: line ${lineNum}, start ${range.start}, length ${range.length}`);
 
                     const marker = this.editor.markText(
                         { line: lineNum, ch: range.start },
@@ -1523,7 +1524,7 @@ class TextEditor {
                 }
             }
         } catch (error) {
-            console.error('[TextEditor] Failed to apply char-level highlight:', error);
+            logger.error('editorChange', 'Failed to apply char-level highlight:', error);
         }
     }
 
@@ -1531,38 +1532,38 @@ class TextEditor {
      * Render Git diff decorations in gutter
      */
     async renderDiffGutter() {
-        console.log('═══════════════════════════════════════════════════');
-        console.log('[TextEditor] 🔍 DEBUG: renderDiffGutter() START');
-        console.log('[TextEditor] 🔍 DEBUG: this.editor exists?', !!this.editor);
-        console.log('[TextEditor] 🔍 DEBUG: this.gitDiffEnabled?', this.gitDiffEnabled);
-        console.log('[TextEditor] 🔍 DEBUG: this.filePath:', this.filePath);
+        logger.trace('diffRender', '═══════════════════════════════════════════════════');
+        logger.trace('diffRender', '🔍 DEBUG: renderDiffGutter() START');
+        logger.trace('diffRender', '🔍 DEBUG: this.editor exists?', !!this.editor);
+        logger.trace('diffRender', '🔍 DEBUG: this.gitDiffEnabled?', this.gitDiffEnabled);
+        logger.trace('diffRender', '🔍 DEBUG: this.filePath:', this.filePath);
 
         if (!this.editor || !this.gitDiffEnabled) {
-            console.log('[TextEditor] ❌ DEBUG: Exiting early - editor or gitDiffEnabled false');
+            logger.trace('diffRender', '❌ DEBUG: Exiting early - editor or gitDiffEnabled false');
             return;
         }
 
         try {
             const { gitDiffService } = getGitServices();
-            console.log('[TextEditor] 🔍 DEBUG: gitDiffService exists?', !!gitDiffService);
+            logger.trace('diffRender', '🔍 DEBUG: gitDiffService exists?', !!gitDiffService);
             if (!gitDiffService) {
-                console.log('[TextEditor] ❌ DEBUG: No gitDiffService available');
+                logger.trace('diffRender', '❌ DEBUG: No gitDiffService available');
                 return;
             }
 
-            console.log('[TextEditor] 📥 Loading diff data for:', this.filePath);
+            logger.trace('diffRender', '📥 Loading diff data for:', this.filePath);
             const diffArray = await gitDiffService.getDiff(this.filePath);
-            console.log('[TextEditor] 🔍 DEBUG: diffArray received:', diffArray);
-            console.log('[TextEditor] 🔍 DEBUG: diffArray length:', diffArray?.length);
+            logger.trace('diffRender', '🔍 DEBUG: diffArray received:', diffArray);
+            logger.trace('diffRender', '🔍 DEBUG: diffArray length:', diffArray?.length);
 
             if (!diffArray || diffArray.length === 0) {
-                console.log('[TextEditor] ⚠️  No diff data available');
+                logger.trace('diffRender', '⚠️  No diff data available');
                 return;
             }
 
             this.gitDiffData = diffArray[0];
-            console.log('[TextEditor] 🔍 DEBUG: gitDiffData:', this.gitDiffData);
-            console.log('[TextEditor] 🔍 DEBUG: hunks count:', this.gitDiffData.hunks?.length || 0);
+            logger.trace('diffRender', '🔍 DEBUG: gitDiffData:', this.gitDiffData);
+            logger.trace('diffRender', '🔍 DEBUG: hunks count:', this.gitDiffData.hunks?.length || 0);
 
             // Clear existing diff markers and line classes
             this.clearDiffGutter();
@@ -1572,9 +1573,9 @@ class TextEditor {
 
             // Render diff markers based on hunks with character-level highlighting
             for (const hunk of this.gitDiffData.hunks || []) {
-                console.log('[TextEditor] 🔍 DEBUG: Processing hunk:', hunk);
-                console.log('[TextEditor] 🔍 DEBUG: Hunk newStart:', hunk.newStart);
-                console.log('[TextEditor] 🔍 DEBUG: Hunk lines count:', hunk.lines.length);
+                logger.trace('diffRender', '🔍 DEBUG: Processing hunk:', hunk);
+                logger.trace('diffRender', '🔍 DEBUG: Hunk newStart:', hunk.newStart);
+                logger.trace('diffRender', '🔍 DEBUG: Hunk lines count:', hunk.lines.length);
 
                 let newLineNum = hunk.newStart - 1; // CodeMirror uses 0-indexed lines
                 const hunkLines = hunk.lines || [];
@@ -1583,11 +1584,11 @@ class TextEditor {
                 for (let i = 0; i < hunkLines.length; i++) {
                     const line = hunkLines[i];
                     if (!line) {
-                        console.log('[TextEditor] ⚠️  DEBUG: Skipping null/undefined line');
+                        logger.trace('diffRender', '⚠️  DEBUG: Skipping null/undefined line');
                         continue;
                     }
 
-                    console.log('[TextEditor] 🔍 DEBUG: Processing line type:', line.type, 'at lineNum:', newLineNum, 'index:', i);
+                    logger.trace('diffRender', '🔍 DEBUG: Processing line type:', line.type, 'at lineNum:', newLineNum, 'index:', i);
 
                     // line.type is 'added', 'removed', or 'unchanged'
                     if (line.type === 'added') {
@@ -1599,7 +1600,7 @@ class TextEditor {
                         marker.style.height = '100%';
                         marker.style.backgroundColor = '#28a745';
 
-                        console.log('[TextEditor] ➕ DEBUG: Adding ADDED marker at line', newLineNum);
+                        logger.trace('diffRender', '➕ DEBUG: Adding ADDED marker at line', newLineNum);
 
                         this.editor.setGutterMarker(newLineNum, 'git-diff-gutter', marker);
 
@@ -1621,7 +1622,7 @@ class TextEditor {
                                 // If >30% similar, consider it a modification
                                 if (similarity > 0.3) {
                                     matchedRemoved = prevLine;
-                                    console.log('[TextEditor] 🔍 Found matching removed line for char-level diff, similarity:', similarity);
+                                    logger.trace('diffRender', '🔍 Found matching removed line for char-level diff, similarity:', similarity);
                                     break;
                                 }
                             }
@@ -1646,8 +1647,8 @@ class TextEditor {
 
                     } else if (line.type === 'removed') {
                         // For removed lines, insert a line widget showing the deleted content
-                        console.log('[TextEditor] ➖ DEBUG: Adding DELETED line widget at line', newLineNum);
-                        console.log('[TextEditor] ➖ DEBUG: Deleted content:', line.content);
+                        logger.trace('diffRender', '➖ DEBUG: Adding DELETED line widget at line', newLineNum);
+                        logger.trace('diffRender', '➖ DEBUG: Deleted content:', line.content);
 
                         // Create widget element to display deleted line
                         const widget = document.createElement('div');
@@ -1702,34 +1703,34 @@ class TextEditor {
 
                     } else if (line.type === 'unchanged') {
                         // Context lines - don't mark them
-                        console.log('[TextEditor] ⚪ DEBUG: Skipping unchanged line', newLineNum);
+                        logger.trace('diffRender', '⚪ DEBUG: Skipping unchanged line', newLineNum);
                         newLineNum++;
                     }
                 }
             }
 
-            console.log('[TextEditor] ✅ DEBUG: RENDER COMPLETE!');
-            console.log('[TextEditor] 📊 DEBUG: Total markers added:', totalMarkersAdded);
-            console.log('[TextEditor] 📊 DEBUG: Total lines highlighted:', totalLinesHighlighted);
-            console.log('[TextEditor] 🔍 DEBUG: Checking if gutters exist in DOM...');
+            logger.trace('diffRender', '✅ DEBUG: RENDER COMPLETE!');
+            logger.trace('diffRender', '📊 DEBUG: Total markers added:', totalMarkersAdded);
+            logger.trace('diffRender', '📊 DEBUG: Total lines highlighted:', totalLinesHighlighted);
+            logger.trace('diffRender', '🔍 DEBUG: Checking if gutters exist in DOM...');
 
             // Debug: Check if gutter actually exists in DOM
             const gutterElement = this.editor.getWrapperElement().querySelector('.git-diff-gutter');
-            console.log('[TextEditor] 🔍 DEBUG: .git-diff-gutter element:', gutterElement);
+            logger.trace('diffRender', '🔍 DEBUG: .git-diff-gutter element:', gutterElement);
             if (gutterElement) {
                 const computedStyle = window.getComputedStyle(gutterElement);
-                console.log('[TextEditor] 🔍 DEBUG: Gutter width:', computedStyle.width);
-                console.log('[TextEditor] 🔍 DEBUG: Gutter display:', computedStyle.display);
-                console.log('[TextEditor] 🔍 DEBUG: Gutter visibility:', computedStyle.visibility);
-                console.log('[TextEditor] 🔍 DEBUG: Gutter backgroundColor:', computedStyle.backgroundColor);
+                logger.trace('diffRender', '🔍 DEBUG: Gutter width:', computedStyle.width);
+                logger.trace('diffRender', '🔍 DEBUG: Gutter display:', computedStyle.display);
+                logger.trace('diffRender', '🔍 DEBUG: Gutter visibility:', computedStyle.visibility);
+                logger.trace('diffRender', '🔍 DEBUG: Gutter backgroundColor:', computedStyle.backgroundColor);
             } else {
-                console.log('[TextEditor] ❌ DEBUG: .git-diff-gutter element NOT FOUND IN DOM!');
+                logger.trace('diffRender', '❌ DEBUG: .git-diff-gutter element NOT FOUND IN DOM!');
             }
 
-            console.log('═══════════════════════════════════════════════════');
+            logger.trace('diffRender', '═══════════════════════════════════════════════════');
         } catch (error) {
-            console.error('[TextEditor] ❌ DEBUG: ERROR in renderDiffGutter:', error);
-            console.error('[TextEditor] ❌ DEBUG: Error stack:', error.stack);
+            logger.error('editorChange', '❌ DEBUG: ERROR in renderDiffGutter:', error);
+            logger.error('editorChange', '❌ DEBUG: Error stack:', error.stack);
         }
     }
 
@@ -1793,12 +1794,12 @@ class TextEditor {
             // Check if we're in a Git repository
             const repoPath = await gitStore.getCurrentRepository();
             if (!repoPath) {
-                console.log('[TextEditor] Not in a Git repository');
+                logger.debug('editorInit', 'Not in a Git repository');
                 return;
             }
 
-            console.log('[TextEditor] Initializing Git integration for:', this.filePath);
-            console.log('[TextEditor] Repository:', repoPath);
+            logger.debug('editorInit', 'Initializing Git integration for:', this.filePath);
+            logger.debug('editorInit', 'Repository:', repoPath);
 
             // Render diff gutter by default
             await this.renderDiffGutter();
@@ -1808,9 +1809,9 @@ class TextEditor {
             eventBus.on('git:branch-switched', this.handleGitBranchSwitched.bind(this));
             eventBus.on('git:show-diff', this.handleShowDiff.bind(this));
 
-            console.log('[TextEditor] ✓ Git integration initialized successfully');
+            logger.debug('editorInit', '✓ Git integration initialized successfully');
         } catch (error) {
-            console.error('[TextEditor] Failed to initialize Git integration:', error);
+            logger.error('editorChange', 'Failed to initialize Git integration:', error);
         }
     }
 
@@ -1819,7 +1820,7 @@ class TextEditor {
      */
     async handleGitFileChanged(event) {
         if (event.filePath === this.filePath) {
-            console.log('[TextEditor] Git file changed, updating gutters');
+            logger.debug('editorChange', 'Git file changed, updating gutters');
             await this.updateGitGutters();
         }
     }
@@ -1828,7 +1829,7 @@ class TextEditor {
      * Handle Git branch switched event
      */
     async handleGitBranchSwitched() {
-        console.log('[TextEditor] Git branch switched, updating gutters');
+        logger.debug('editorChange', 'Git branch switched, updating gutters');
         await this.updateGitGutters();
     }
 
@@ -1837,11 +1838,11 @@ class TextEditor {
      */
     async handleShowDiff(event) {
         const { filePath } = event;
-        console.log('[TextEditor] Received git:show-diff event for:', filePath);
+        logger.debug('editorChange', 'Received git:show-diff event for:', filePath);
 
         try {
             // Emit file:open event to open the file in editor
-            console.log('[TextEditor] Emitting file:open event for:', filePath);
+            logger.debug('editorChange', 'Emitting file:open event for:', filePath);
             eventBus.emit('file:open', { path: filePath });
 
             // Wait a moment for the file to load
@@ -1849,11 +1850,11 @@ class TextEditor {
 
             // If this editor now has that file, show diff gutter
             if (this.filePath === filePath) {
-                console.log('[TextEditor] File loaded, rendering diff gutter');
+                logger.debug('editorChange', 'File loaded, rendering diff gutter');
                 await this.renderDiffGutter();
             }
         } catch (error) {
-            console.error('[TextEditor] Failed to show diff:', error);
+            logger.error('editorChange', 'Failed to show diff:', error);
         }
     }
 

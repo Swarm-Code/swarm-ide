@@ -13,6 +13,7 @@
  */
 
 const eventBus = require('../modules/EventBus');
+const logger = require('../utils/Logger');
 
 class Browser {
     constructor(container) {
@@ -30,7 +31,7 @@ class Browser {
      * Initialize the browser component
      */
     async init() {
-        console.log('[Browser] Initializing browser component');
+        logger.debug('browserNav', 'Initializing browser component');
         this.render();
         this.setupEventListeners();
 
@@ -109,7 +110,7 @@ class Browser {
             </div>
         `;
 
-        console.log('[Browser] UI rendered');
+        logger.debug('browserNav', 'UI rendered');
     }
 
     /**
@@ -161,14 +162,14 @@ class Browser {
         const logsBtn = this.container.querySelector('.browser-logs');
         logsBtn.addEventListener('click', () => this.toggleLogs());
 
-        console.log('[Browser] Event listeners attached');
+        logger.debug('browserNav', 'Event listeners attached');
     }
 
     /**
      * Create a new browser tab
      */
     async createTab(url = 'about:blank') {
-        console.log('[Browser] Creating new tab with URL:', url);
+        logger.debug('browserNav', 'Creating new tab with URL:', url);
 
         try {
             // Generate tab ID
@@ -179,7 +180,7 @@ class Browser {
             const result = await window.electronAPI.browserCreateView(tabId, bounds);
 
             if (result.success) {
-                console.log('[Browser] BrowserView created:', tabId);
+                logger.debug('browserNav', 'BrowserView created:', tabId);
 
                 // Store tab
                 this.tabs.push({
@@ -202,11 +203,11 @@ class Browser {
 
                 return tabId;
             } else {
-                console.error('[Browser] Failed to create view:', result.error);
+                logger.error('browserNav', 'Failed to create view:', result.error);
                 return null;
             }
         } catch (error) {
-            console.error('[Browser] Error creating tab:', error);
+            logger.error('browserNav', 'Error creating tab:', error);
             return null;
         }
     }
@@ -233,10 +234,10 @@ class Browser {
      * Navigate to URL
      */
     async navigateToUrl(url) {
-        console.log('[Browser] Navigating to:', url);
+        logger.debug('browserNav', 'Navigating to:', url);
 
         if (!this.activeTabId) {
-            console.error('[Browser] No active tab');
+            logger.error('browserNav', 'No active tab');
             return;
         }
 
@@ -250,12 +251,12 @@ class Browser {
                 const urlInput = this.container.querySelector('.browser-url-input');
                 if (urlInput) urlInput.value = url;
 
-                console.log('[Browser] Navigation successful');
+                logger.debug('browserNav', 'Navigation successful');
             } else {
-                console.error('[Browser] Navigation failed:', result.error);
+                logger.error('browserNav', 'Navigation failed:', result.error);
             }
         } catch (error) {
-            console.error('[Browser] Navigation error:', error);
+            logger.error('browserNav', 'Navigation error:', error);
         }
     }
 
@@ -263,14 +264,14 @@ class Browser {
      * Go back in history
      */
     async goBack() {
-        console.log('[Browser] Going back');
+        logger.debug('browserNav', 'Going back');
 
         if (!this.activeTabId) return;
 
         try {
             await window.electronAPI.browserGoBack(this.activeTabId);
         } catch (error) {
-            console.error('[Browser] Go back error:', error);
+            logger.error('browserNav', 'Go back error:', error);
         }
     }
 
@@ -278,14 +279,14 @@ class Browser {
      * Go forward in history
      */
     async goForward() {
-        console.log('[Browser] Going forward');
+        logger.debug('browserNav', 'Going forward');
 
         if (!this.activeTabId) return;
 
         try {
             await window.electronAPI.browserGoForward(this.activeTabId);
         } catch (error) {
-            console.error('[Browser] Go forward error:', error);
+            logger.error('browserNav', 'Go forward error:', error);
         }
     }
 
@@ -293,14 +294,14 @@ class Browser {
      * Reload current page
      */
     async reload() {
-        console.log('[Browser] Reloading page');
+        logger.debug('browserNav', 'Reloading page');
 
         if (!this.activeTabId) return;
 
         try {
             await window.electronAPI.browserReload(this.activeTabId);
         } catch (error) {
-            console.error('[Browser] Reload error:', error);
+            logger.error('browserNav', 'Reload error:', error);
         }
     }
 
@@ -308,14 +309,14 @@ class Browser {
      * Toggle DevTools
      */
     async toggleDevTools() {
-        console.log('[Browser] Toggling DevTools');
+        logger.debug('browserNav', 'Toggling DevTools');
 
         if (!this.activeTabId) return;
 
         try {
             await window.electronAPI.browserToggleDevTools(this.activeTabId);
         } catch (error) {
-            console.error('[Browser] Toggle DevTools error:', error);
+            logger.error('browserNav', 'Toggle DevTools error:', error);
         }
     }
 
@@ -323,7 +324,7 @@ class Browser {
      * Toggle logs panel
      */
     toggleLogs() {
-        console.log('[Browser] Toggling logs panel');
+        logger.debug('browserNav', 'Toggling logs panel');
 
         const panel = this.container.querySelector('.browser-logs-panel');
         if (panel) {
@@ -359,14 +360,14 @@ class Browser {
      * Destroy the browser
      */
     async destroy() {
-        console.log('[Browser] Destroying browser');
+        logger.debug('browserNav', 'Destroying browser');
 
         // Destroy all tabs
         for (const tab of this.tabs) {
             try {
                 await window.electronAPI.browserDestroyView(tab.id);
             } catch (error) {
-                console.error('[Browser] Error destroying tab:', error);
+                logger.error('browserNav', 'Error destroying tab:', error);
             }
         }
 

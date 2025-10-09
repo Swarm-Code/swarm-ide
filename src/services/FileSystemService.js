@@ -10,6 +10,7 @@
  *   await fileSystemService.readFile('/path/to/file.txt');
  */
 
+const logger = require('../utils/Logger');
 const eventBus = require('../modules/EventBus');
 
 class FileSystemService {
@@ -46,7 +47,7 @@ class FileSystemService {
 
             // Handle IPC response format {success, entries, error}
             if (!result.success) {
-                console.error('[FileSystemService] Failed to read directory:', result.error);
+                logger.error('fileSystem', 'Failed to read directory:', result.error);
                 return [];
             }
 
@@ -68,7 +69,7 @@ class FileSystemService {
 
             return sorted;
         } catch (error) {
-            console.error('[FileSystemService] Error reading directory:', error);
+            logger.error('fileSystem', 'Error reading directory:', error);
             eventBus.emit('fs:error', { operation: 'readDirectory', path: dirPath, error: error.message });
             return [];
         }
@@ -91,7 +92,7 @@ class FileSystemService {
 
             return result;
         } catch (error) {
-            console.error('[FileSystemService] Error reading file:', error);
+            logger.error('fileSystem', 'Error reading file:', error);
             eventBus.emit('fs:error', { operation: 'readFile', path: filePath, error: error.message });
             return { success: false, error: error.message };
         }
@@ -106,7 +107,7 @@ class FileSystemService {
             const homePath = await this.api.getHomeDir();
             return homePath;
         } catch (error) {
-            console.error('[FileSystemService] Error getting home directory:', error);
+            logger.error('fileSystem', 'Error getting home directory:', error);
             return null;
         }
     }
@@ -120,7 +121,7 @@ class FileSystemService {
             const result = await this.api.selectFolder();
             return result;
         } catch (error) {
-            console.error('[FileSystemService] Error selecting folder:', error);
+            logger.error('fileSystem', 'Error selecting folder:', error);
             return { canceled: true };
         }
     }
@@ -234,7 +235,7 @@ class FileSystemService {
             }
             return result;
         } catch (error) {
-            console.error('[FileSystemService] Error creating file:', error);
+            logger.error('fileSystem', 'Error creating file:', error);
             eventBus.emit('fs:error', { operation: 'createFile', path: filePath, error: error.message });
             return { success: false, error: error.message };
         }
@@ -256,7 +257,7 @@ class FileSystemService {
             }
             return result;
         } catch (error) {
-            console.error('[FileSystemService] Error creating folder:', error);
+            logger.error('fileSystem', 'Error creating folder:', error);
             eventBus.emit('fs:error', { operation: 'createFolder', path: folderPath, error: error.message });
             return { success: false, error: error.message };
         }
@@ -279,7 +280,7 @@ class FileSystemService {
             }
             return result;
         } catch (error) {
-            console.error('[FileSystemService] Error renaming item:', error);
+            logger.error('fileSystem', 'Error renaming item:', error);
             eventBus.emit('fs:error', { operation: 'renameItem', paths: [oldPath, newPath], error: error.message });
             return { success: false, error: error.message };
         }
@@ -301,7 +302,7 @@ class FileSystemService {
             }
             return result;
         } catch (error) {
-            console.error('[FileSystemService] Error deleting item:', error);
+            logger.error('fileSystem', 'Error deleting item:', error);
             eventBus.emit('fs:error', { operation: 'deleteItem', path: itemPath, error: error.message });
             return { success: false, error: error.message };
         }
@@ -317,7 +318,7 @@ class FileSystemService {
             const result = await this.api.checkPathExists(itemPath);
             return result.exists;
         } catch (error) {
-            console.error('[FileSystemService] Error checking path:', error);
+            logger.error('fileSystem', 'Error checking path:', error);
             return false;
         }
     }
@@ -339,7 +340,7 @@ class FileSystemService {
             }
             return result;
         } catch (error) {
-            console.error('[FileSystemService] Error copying item:', error);
+            logger.error('fileSystem', 'Error copying item:', error);
             eventBus.emit('fs:error', { operation: 'copyItemRecursive', paths: [sourcePath, destPath], error: error.message });
             return { success: false, error: error.message };
         }
@@ -355,7 +356,7 @@ class FileSystemService {
             const result = await this.api.revealInExplorer(itemPath);
             return result;
         } catch (error) {
-            console.error('[FileSystemService] Error revealing in explorer:', error);
+            logger.error('fileSystem', 'Error revealing in explorer:', error);
             return { success: false, error: error.message };
         }
     }
@@ -370,7 +371,7 @@ class FileSystemService {
             const result = await this.api.writeToClipboard(text);
             return result;
         } catch (error) {
-            console.error('[FileSystemService] Error writing to clipboard:', error);
+            logger.error('fileSystem', 'Error writing to clipboard:', error);
             return { success: false, error: error.message };
         }
     }
@@ -387,7 +388,7 @@ class FileSystemService {
             const result = await this.api.searchInFiles(dirPath, query, options);
             return result;
         } catch (error) {
-            console.error('[FileSystemService] Error searching in files:', error);
+            logger.error('fileSystem', 'Error searching in files:', error);
             return { success: false, error: error.message };
         }
     }
@@ -402,7 +403,7 @@ class FileSystemService {
      */
     async replaceInFiles(searchPattern, replaceText, filePaths, options = {}) {
         try {
-            console.log('[FileSystemService] Replace in files:', {
+            logger.debug('fileSystem', 'Replace in files:', {
                 pattern: searchPattern,
                 replacement: replaceText,
                 fileCount: filePaths.length,
@@ -422,7 +423,7 @@ class FileSystemService {
                 // Clear cache to ensure fresh reads
                 this.clearCache();
 
-                console.log('[FileSystemService] ✓ Replacement completed:', {
+                logger.debug('fileSystem', '✓ Replacement completed:', {
                     filesModified: result.filesModified,
                     totalMatches: result.totalMatches
                 });
@@ -435,7 +436,7 @@ class FileSystemService {
 
             return result;
         } catch (error) {
-            console.error('[FileSystemService] Error replacing in files:', error);
+            logger.error('fileSystem', 'Error replacing in files:', error);
             eventBus.emit('fs:error', {
                 operation: 'replaceInFiles',
                 error: error.message
@@ -453,12 +454,12 @@ class FileSystemService {
         try {
             const result = await this.api.watchDirectory(dirPath);
             if (result.success) {
-                console.log('[FileSystemService] Watching directory:', dirPath);
+                logger.debug('fileSystem', 'Watching directory:', dirPath);
                 eventBus.emit('fs:watch-started', { path: dirPath });
             }
             return result;
         } catch (error) {
-            console.error('[FileSystemService] Error watching directory:', error);
+            logger.error('fileSystem', 'Error watching directory:', error);
             return { success: false, error: error.message };
         }
     }
@@ -472,12 +473,12 @@ class FileSystemService {
         try {
             const result = await this.api.unwatchDirectory(dirPath);
             if (result.success) {
-                console.log('[FileSystemService] Stopped watching directory:', dirPath);
+                logger.debug('fileSystem', 'Stopped watching directory:', dirPath);
                 eventBus.emit('fs:watch-stopped', { path: dirPath });
             }
             return result;
         } catch (error) {
-            console.error('[FileSystemService] Error unwatching directory:', error);
+            logger.error('fileSystem', 'Error unwatching directory:', error);
             return { success: false, error: error.message };
         }
     }
@@ -488,16 +489,16 @@ class FileSystemService {
      */
     setupFileWatcherListener() {
         if (!this.api || !this.api.onFileWatcherEvent) {
-            console.warn('[FileSystemService] File watcher API not available');
+            logger.warn('fileSystem', 'File watcher API not available');
             return;
         }
 
         this.api.onFileWatcherEvent((rootPath, events) => {
-            console.log('[FileSystemService] File watcher events received:', events.length, 'changes in', rootPath);
+            logger.debug('fileSystem', 'File watcher events received:', events.length, 'changes in', rootPath);
             eventBus.emit('fs:file-changes', { rootPath, events });
         });
 
-        console.log('[FileSystemService] File watcher listener setup complete');
+        logger.debug('fileSystem', 'File watcher listener setup complete');
     }
 }
 

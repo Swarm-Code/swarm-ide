@@ -5,9 +5,12 @@
  * and wiring everything together through the EventBus.
  */
 
-console.log('[Renderer] ========================================');
-console.log('[Renderer] Starting to load renderer.js...');
-console.log('[Renderer] ========================================');
+// Import logger first (must be before any logger calls)
+const logger = require('./utils/Logger');
+
+logger.info('appInit', '========================================');
+logger.info('appInit', 'Starting to load renderer.js...');
+logger.info('appInit', '========================================');
 
 // Global error handlers
 window.addEventListener('error', async (event) => {
@@ -87,7 +90,7 @@ const performanceMonitor = require('./utils/PerformanceMonitor');
 
 // Make performance monitor globally available
 window.performanceMonitor = performanceMonitor;
-console.log('[Renderer] ✓ Performance monitoring enabled');
+logger.info('appInit', '✓ Performance monitoring enabled');
 
 // Import components
 const MenuBar = require('./components/MenuBar');
@@ -127,86 +130,86 @@ class Application {
      */
     async init() {
         try {
-            console.log('[App] ========================================');
-            console.log('[App] Initializing Swarm IDE...');
-            console.log('[App] window.electronAPI:', window.electronAPI);
+            logger.info('appInit', '========================================');
+            logger.info('appInit', 'Initializing Swarm IDE...');
+            logger.debug('appInit', 'window.electronAPI:', window.electronAPI);
 
             // 1. Load configuration
             config.load();
-            console.log('[App] ✓ Configuration loaded');
+            logger.info('appInit', '✓ Configuration loaded');
 
             // 2. Initialize FileSystemService with Electron API
             fileSystemService.initialize(window.electronAPI);
-            console.log('[App] ✓ FileSystemService initialized');
+            logger.info('appInit', '✓ FileSystemService initialized');
 
             // 2.5. Initialize SQLiteService with Electron API
             sqliteService.initialize(window.electronAPI);
-            console.log('[App] ✓ SQLiteService initialized');
+            logger.info('appInit', '✓ SQLiteService initialized');
 
             // 2.6. Initialize WorkspaceManager
             await this.workspaceManager.init();
-            console.log('[App] ✓ WorkspaceManager initialized');
+            logger.info('appInit', '✓ WorkspaceManager initialized');
 
             // 2.7. Initialize BrowserProfileManager
             await this.browserProfileManager.init();
-            console.log('[App] ✓ BrowserProfileManager initialized');
+            logger.info('appInit', '✓ BrowserProfileManager initialized');
 
             // 3. Initialize UIManager
             uiManager.initialize();
-            console.log('[App] ✓ UIManager initialized');
+            logger.info('appInit', '✓ UIManager initialized');
 
             // 3.5. Initialize Git services
             await this.initializeGitServices();
-            console.log('[App] ✓ Git services initialized');
+            logger.info('appInit', '✓ Git services initialized');
 
             // 4. Setup global event handlers
             this.setupGlobalHandlers();
-            console.log('[App] ✓ Global handlers setup');
+            logger.info('appInit', '✓ Global handlers setup');
 
             // 5. Initialize UI components
             this.initializeComponents();
-            console.log('[App] ✓ Components initialized');
+            logger.info('appInit', '✓ Components initialized');
 
             // 6. Apply theme
             const theme = config.get('theme', 'dark');
             uiManager.applyTheme(theme);
-            console.log('[App] ✓ Theme applied:', theme);
+            logger.info('appInit', '✓ Theme applied:', theme);
 
             // 7. Setup open folder button
             this.setupFolderButton();
-            console.log('[App] ✓ Folder button setup complete');
+            logger.info('appInit', '✓ Folder button setup complete');
 
             // 8. Setup explorer toolbar buttons
             this.setupExplorerToolbar();
-            console.log('[App] ✓ Explorer toolbar setup complete');
+            logger.info('appInit', '✓ Explorer toolbar setup complete');
 
             // 9. Setup icon sidebar
             this.setupIconSidebar();
-            console.log('[App] ✓ Icon sidebar setup complete');
+            logger.info('appInit', '✓ Icon sidebar setup complete');
 
             // 10. Check for initial folder from command line
             const initialFolder = await window.electronAPI.getInitialFolder();
             if (initialFolder) {
-                console.log('[App] Opening initial folder from command line:', initialFolder);
+                logger.info('appInit', 'Opening initial folder from command line:', initialFolder);
                 try {
                     const explorer = uiManager.getComponent('fileExplorer');
                     if (explorer) {
                         await explorer.openDirectory(initialFolder);
                     }
                 } catch (error) {
-                    console.error('[App] Error opening initial folder:', error);
+                    logger.error('appInit', 'Error opening initial folder:', error);
                 }
             }
 
             this.initialized = true;
-            console.log('[App] ========================================');
-            console.log('[App] ✓✓✓ Swarm IDE initialized successfully ✓✓✓');
-            console.log('[App] ========================================');
+            logger.info('appInit', '========================================');
+            logger.info('appInit', '✓✓✓ Swarm IDE initialized successfully ✓✓✓');
+            logger.info('appInit', '========================================');
 
             eventBus.emit('app:initialized');
         } catch (error) {
-            console.error('[App] ❌ Initialization error:', error);
-            console.error('[App] Stack trace:', error.stack);
+            logger.error('appInit', '❌ Initialization error:', error);
+            logger.error('appInit', 'Stack trace:', error.stack);
         }
     }
 
@@ -218,13 +221,13 @@ class Application {
             const gitService = require('./services/GitService').getInstance();
             const gitStore = require('./modules/GitStore').getInstance();
 
-            console.log('[App] Git services loaded');
+            logger.info('appInit', 'Git services loaded');
 
             // Git services will initialize themselves when needed
             // They use lazy initialization pattern
         } catch (error) {
-            console.warn('[App] Git services not available:', error.message);
-            console.warn('[App] Git functionality will be disabled');
+            logger.warn('appInit', 'Git services not available:', error.message);
+            logger.warn('appInit', 'Git functionality will be disabled');
         }
     }
 
@@ -272,15 +275,15 @@ class Application {
             const gitBlamePanel = new GitBlamePanel();
             uiManager.registerComponent('gitBlamePanel', gitBlamePanel);
 
-            console.log('[App] ✓ Git UI components registered');
+            logger.info('appInit', '✓ Git UI components registered');
         } catch (error) {
-            console.warn('[App] Failed to initialize Git UI components:', error.message);
+            logger.warn('appInit', 'Failed to initialize Git UI components:', error.message);
         }
 
         // Initialize PaneManager
         this.paneManager = new PaneManager(paneContainer);
         const rootPane = this.paneManager.init();
-        console.log('[App] ✓ PaneManager initialized with root pane:', rootPane.id);
+        logger.info('appInit', '✓ PaneManager initialized with root pane:', rootPane.id);
 
         // Show empty state in root pane
         const emptyState = document.createElement('div');
@@ -336,7 +339,7 @@ class Application {
         container.appendChild(header);
         container.appendChild(content);
 
-        console.log('[App] Created FileViewer content structure with instanceId:', instanceId);
+        logger.debug('appInit', 'Created FileViewer content structure with instanceId:', instanceId);
 
         return { container, header: pathSpan, viewer, instanceId };
     }
@@ -398,7 +401,7 @@ class Application {
 
         // Handle workspace activation - restore layout
         eventBus.on('workspace:activated', async (data) => {
-            console.log('[App] Workspace activated:', data.workspaceId);
+            logger.debug('appInit', 'Workspace activated:', data.workspaceId);
             await this.restoreWorkspaceLayout(data.workspace);
         });
 
@@ -408,7 +411,7 @@ class Application {
                 const gitStore = require('./modules/GitStore').getInstance();
                 await gitStore.refreshStatus();
             } catch (error) {
-                console.warn('[App] Git status refresh failed:', error.message);
+                logger.warn('appInit', 'Git status refresh failed:', error.message);
             }
         });
 
@@ -419,9 +422,9 @@ class Application {
 
                 // Initialize Git for the opened directory
                 await gitService.initialize(data.path);
-                console.log('[App] Git initialized for directory:', data.path);
+                logger.info('appInit', 'Git initialized for directory:', data.path);
             } catch (error) {
-                console.warn('[App] Git initialization failed:', error.message);
+                logger.warn('appInit', 'Git initialization failed:', error.message);
             }
         });
 
@@ -441,7 +444,7 @@ class Application {
 
         eventBus.on('git:view-commit', (data) => {
             // Open commit view in a new tab
-            console.log('[App] Opening commit view for:', data.commit.hash);
+            logger.debug('appInit', 'Opening commit view for:', data.commit.hash);
             this.openCommitView(data.commit, data.repositoryPath);
         });
 
@@ -479,24 +482,24 @@ class Application {
      * Setup welcome screen show/hide logic
      */
     setupWelcomeScreen(welcomeContainer, appContainer) {
-        console.log('[App] Setting up welcome screen show/hide logic');
-        console.log('[App] welcomeContainer:', welcomeContainer);
-        console.log('[App] appContainer:', appContainer);
+        logger.info('appInit', 'Setting up welcome screen show/hide logic');
+        logger.debug('appInit', 'welcomeContainer:', welcomeContainer);
+        logger.debug('appInit', 'appContainer:', appContainer);
 
         // Listen for folder open events
         eventBus.on('explorer:directory-opened', (data) => {
-            console.log('[App] ===== RECEIVED explorer:directory-opened EVENT =====');
-            console.log('[App] Event data:', data);
-            console.log('[App] Hiding welcome screen and showing IDE');
-            console.log('[App] welcomeContainer before:', welcomeContainer.style.display);
-            console.log('[App] appContainer before:', appContainer.style.display);
+            logger.debug('appInit', '===== RECEIVED explorer:directory-opened EVENT =====');
+            logger.debug('appInit', 'Event data:', data);
+            logger.debug('appInit', 'Hiding welcome screen and showing IDE');
+            logger.debug('appInit', 'welcomeContainer before:', welcomeContainer.style.display);
+            logger.debug('appInit', 'appContainer before:', appContainer.style.display);
 
             welcomeContainer.style.display = 'none';
             appContainer.style.display = 'block';
 
-            console.log('[App] welcomeContainer after:', welcomeContainer.style.display);
-            console.log('[App] appContainer after:', appContainer.style.display);
-            console.log('[App] ===== FINISHED SHOWING IDE =====');
+            logger.debug('appInit', 'welcomeContainer after:', welcomeContainer.style.display);
+            logger.debug('appInit', 'appContainer after:', appContainer.style.display);
+            logger.debug('appInit', '===== FINISHED SHOWING IDE =====');
         });
     }
 
@@ -504,41 +507,41 @@ class Application {
      * Setup folder selection button
      */
     setupFolderButton() {
-        console.log('[App] Setting up folder button...');
+        logger.info('appInit', 'Setting up folder button...');
         const folderButton = document.getElementById('select-folder');
-        console.log('[App] Folder button element:', folderButton);
+        logger.debug('appInit', 'Folder button element:', folderButton);
 
         if (folderButton) {
-            console.log('[App] Folder button found, adding click listener');
+            logger.debug('appInit', 'Folder button found, adding click listener');
             folderButton.addEventListener('click', async () => {
-                console.log('[App] Folder button clicked!');
+                logger.debug('appInit', 'Folder button clicked!');
                 try {
                     // Open folder selection dialog
-                    console.log('[App] Calling fileSystemService.selectFolder()...');
+                    logger.debug('appInit', 'Calling fileSystemService.selectFolder()...');
                     const result = await fileSystemService.selectFolder();
-                    console.log('[App] selectFolder result:', result);
+                    logger.debug('appInit', 'selectFolder result:', result);
 
                     if (!result.canceled && result.path) {
-                        console.log('[App] Folder selected:', result.path);
+                        logger.debug('appInit', 'Folder selected:', result.path);
                         const explorer = uiManager.getComponent('fileExplorer');
-                        console.log('[App] FileExplorer component:', explorer);
+                        logger.debug('appInit', 'FileExplorer component:', explorer);
 
                         if (explorer) {
-                            console.log('[App] Opening directory:', result.path);
+                            logger.debug('appInit', 'Opening directory:', result.path);
                             await explorer.openDirectory(result.path);
-                            console.log('[App] Directory opened successfully');
+                            logger.debug('appInit', 'Directory opened successfully');
                         } else {
-                            console.error('[App] FileExplorer component not found!');
+                            logger.error('appInit', 'FileExplorer component not found!');
                         }
                     } else {
-                        console.log('[App] Folder selection cancelled or no path returned');
+                        logger.debug('appInit', 'Folder selection cancelled or no path returned');
                     }
                 } catch (error) {
-                    console.error('[App] Error in folder button click handler:', error);
+                    logger.error('appInit', 'Error in folder button click handler:', error);
                 }
             });
         } else {
-            console.error('[App] Folder button element not found!');
+            logger.error('appInit', 'Folder button element not found!');
         }
     }
 
@@ -548,7 +551,7 @@ class Application {
     setupExplorerToolbar() {
         const explorer = uiManager.getComponent('fileExplorer');
         if (!explorer) {
-            console.error('[App] FileExplorer component not found for toolbar setup!');
+            logger.error('appInit', 'FileExplorer component not found for toolbar setup!');
             return;
         }
 
@@ -597,10 +600,10 @@ class Application {
      * Toggle browser panel
      */
     toggleBrowser() {
-        console.log('[App] Toggle browser called');
+        logger.debug('appInit', 'Toggle browser called');
 
         if (!this.browserInstance) {
-            console.log('[App] Creating browser...');
+            logger.debug('appInit', 'Creating browser...');
 
             // Create container (positioned after sidebar: 48px icon + 280px sidebar = 328px)
             this.browserContainer = document.createElement('div');
@@ -610,9 +613,9 @@ class Application {
 
             // Create browser instance
             this.browserInstance = new Browser(this.browserContainer);
-            console.log('[App] ✓ Browser created');
+            logger.info('appInit', '✓ Browser created');
         } else {
-            console.log('[App] Destroying browser...');
+            logger.debug('appInit', 'Destroying browser...');
 
             // Destroy browser instance
             if (this.browserInstance) {
@@ -626,7 +629,7 @@ class Application {
                 this.browserContainer = null;
             }
 
-            console.log('[App] ✓ Browser destroyed');
+            logger.info('appInit', '✓ Browser destroyed');
         }
     }
 
@@ -634,66 +637,66 @@ class Application {
      * Open a file in a specific pane
      */
     async openFileInPane(paneId, filePath, lineNumber = null, enableGitDiff = false) {
-        console.log('[App] ========== OPENING FILE IN PANE ==========');
-        console.log('[App] paneId:', paneId);
-        console.log('[App] filePath:', filePath);
-        console.log('[App] lineNumber:', lineNumber);
-        console.log('[App] enableGitDiff:', enableGitDiff);
+        logger.debug('appInit', '========== OPENING FILE IN PANE ==========');
+        logger.debug('appInit', 'paneId:', paneId);
+        logger.debug('appInit', 'filePath:', filePath);
+        logger.debug('appInit', 'lineNumber:', lineNumber);
+        logger.debug('appInit', 'enableGitDiff:', enableGitDiff);
 
         const pane = this.paneManager.getPane(paneId);
         if (!pane) {
-            console.error('[App] Pane not found:', paneId);
+            logger.error('appInit', 'Pane not found:', paneId);
             return;
         }
 
         // Create file viewer content structure for this tab
         const fileViewerContent = this.createFileViewerContent();
-        console.log('[App] FileViewer content structure created');
-        console.log('[App] Container element:', fileViewerContent.container);
-        console.log('[App] Container instanceId:', fileViewerContent.instanceId);
-        console.log('[App] Viewer element:', fileViewerContent.viewer);
+        logger.debug('appInit', 'FileViewer content structure created');
+        logger.debug('appInit', 'Container element:', fileViewerContent.container);
+        logger.debug('appInit', 'Container instanceId:', fileViewerContent.instanceId);
+        logger.debug('appInit', 'Viewer element:', fileViewerContent.viewer);
 
         // Create a new FileViewer instance for this tab
-        console.log('[App] Creating new FileViewer instance for file:', filePath);
+        logger.debug('appInit', 'Creating new FileViewer instance for file:', filePath);
         const viewer = new FileViewer(fileViewerContent.viewer, fileViewerContent.header, fileSystemService, sqliteService);
-        console.log('[App] FileViewer instance created:', viewer);
+        logger.debug('appInit', 'FileViewer instance created:', viewer);
 
         // Store the viewer instance reference in the container for debugging
         fileViewerContent.container.dataset.filePath = filePath;
         fileViewerContent.container._fileViewerInstance = viewer;
 
         // Open the file
-        console.log('[App] Opening file in FileViewer:', filePath);
+        logger.debug('appInit', 'Opening file in FileViewer:', filePath);
         await viewer.openFile(filePath, lineNumber, enableGitDiff);
-        console.log('[App] File opened successfully in FileViewer');
+        logger.debug('appInit', 'File opened successfully in FileViewer');
 
         // Get the filename for the title
         const pathUtils = require('./utils/PathUtils');
         const fileName = pathUtils.basename(filePath);
 
-        console.log('[App] Adding tab to pane:', { paneId, filePath, fileName, container: fileViewerContent.container, lineNumber });
+        logger.debug('appInit', 'Adding tab to pane:', { paneId, filePath, fileName, container: fileViewerContent.container, lineNumber });
 
         // Add as a tab to the pane
         this.paneManager.addTab(paneId, filePath, fileName, fileViewerContent.container, 'file-viewer', lineNumber);
 
-        console.log('[App] ✓ File opened in pane as tab successfully');
-        console.log('[App] Container in DOM:', fileViewerContent.container.parentElement !== null);
-        console.log('[App] Container display:', fileViewerContent.container.style.display);
-        console.log('[App] ========================================');
+        logger.debug('appInit', '✓ File opened in pane as tab successfully');
+        logger.debug('appInit', 'Container in DOM:', fileViewerContent.container.parentElement !== null);
+        logger.debug('appInit', 'Container display:', fileViewerContent.container.style.display);
+        logger.debug('appInit', '========================================');
     }
 
     /**
      * Open a commit view in a new tab
      */
     async openCommitView(commit, repositoryPath) {
-        console.log('[App] ========== OPENING COMMIT VIEW ==========');
-        console.log('[App] Commit hash:', commit.hash);
-        console.log('[App] Repository path:', repositoryPath);
+        logger.debug('appInit', '========== OPENING COMMIT VIEW ==========');
+        logger.debug('appInit', 'Commit hash:', commit.hash);
+        logger.debug('appInit', 'Repository path:', repositoryPath);
 
         // Get active pane
         const activePane = this.paneManager?.getActivePane();
         if (!activePane) {
-            console.error('[App] No active pane found');
+            logger.error('appInit', 'No active pane found');
             return;
         }
 
@@ -709,7 +712,7 @@ class Application {
         `;
 
         // Create CommitView instance
-        console.log('[App] Creating CommitView instance');
+        logger.debug('appInit', 'Creating CommitView instance');
         const commitView = new CommitView(commitViewContainer, commit, repositoryPath);
 
         // Store reference for debugging
@@ -718,7 +721,7 @@ class Application {
         // Get commit title for tab
         const commitTitle = `Commit ${commit.hash.substring(0, 7)}`;
 
-        console.log('[App] Adding commit view tab to pane');
+        logger.debug('appInit', 'Adding commit view tab to pane');
 
         // Add as a tab to the pane using the commit hash as unique ID
         this.paneManager.addTab(
@@ -730,8 +733,8 @@ class Application {
             null
         );
 
-        console.log('[App] ✓ Commit view opened successfully');
-        console.log('[App] ========================================');
+        logger.debug('appInit', '✓ Commit view opened successfully');
+        logger.debug('appInit', '========================================');
     }
 
     /**
@@ -744,17 +747,17 @@ class Application {
         const layout = this.paneManager.serializeLayout();
         this.workspaceManager.updatePaneLayout(activeWorkspace.id, layout);
 
-        console.log('[App] Workspace layout saved');
+        logger.debug('appInit', 'Workspace layout saved');
     }
 
     /**
      * Restore workspace layout
      */
     async restoreWorkspaceLayout(workspace) {
-        console.log('[App] Restoring workspace layout for:', workspace.name);
+        logger.debug('appInit', 'Restoring workspace layout for:', workspace.name);
 
         if (!workspace.paneLayout) {
-            console.log('[App] No layout to restore, creating fresh layout');
+            logger.debug('appInit', 'No layout to restore, creating fresh layout');
             // No saved layout, create a fresh one with empty state
             this.paneManager.container.innerHTML = '';
             this.paneManager.panes.clear();
@@ -778,7 +781,7 @@ class Application {
         // Restore the saved layout
         await this.paneManager.deserializeLayout(workspace.paneLayout);
 
-        console.log('[App] Workspace layout restored');
+        logger.debug('appInit', 'Workspace layout restored');
     }
 
     /**
@@ -791,7 +794,7 @@ class Application {
 
         if (iconFiles) {
             iconFiles.addEventListener('click', () => {
-                console.log('[App] Files icon clicked');
+                logger.debug('appInit', 'Files icon clicked');
 
                 // Set active state
                 iconFiles.classList.add('active');
@@ -810,7 +813,7 @@ class Application {
 
         if (iconGit) {
             iconGit.addEventListener('click', () => {
-                console.log('[App] Git icon clicked');
+                logger.debug('appInit', 'Git icon clicked');
 
                 // Toggle active state
                 if (iconFiles) iconFiles.classList.remove('active');
@@ -829,7 +832,7 @@ class Application {
 
         if (iconBrowser) {
             iconBrowser.addEventListener('click', () => {
-                console.log('[App] Browser icon clicked');
+                logger.debug('appInit', 'Browser icon clicked');
 
                 // Toggle active state
                 if (iconFiles) iconFiles.classList.remove('active');

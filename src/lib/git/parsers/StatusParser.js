@@ -27,6 +27,7 @@
  */
 
 const { FileStatus } = require('../models/FileStatus');
+const logger = require('../../../utils/Logger');
 
 class StatusParser {
     /**
@@ -150,7 +151,7 @@ class StatusParser {
             }
         }
 
-        console.log(`[StatusParser] Parsed v2: ${result.files.length} files, branch: ${result.branch}`);
+        logger.debug('gitStatus', `Parsed v2: ${result.files.length} files, branch: ${result.branch}`);
 
         return result;
     }
@@ -204,7 +205,7 @@ class StatusParser {
             }));
         }
 
-        console.log(`[StatusParser] Parsed v1: ${files.length} files`);
+        logger.debug('gitStatus', `Parsed v1: ${files.length} files`);
 
         return { files };
     }

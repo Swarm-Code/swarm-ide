@@ -7,6 +7,7 @@
  */
 
 const eventBus = require('../modules/EventBus');
+const logger = require('../utils/Logger');
 
 // Simple ID generator
 function generateId() {
@@ -20,7 +21,7 @@ class WorkspaceManager {
         this.activeWorkspace = null;
         this.defaultWorkspace = null;
 
-        console.log('[WorkspaceManager] Initialized');
+        logger.debug('workspaceLoad', 'Initialized');
     }
 
     /**
@@ -30,7 +31,7 @@ class WorkspaceManager {
         // Load workspaces from localStorage
         const storedData = localStorage.getItem(this.storageKey);
         const storedWorkspaces = storedData ? JSON.parse(storedData) : [];
-        console.log('[WorkspaceManager] Loaded workspaces:', storedWorkspaces.length);
+        logger.debug('workspaceLoad', 'Loaded workspaces:', storedWorkspaces.length);
 
         // If no workspaces exist, create default one
         if (storedWorkspaces.length === 0) {
@@ -49,7 +50,7 @@ class WorkspaceManager {
             this.defaultWorkspace = firstWorkspace;
         }
 
-        console.log('[WorkspaceManager] Active workspace:', this.activeWorkspace?.id);
+        logger.debug('workspaceLoad', 'Active workspace:', this.activeWorkspace?.id);
     }
 
     /**
@@ -77,7 +78,7 @@ class WorkspaceManager {
         this.workspaces.set(workspaceId, workspace);
         this.saveWorkspaces();
 
-        console.log('[WorkspaceManager] Created workspace:', workspaceId, name);
+        logger.debug('workspaceLoad', 'Created workspace:', workspaceId, name);
         eventBus.emit('workspace:created', { workspaceId, workspace });
 
         return workspace;
@@ -110,7 +111,7 @@ class WorkspaceManager {
     setActiveWorkspace(workspaceId) {
         const workspace = this.workspaces.get(workspaceId);
         if (!workspace) {
-            console.error('[WorkspaceManager] Workspace not found:', workspaceId);
+            logger.error('workspaceLoad', 'Workspace not found:', workspaceId);
             return false;
         }
 
@@ -120,7 +121,7 @@ class WorkspaceManager {
         }
 
         this.activeWorkspace = workspace;
-        console.log('[WorkspaceManager] Active workspace set:', workspaceId);
+        logger.debug('workspaceLoad', 'Active workspace set:', workspaceId);
 
         eventBus.emit('workspace:activated', { workspaceId, workspace });
 
@@ -133,7 +134,7 @@ class WorkspaceManager {
     updateWorkspace(workspaceId, updates) {
         const workspace = this.workspaces.get(workspaceId);
         if (!workspace) {
-            console.error('[WorkspaceManager] Workspace not found:', workspaceId);
+            logger.error('workspaceLoad', 'Workspace not found:', workspaceId);
             return false;
         }
 
@@ -143,7 +144,7 @@ class WorkspaceManager {
 
         this.saveWorkspaces();
 
-        console.log('[WorkspaceManager] Updated workspace:', workspaceId);
+        logger.debug('workspaceLoad', 'Updated workspace:', workspaceId);
         eventBus.emit('workspace:updated', { workspaceId, workspace });
 
         return true;
@@ -155,7 +156,7 @@ class WorkspaceManager {
     deleteWorkspace(workspaceId) {
         // Can't delete last workspace
         if (this.workspaces.size === 1) {
-            console.warn('[WorkspaceManager] Cannot delete last workspace');
+            logger.warn('workspaceLoad', 'Cannot delete last workspace');
             return false;
         }
 
@@ -171,7 +172,7 @@ class WorkspaceManager {
         this.workspaces.delete(workspaceId);
         this.saveWorkspaces();
 
-        console.log('[WorkspaceManager] Deleted workspace:', workspaceId);
+        logger.debug('workspaceLoad', 'Deleted workspace:', workspaceId);
         eventBus.emit('workspace:deleted', { workspaceId });
 
         return true;
@@ -183,7 +184,7 @@ class WorkspaceManager {
     saveWorkspaceState(workspaceId, state = {}) {
         const workspace = this.workspaces.get(workspaceId);
         if (!workspace) {
-            console.error('[WorkspaceManager] Workspace not found:', workspaceId);
+            logger.error('workspaceLoad', 'Workspace not found:', workspaceId);
             return false;
         }
 
@@ -194,7 +195,7 @@ class WorkspaceManager {
 
         this.saveWorkspaces();
 
-        console.log('[WorkspaceManager] Saved workspace state:', workspaceId);
+        logger.debug('workspaceLoad', 'Saved workspace state:', workspaceId);
         return true;
     }
 
@@ -204,11 +205,11 @@ class WorkspaceManager {
     loadWorkspaceState(workspaceId) {
         const workspace = this.workspaces.get(workspaceId);
         if (!workspace) {
-            console.error('[WorkspaceManager] Workspace not found:', workspaceId);
+            logger.error('workspaceLoad', 'Workspace not found:', workspaceId);
             return null;
         }
 
-        console.log('[WorkspaceManager] Loaded workspace state:', workspaceId);
+        logger.debug('workspaceLoad', 'Loaded workspace state:', workspaceId);
         return {
             paneLayout: workspace.paneLayout,
             openFiles: workspace.openFiles,
@@ -235,7 +236,7 @@ class WorkspaceManager {
         if (!workspace.openFiles.includes(filePath)) {
             workspace.openFiles.push(filePath);
             this.saveWorkspaces();
-            console.log('[WorkspaceManager] Added open file:', filePath);
+            logger.debug('workspaceLoad', 'Added open file:', filePath);
         }
 
         return true;
@@ -252,7 +253,7 @@ class WorkspaceManager {
         if (index > -1) {
             workspace.openFiles.splice(index, 1);
             this.saveWorkspaces();
-            console.log('[WorkspaceManager] Removed open file:', filePath);
+            logger.debug('workspaceLoad', 'Removed open file:', filePath);
         }
 
         return true;
@@ -275,7 +276,7 @@ class WorkspaceManager {
         workspace.browserSessions.push(session);
         this.saveWorkspaces();
 
-        console.log('[WorkspaceManager] Added browser session');
+        logger.debug('workspaceLoad', 'Added browser session');
         return true;
     }
 
@@ -285,7 +286,7 @@ class WorkspaceManager {
     saveWorkspaces() {
         const workspacesArray = Array.from(this.workspaces.values());
         localStorage.setItem(this.storageKey, JSON.stringify(workspacesArray));
-        console.log('[WorkspaceManager] Saved workspaces to storage');
+        logger.debug('workspaceLoad', 'Saved workspaces to storage');
     }
 
     /**
@@ -294,7 +295,7 @@ class WorkspaceManager {
     exportWorkspace(workspaceId) {
         const workspace = this.workspaces.get(workspaceId);
         if (!workspace) {
-            console.error('[WorkspaceManager] Workspace not found:', workspaceId);
+            logger.error('workspaceLoad', 'Workspace not found:', workspaceId);
             return null;
         }
 
@@ -316,12 +317,12 @@ class WorkspaceManager {
             this.workspaces.set(workspace.id, workspace);
             this.saveWorkspaces();
 
-            console.log('[WorkspaceManager] Imported workspace:', workspace.id);
+            logger.debug('workspaceLoad', 'Imported workspace:', workspace.id);
             eventBus.emit('workspace:imported', { workspaceId: workspace.id, workspace });
 
             return workspace;
         } catch (error) {
-            console.error('[WorkspaceManager] Failed to import workspace:', error);
+            logger.error('workspaceLoad', 'Failed to import workspace:', error);
             return null;
         }
     }
@@ -362,7 +363,7 @@ class WorkspaceManager {
             this.saveWorkspaceState(this.activeWorkspace.id);
         }
         this.saveWorkspaces();
-        console.log('[WorkspaceManager] Destroyed');
+        logger.debug('workspaceLoad', 'Destroyed');
     }
 }
 

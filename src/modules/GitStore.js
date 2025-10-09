@@ -8,6 +8,7 @@
  */
 
 const EventBus = require('./EventBus');
+const logger = require('../utils/Logger');
 
 class GitStore {
     constructor() {
@@ -77,7 +78,7 @@ class GitStore {
             lastError: null
         };
 
-        console.log('[GitStore] Initialized');
+        logger.debug('gitStatus', 'Initialized');
 
         // Setup event listeners
         this._setupEventListeners();
@@ -194,7 +195,7 @@ class GitStore {
         this.state.hasRepository = data.hasRepository;
         this.state.isInitialized = true;
 
-        console.log(`[GitStore] Repository initialized: ${data.path} (hasRepo: ${data.hasRepository})`);
+        logger.debug('gitStatus', `Repository initialized: ${data.path} (hasRepo: ${data.hasRepository})`);
 
         this._emitStateChange('initialized');
     }
@@ -206,7 +207,7 @@ class GitStore {
     _handleBranchSwitched(data) {
         this.state.currentBranch = data.ref;
 
-        console.log(`[GitStore] Branch switched to: ${data.ref}`);
+        logger.debug('gitStatus', `Branch switched to: ${data.ref}`);
 
         this._emitStateChange('branch-switched', { branch: data.ref });
     }
@@ -216,7 +217,7 @@ class GitStore {
      * @private
      */
     _handleBranchCreated(data) {
-        console.log(`[GitStore] Branch created: ${data.branchName}`);
+        logger.debug('gitStatus', `Branch created: ${data.branchName}`);
 
         this._emitStateChange('branch-created', { branch: data.branchName });
     }
@@ -246,7 +247,7 @@ class GitStore {
             this.state.branches.all = branches;
         }
 
-        console.log(`[GitStore] Branches loaded (${type}): ${branches.length} branches`);
+        logger.debug('gitStatus', `Branches loaded (${type}): ${branches.length} branches`);
 
         this._emitStateChange('branches-updated', { type, count: branches.length });
     }
@@ -288,7 +289,7 @@ class GitStore {
         this.state.fileCount.conflicted = this.state.files.conflicted.length;
         this.state.fileCount.total = status.files.length;
 
-        console.log(`[GitStore] Status updated: ${this.state.fileCount.total} files (${this.state.fileCount.staged} staged, ${this.state.fileCount.unstaged} unstaged)`);
+        logger.debug('gitStatus', `Status updated: ${this.state.fileCount.total} files (${this.state.fileCount.staged} staged, ${this.state.fileCount.unstaged} unstaged)`);
 
         this._emitStateChange('status-updated', {
             fileCount: this.state.fileCount,
@@ -301,7 +302,7 @@ class GitStore {
      * @private
      */
     _handleCommitCreated(data) {
-        console.log(`[GitStore] Commit created: ${data.sha}`);
+        logger.debug('gitStatus', `Commit created: ${data.sha}`);
 
         // Add to recent commits (if we have commit data)
         if (data.commit) {
@@ -328,7 +329,7 @@ class GitStore {
             this.state.commits.total = commits.length;
             this.state.commits.hasMore = hasMore;
 
-            console.log(`[GitStore] History loaded: ${commits.length} commits (hasMore: ${hasMore})`);
+            logger.debug('gitStatus', `History loaded: ${commits.length} commits (hasMore: ${hasMore})`);
         }
 
         this._emitStateChange('history-updated', { type, count: commits.length, hasMore });
@@ -339,7 +340,7 @@ class GitStore {
      * @private
      */
     _handleFilesStaged(data) {
-        console.log(`[GitStore] Files staged: ${data.paths.length}`);
+        logger.debug('gitStatus', `Files staged: ${data.paths.length}`);
 
         this._emitStateChange('files-staged', { paths: data.paths });
     }
@@ -349,7 +350,7 @@ class GitStore {
      * @private
      */
     _handleFilesUnstaged(data) {
-        console.log(`[GitStore] Files unstaged: ${data.paths.length}`);
+        logger.debug('gitStatus', `Files unstaged: ${data.paths.length}`);
 
         this._emitStateChange('files-unstaged', { paths: data.paths });
     }
@@ -359,7 +360,7 @@ class GitStore {
      * @private
      */
     _handleChangesDiscarded(data) {
-        console.log(`[GitStore] Changes discarded: ${data.paths.length}`);
+        logger.debug('gitStatus', `Changes discarded: ${data.paths.length}`);
 
         this._emitStateChange('changes-discarded', { paths: data.paths });
     }
@@ -393,7 +394,7 @@ class GitStore {
      * @private
      */
     _handleDiffEnabled(data) {
-        console.log(`[GitStore] Diff enabled for: ${data.filePath}`);
+        logger.debug('gitStatus', `Diff enabled for: ${data.filePath}`);
 
         this._emitStateChange('diff-enabled', { filePath: data.filePath });
     }
@@ -418,7 +419,7 @@ class GitStore {
      * @private
      */
     _handleBlameEnabled(data) {
-        console.log(`[GitStore] Blame enabled for: ${data.filePath}`);
+        logger.debug('gitStatus', `Blame enabled for: ${data.filePath}`);
 
         const blameState = this.state.fileBlames.get(data.filePath) || { enabled: false, entries: null };
         blameState.enabled = true;
@@ -432,7 +433,7 @@ class GitStore {
      * @private
      */
     _handleBlameDisabled(data) {
-        console.log(`[GitStore] Blame disabled for: ${data.filePath}`);
+        logger.debug('gitStatus', `Blame disabled for: ${data.filePath}`);
 
         const blameState = this.state.fileBlames.get(data.filePath);
         if (blameState) {
@@ -606,18 +607,18 @@ class GitStore {
             const gitService = require('../services/GitService').getInstance();
 
             if (!this.state.hasRepository) {
-                console.log('[GitStore] No repository to refresh status for');
+                logger.debug('gitStatus', 'No repository to refresh status for');
                 return;
             }
 
-            console.log('[GitStore] Refreshing Git status...');
+            logger.debug('gitStatus', 'Refreshing Git status...');
 
             // Request GitService to reload status
             // This will trigger git:status-changed event which we listen to
             await gitService.refreshStatus();
 
         } catch (error) {
-            console.error('[GitStore] Failed to refresh status:', error);
+            logger.error('gitStatus', 'Failed to refresh status:', error);
             this.state.lastError = error.message;
         }
     }
@@ -662,7 +663,7 @@ class GitStore {
         this.state.operations = { isFetching: false, isPushing: false, isPulling: false, isCommitting: false, lastOperation: null, lastOperationTime: null };
         this.state.lastError = null;
 
-        console.log('[GitStore] State reset');
+        logger.debug('gitStatus', 'State reset');
 
         this._emitStateChange('reset');
     }
@@ -722,7 +723,7 @@ class GitStore {
      */
     dispose() {
         this.resetState();
-        console.log('[GitStore] Disposed');
+        logger.debug('gitStatus', 'Disposed');
     }
 }
 

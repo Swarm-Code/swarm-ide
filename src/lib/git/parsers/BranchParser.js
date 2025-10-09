@@ -13,6 +13,7 @@
  */
 
 const { Branch } = require('../models/Branch');
+const logger = require('../../../utils/Logger');
 
 class BranchParser {
     /**
@@ -81,7 +82,7 @@ class BranchParser {
             }));
         }
 
-        console.log(`[BranchParser] Parsed ${branches.length} branches, current: ${currentBranch}`);
+        logger.debug('gitBranch', `Parsed ${branches.length} branches, current: ${currentBranch}`);
 
         return branches;
     }

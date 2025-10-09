@@ -15,6 +15,7 @@
 
 const path = require('path');
 const fs = require('fs').promises;
+const logger = require('../../utils/Logger');
 
 class GitClient {
     /**
@@ -30,7 +31,7 @@ class GitClient {
         this.encoding = options.encoding || 'utf8';
         this.gitPath = options.gitPath || 'git'; // Allow custom git binary path
 
-        console.log(`[GitClient] Initialized for repository: ${repositoryPath}`);
+        logger.debug('gitStatus', `[GitClient] Initialized for repository: ${repositoryPath}`);
     }
 
     /**
@@ -40,10 +41,10 @@ class GitClient {
     async isGitAvailable() {
         try {
             const result = await this.execute(['--version'], { cwd: process.cwd() });
-            console.log(`[GitClient] Git version: ${result.trim()}`);
+            logger.debug('gitStatus', `[GitClient] Git version: ${result.trim()}`);
             return true;
         } catch (error) {
-            console.error('[GitClient] Git is not available:', error.message);
+            logger.error('gitStatus', '[GitClient] Git is not available:', error.message);
             return false;
         }
     }
@@ -94,7 +95,7 @@ class GitClient {
         const input = options.input;
         const raw = options.raw || false;
 
-        console.log(`[GitClient] Executing: git ${args.join(' ')} (cwd: ${cwd})`);
+        logger.trace('gitStatus', `[GitClient] Executing: git ${args.join(' ')} (cwd: ${cwd})`);
 
         try {
             // Execute git command via IPC to main process
@@ -125,7 +126,7 @@ class GitClient {
 
             // Success
             const output = raw ? Buffer.from(result.stdout, encoding) : result.stdout;
-            console.log(`[GitClient] Command completed successfully (${output.length} bytes)`);
+            logger.trace('gitStatus', `[GitClient] Command completed successfully (${output.length} bytes)`);
             return output;
 
         } catch (error) {
@@ -159,7 +160,7 @@ class GitClient {
         const timeout = options.timeout || this.timeout;
         const encoding = options.encoding || this.encoding;
 
-        console.log(`[GitClient] Executing (stream): git ${args.join(' ')} (cwd: ${cwd})`);
+        logger.trace('gitStatus', `[GitClient] Executing (stream): git ${args.join(' ')} (cwd: ${cwd})`);
 
         try {
             // Execute git command via IPC
@@ -195,7 +196,7 @@ class GitClient {
                 }
             });
 
-            console.log('[GitClient] Stream command completed successfully');
+            logger.trace('gitStatus', '[GitClient] Stream command completed successfully');
 
         } catch (error) {
             // Re-throw GitError as-is

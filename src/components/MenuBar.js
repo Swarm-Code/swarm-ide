@@ -11,6 +11,7 @@
 const eventBus = require('../modules/EventBus');
 const settingsPanel = require('./SettingsPanel');
 const workspaceManager = require('../services/WorkspaceManager');
+const logger = require('../utils/Logger');
 
 class MenuBar {
     constructor(container, fileSystemService) {
@@ -30,7 +31,7 @@ class MenuBar {
         this.render();
         this.setupEventListeners();
         this.setupWorkspaceListeners();
-        console.log('[MenuBar] Initialized');
+        logger.debug('menu', 'Initialized');
     }
 
     /**
@@ -137,7 +138,7 @@ class MenuBar {
         workspaceButton.innerHTML = `<img src="assets/icons/folder.svg" alt="Workspace" class="workspace-icon"><span class="workspace-name">${workspaceName}</span>`;
         workspaceButton.title = 'Switch Workspace';
         workspaceButton.addEventListener('click', () => {
-            console.log('[MenuBar] Workspace button clicked');
+            logger.debug('menu', 'Workspace button clicked');
             eventBus.emit('workspace:toggle-panel');
         });
         this.container.appendChild(workspaceButton);
@@ -149,7 +150,7 @@ class MenuBar {
         settingsButton.innerHTML = '<img src="assets/icons/settings.svg" alt="Settings" class="settings-icon">Settings';
         settingsButton.title = 'Open Settings';
         settingsButton.addEventListener('click', () => {
-            console.log('[MenuBar] Settings button clicked');
+            logger.debug('menu', 'Settings button clicked');
             settingsPanel.toggle();
         });
         this.container.appendChild(settingsButton);
@@ -314,7 +315,7 @@ class MenuBar {
      * @param {string} action - Action identifier
      */
     async handleAction(action) {
-        console.log('[MenuBar] Action:', action);
+        logger.debug('menu', 'Action:', action);
 
         switch (action) {
             case 'file:open-folder':
@@ -355,7 +356,7 @@ class MenuBar {
                 break;
 
             default:
-                console.log('[MenuBar] Unhandled action:', action);
+                logger.debug('menu', 'Unhandled action:', action);
                 eventBus.emit('menu:action', { action });
         }
     }

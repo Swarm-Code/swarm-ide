@@ -8,6 +8,7 @@
 
 const eventBus = require('../modules/EventBus');
 const stateManager = require('../modules/StateManager');
+const logger = require('../utils/Logger');
 
 class LSPClient {
     constructor() {
@@ -82,9 +83,9 @@ class LSPClient {
                 params,
                 this.getRootPath()
             );
-            console.log(`[LSP] Document opened: ${filePath}`);
+            logger.debug('lspClient', `Document opened: ${filePath}`);
         } catch (error) {
-            console.error('[LSP] didOpen error:', error);
+            logger.error('lspClient', 'didOpen error:', error);
         }
     }
 
@@ -96,7 +97,7 @@ class LSPClient {
     async didChange(filePath, content) {
         const doc = this.openDocuments.get(filePath);
         if (!doc) {
-            console.warn(`[LSP] Document not open: ${filePath}`);
+            logger.warn('lspClient', `Document not open: ${filePath}`);
             return;
         }
 
@@ -121,7 +122,7 @@ class LSPClient {
                 this.getRootPath()
             );
         } catch (error) {
-            console.error('[LSP] didChange error:', error);
+            logger.error('lspClient', 'didChange error:', error);
         }
     }
 
@@ -147,9 +148,9 @@ class LSPClient {
                 params,
                 this.getRootPath()
             );
-            console.log(`[LSP] Document saved: ${filePath}`);
+            logger.debug('lspClient', `Document saved: ${filePath}`);
         } catch (error) {
-            console.error('[LSP] didSave error:', error);
+            logger.error('lspClient', 'didSave error:', error);
         }
     }
 
@@ -175,9 +176,9 @@ class LSPClient {
                 this.getRootPath()
             );
             this.openDocuments.delete(filePath);
-            console.log(`[LSP] Document closed: ${filePath}`);
+            logger.debug('lspClient', `Document closed: ${filePath}`);
         } catch (error) {
-            console.error('[LSP] didClose error:', error);
+            logger.error('lspClient', 'didClose error:', error);
         }
     }
 
@@ -217,7 +218,7 @@ class LSPClient {
                 return items;
             }
         } catch (error) {
-            console.error('[LSP] completion error:', error);
+            logger.error('lspClient', 'completion error:', error);
         }
 
         return [];
@@ -256,7 +257,7 @@ class LSPClient {
                 return response.result;
             }
         } catch (error) {
-            console.error('[LSP] hover error:', error);
+            logger.error('lspClient', 'hover error:', error);
         }
 
         return null;
@@ -295,7 +296,7 @@ class LSPClient {
                 return response.result;
             }
         } catch (error) {
-            console.error('[LSP] signatureHelp error:', error);
+            logger.error('lspClient', 'signatureHelp error:', error);
         }
 
         return null;
@@ -309,10 +310,10 @@ class LSPClient {
      * @returns {Promise<Object|null>} Definition location
      */
     async definition(filePath, line, character) {
-        console.log('[LSPClient] definition() called for:', filePath, 'at', line, character);
+        logger.trace('lspClient', 'definition() called for:', filePath, 'at', line, character);
         const doc = this.openDocuments.get(filePath);
         if (!doc) {
-            console.error('[LSPClient] Document not open:', filePath);
+            logger.error('lspClient', 'Document not open:', filePath);
             return null;
         }
 
@@ -326,7 +327,7 @@ class LSPClient {
             }
         };
 
-        console.log('[LSPClient] Sending definition request:', params);
+        logger.trace('lspClient', 'Sending definition request:', params);
         try {
             const response = await window.electronAPI.lspRequest(
                 doc.languageId,
@@ -335,12 +336,12 @@ class LSPClient {
                 this.getRootPath()
             );
 
-            console.log('[LSPClient] definition() response:', response);
+            logger.trace('lspClient', 'definition() response:', response);
             if (response.success && response.result) {
                 return response.result;
             }
         } catch (error) {
-            console.error('[LSPClient] definition error:', error);
+            logger.error('lspClient', 'definition error:', error);
         }
 
         return null;
@@ -355,10 +356,10 @@ class LSPClient {
      * @returns {Promise<Array>} Reference locations
      */
     async references(filePath, line, character, includeDeclaration = true) {
-        console.log('[LSPClient] references() called for:', filePath, 'at', line, character);
+        logger.trace('lspClient', 'references() called for:', filePath, 'at', line, character);
         const doc = this.openDocuments.get(filePath);
         if (!doc) {
-            console.error('[LSPClient] Document not open:', filePath);
+            logger.error('lspClient', 'Document not open:', filePath);
             return [];
         }
 
@@ -375,7 +376,7 @@ class LSPClient {
             }
         };
 
-        console.log('[LSPClient] Sending references request:', params);
+        logger.trace('lspClient', 'Sending references request:', params);
         try {
             const response = await window.electronAPI.lspRequest(
                 doc.languageId,
@@ -384,12 +385,12 @@ class LSPClient {
                 this.getRootPath()
             );
 
-            console.log('[LSPClient] references() response:', response);
+            logger.trace('lspClient', 'references() response:', response);
             if (response.success && response.result) {
                 return Array.isArray(response.result) ? response.result : [];
             }
         } catch (error) {
-            console.error('[LSPClient] references error:', error);
+            logger.error('lspClient', 'references error:', error);
         }
 
         return [];
@@ -404,10 +405,10 @@ class LSPClient {
      * @returns {Promise<Object|null>} Workspace edit with changes
      */
     async rename(filePath, line, character, newName) {
-        console.log('[LSPClient] rename() called for:', filePath, 'at', line, character, 'newName:', newName);
+        logger.trace('lspClient', 'rename() called for:', filePath, 'at', line, character, 'newName:', newName);
         const doc = this.openDocuments.get(filePath);
         if (!doc) {
-            console.error('[LSPClient] Document not open:', filePath);
+            logger.error('lspClient', 'Document not open:', filePath);
             return null;
         }
 
@@ -422,7 +423,7 @@ class LSPClient {
             newName
         };
 
-        console.log('[LSPClient] Sending rename request:', params);
+        logger.trace('lspClient', 'Sending rename request:', params);
         try {
             const response = await window.electronAPI.lspRequest(
                 doc.languageId,
@@ -431,12 +432,12 @@ class LSPClient {
                 this.getRootPath()
             );
 
-            console.log('[LSPClient] rename() response:', response);
+            logger.trace('lspClient', 'rename() response:', response);
             if (response.success && response.result) {
                 return response.result;
             }
         } catch (error) {
-            console.error('[LSPClient] rename error:', error);
+            logger.error('lspClient', 'rename error:', error);
         }
 
         return null;
@@ -450,10 +451,10 @@ class LSPClient {
      * @returns {Promise<Array>} Text edits to format the document
      */
     async formatting(filePath, tabSize = 4, insertSpaces = true) {
-        console.log('[LSPClient] formatting() called for:', filePath);
+        logger.trace('lspClient', 'formatting() called for:', filePath);
         const doc = this.openDocuments.get(filePath);
         if (!doc) {
-            console.error('[LSPClient] Document not open:', filePath);
+            logger.error('lspClient', 'Document not open:', filePath);
             return [];
         }
 
@@ -467,7 +468,7 @@ class LSPClient {
             }
         };
 
-        console.log('[LSPClient] Sending formatting request:', params);
+        logger.trace('lspClient', 'Sending formatting request:', params);
         try {
             const response = await window.electronAPI.lspRequest(
                 doc.languageId,
@@ -476,12 +477,12 @@ class LSPClient {
                 this.getRootPath()
             );
 
-            console.log('[LSPClient] formatting() response:', response);
+            logger.trace('lspClient', 'formatting() response:', response);
             if (response.success && response.result) {
                 return Array.isArray(response.result) ? response.result : [];
             }
         } catch (error) {
-            console.error('[LSPClient] formatting error:', error);
+            logger.error('lspClient', 'formatting error:', error);
         }
 
         return [];

@@ -7,6 +7,7 @@
  * Provides serialization/deserialization for workspace persistence.
  */
 
+const logger = require('../utils/Logger');
 const eventBus = require('../modules/EventBus');
 
 // Simple UUID generator
@@ -57,7 +58,7 @@ class PaneManager {
         // Monitor for cursor creation during drag
         this.cursorMonitor = null;
 
-        console.log('[PaneManager] Initialized');
+        logger.debug('paneCreate', 'Initialized');
     }
 
     /**
@@ -77,7 +78,7 @@ class PaneManager {
         // Setup drag overlay
         this.setupDragOverlay();
 
-        console.log('[PaneManager] Root pane created:', this.rootPane.id);
+        logger.debug('paneCreate', 'Root pane created:', this.rootPane.id);
         return this.rootPane;
     }
 
@@ -201,8 +202,8 @@ class PaneManager {
                     // Log periodically (every 500ms) to avoid spam
                     const now = performance.now();
                     if (now - this.dragMetrics.lastLogTime > 500) {
-                        console.warn('[PaneManager] ⚠️ DRAG EVENT REACHING CODEMIRROR!', e.target.className);
-                        console.warn('[PaneManager] CodeMirror events so far:', this.dragMetrics.codeMirrorEvents);
+                        logger.warn('paneCreate', '⚠️ DRAG EVENT REACHING CODEMIRROR!', e.target.className);
+                        logger.warn('paneCreate', 'CodeMirror events so far:', this.dragMetrics.codeMirrorEvents);
                         this.dragMetrics.lastLogTime = now;
                     }
                 }
@@ -219,12 +220,12 @@ class PaneManager {
 
         // Throttled logging function
         const throttledLog = throttle((msg, data) => {
-            console.log(msg, data);
+            logger.debug('paneCreate', msg, data);
         }, 500); // Log at most once per 500ms
 
         // Throttled zone update function
         const throttledZoneUpdate = throttle((zone, paneEl) => {
-            console.log('[PaneManager] Zone changed to:', zone);
+            logger.trace('dragDrop', 'Zone changed to:', zone);
             this.showDropZone(paneEl, zone);
         }, 100); // Update zone at most 10 times per second
 
@@ -257,7 +258,7 @@ class PaneManager {
                 // Show overlay on first dragover if we're in a drag operation
                 if (this.isDragging && this.dragOverlay && this.dragOverlay.style.display === 'none') {
                     this.showDragOverlay();
-                    console.log('[PaneManager] First dragover detected - showing overlay');
+                    logger.trace('dragDrop', 'First dragover detected - showing overlay');
                 }
 
                 // Get the current pane state
@@ -279,7 +280,7 @@ class PaneManager {
                         this.clearDropZones();
                         paneElement.classList.add('drag-over-tab');
                         currentDropZone = null;
-                        console.log('[PaneManager] Dragover tab bar - will open as tab');
+                        logger.trace('dragDrop', 'Dragover tab bar - will open as tab');
                     }
                     return;
                 }
@@ -317,11 +318,11 @@ class PaneManager {
                     if (zone !== currentDropZone) {
                         currentDropZone = zone;
                         this.showDropZone(paneElement, zone);
-                        throttledLog('[PaneManager] Zone:', zone);
+                        throttledLog('Zone:', zone);
                     }
                 }
             } catch (error) {
-                console.error('[PaneManager] Error in dragover handler:', error);
+                logger.error('paneCreate', 'Error in dragover handler:', error);
             }
         });
 
@@ -337,7 +338,7 @@ class PaneManager {
 
         paneElement.addEventListener('drop', (e) => {
             try {
-                console.log('[PaneManager] DROP event on pane:', paneId);
+                logger.trace('dragDrop', 'DROP event on pane:', paneId);
 
                 // Check if this is an internal drag (from file explorer)
                 const filePath = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('application/x-file-path');
@@ -353,7 +354,7 @@ class PaneManager {
                 e.stopPropagation();
                 paneElement.classList.remove('drag-over-tab');
 
-                console.log('[PaneManager] Drop detected:', { paneId, filePath, zone: currentDropZone, isOverTabBar });
+                logger.trace('dragDrop', 'Drop detected:', { paneId, filePath, zone: currentDropZone, isOverTabBar });
 
             // Get current pane state
             const currentPane = this.panes.get(paneId);
@@ -365,14 +366,14 @@ class PaneManager {
             // Check if dropped on tab bar or center zone
             if (isOverTabBar || currentDropZone === 'center' || !currentDropZone) {
                 // Open as tab
-                console.log('[PaneManager] File dropped as tab:', paneId, filePath);
+                logger.trace('dragDrop', 'File dropped as tab:', paneId, filePath);
                 eventBus.emit('pane:request-file-open', {
                     paneId: paneId,
                     filePath: filePath
                 });
             } else {
                 // Split pane and open in new split
-                console.log('[PaneManager] File dropped to split pane:', paneId, currentDropZone, filePath);
+                logger.trace('dragDrop', 'File dropped to split pane:', paneId, currentDropZone, filePath);
 
                 // Determine split direction based on zone
                 const direction = (currentDropZone === 'left' || currentDropZone === 'right') ? 'horizontal' : 'vertical';
@@ -402,7 +403,7 @@ class PaneManager {
                 currentDropZone = null;
                 isOverTabBar = false;
             } catch (error) {
-                console.error('[PaneManager] Error in drop handler:', error);
+                logger.error('paneCreate', 'Error in drop handler:', error);
                 this.clearDropZones();
             }
         });
@@ -414,17 +415,17 @@ class PaneManager {
      * Split a pane horizontally or vertically
      */
     splitPane(paneId, direction) {
-        console.log(`[PaneManager] Splitting pane ${paneId} ${direction}`);
+        logger.debug('paneCreate', `Splitting pane ${paneId} ${direction}`);
 
         const pane = this.panes.get(paneId);
         if (!pane) {
-            console.error('[PaneManager] Pane not found:', paneId);
+            logger.error('paneCreate', 'Pane not found:', paneId);
             return;
         }
 
         // Can't split if already has children
         if (pane.children.length > 0) {
-            console.warn('[PaneManager] Pane already split:', paneId);
+            logger.warn('paneCreate', 'Pane already split:', paneId);
             return;
         }
 
@@ -615,7 +616,7 @@ class PaneManager {
                 child1TitleElement.textContent = existingTitle;
             }
 
-            console.log('[PaneManager] Moved existing content to child1');
+            logger.debug('paneCreate', 'Moved existing content to child1');
         }
 
         // DO NOT auto-duplicate the file to child2
@@ -626,7 +627,7 @@ class PaneManager {
         // This fixes the issue where opening files after split adds them to child1 instead of child2
         this.setActivePane(child2Id);
 
-        console.log('[PaneManager] Split complete:', { parent: paneId, child1: child1Id, child2: child2Id });
+        logger.debug('paneCreate', 'Split complete:', { parent: paneId, child1: child1Id, child2: child2Id });
 
         eventBus.emit('pane:split', { paneId, direction, child1: child1Id, child2: child2Id });
     }
@@ -635,30 +636,30 @@ class PaneManager {
      * Close a pane
      */
     closePane(paneId) {
-        console.log('[PaneManager] Closing pane:', paneId);
+        logger.debug('paneCreate', 'Closing pane:', paneId);
 
         const pane = this.panes.get(paneId);
         if (!pane) {
-            console.error('[PaneManager] Pane not found:', paneId);
+            logger.error('paneCreate', 'Pane not found:', paneId);
             return;
         }
 
         // Can't close root pane if it's the only one
         if (!pane.parent && this.panes.size === 1) {
-            console.warn('[PaneManager] Cannot close last pane');
+            logger.warn('paneCreate', 'Cannot close last pane');
             return;
         }
 
         const parent = pane.parent;
         if (!parent) {
-            console.warn('[PaneManager] Cannot close root pane with children');
+            logger.warn('paneCreate', 'Cannot close root pane with children');
             return;
         }
 
         // Find sibling
         const siblings = parent.children.filter(c => c.id !== paneId);
         if (siblings.length !== 1) {
-            console.error('[PaneManager] Invalid sibling count:', siblings.length);
+            logger.error('paneCreate', 'Invalid sibling count:', siblings.length);
             return;
         }
 
@@ -736,7 +737,7 @@ class PaneManager {
             this.setActivePane(parent.id);
         }
 
-        console.log('[PaneManager] Pane closed:', paneId);
+        logger.debug('paneCreate', 'Pane closed:', paneId);
         eventBus.emit('pane:closed', { paneId });
     }
 
@@ -821,7 +822,7 @@ class PaneManager {
                 pane.element.classList.add('dragging');
             }
 
-            console.log('[PaneManager] Drag start:', paneId);
+            logger.trace('dragDrop', 'Drag start:', paneId);
         });
 
         header.addEventListener('dragend', (e) => {
@@ -918,12 +919,12 @@ class PaneManager {
 
         // Listen for drag events from file explorer
         eventBus.on('explorer:drag-start', (data) => {
-            console.log('[PaneManager] ========== DRAG START ==========');
+            logger.trace('dragDrop', '========== DRAG START ==========');
             this.isDragging = true;
 
             // Add class to disable editor interaction
             document.body.classList.add('dragging-file');
-            console.log('[PaneManager] Added dragging-file class to body');
+            logger.trace('dragDrop', 'Added dragging-file class to body');
 
             // Reset and start tracking metrics
             this.dragMetrics = {
@@ -936,11 +937,11 @@ class PaneManager {
                 lastLogTime: performance.now()
             };
 
-            console.log('[PaneManager] Initial memory:', (this.dragMetrics.startMemory / 1048576).toFixed(2), 'MB');
+            logger.trace('dragDrop', 'Initial memory:', (this.dragMetrics.startMemory / 1048576).toFixed(2), 'MB');
 
             // Count initial cursors
             this.dragMetrics.initialCursorCount = document.querySelectorAll('.CodeMirror-cursor').length;
-            console.log('[PaneManager] Initial cursor count:', this.dragMetrics.initialCursorCount);
+            logger.trace('dragDrop', 'Initial cursor count:', this.dragMetrics.initialCursorCount);
 
             // Monitor cursor creation during drag
             this.startCursorMonitoring();
@@ -952,7 +953,7 @@ class PaneManager {
         eventBus.on('explorer:drag-end', () => {
             // Remove class to re-enable editor interaction
             document.body.classList.remove('dragging-file');
-            console.log('[PaneManager] Removed dragging-file class from body');
+            logger.trace('dragDrop', 'Removed dragging-file class from body');
 
             // Stop cursor monitoring
             this.stopCursorMonitoring();
@@ -964,21 +965,21 @@ class PaneManager {
             const finalCursorCount = document.querySelectorAll('.CodeMirror-cursor').length;
             const cursorDelta = finalCursorCount - this.dragMetrics.initialCursorCount;
 
-            console.log('[PaneManager] ========== DRAG END ==========');
-            console.log('[PaneManager] Duration:', duration.toFixed(2), 'ms');
-            console.log('[PaneManager] Total events:', this.dragMetrics.eventCount);
-            console.log('[PaneManager] DRAGENTER events:', this.dragMetrics.dragenterCount);
-            console.log('[PaneManager] DRAGOVER events:', this.dragMetrics.dragoverCount);
-            console.log('[PaneManager] CodeMirror events:', this.dragMetrics.codeMirrorEvents);
-            console.log('[PaneManager] Memory delta:', memoryDelta.toFixed(2), 'MB');
-            console.log('[PaneManager] Events/sec:', (this.dragMetrics.eventCount / (duration / 1000)).toFixed(0));
-            console.log('[PaneManager] Initial cursors:', this.dragMetrics.initialCursorCount);
-            console.log('[PaneManager] Final cursors:', finalCursorCount);
-            console.log('[PaneManager] Cursors created:', cursorDelta);
+            logger.trace('dragDrop', '========== DRAG END ==========');
+            logger.trace('dragDrop', 'Duration:', duration.toFixed(2), 'ms');
+            logger.trace('dragDrop', 'Total events:', this.dragMetrics.eventCount);
+            logger.trace('dragDrop', 'DRAGENTER events:', this.dragMetrics.dragenterCount);
+            logger.trace('dragDrop', 'DRAGOVER events:', this.dragMetrics.dragoverCount);
+            logger.trace('dragDrop', 'CodeMirror events:', this.dragMetrics.codeMirrorEvents);
+            logger.trace('dragDrop', 'Memory delta:', memoryDelta.toFixed(2), 'MB');
+            logger.trace('dragDrop', 'Events/sec:', (this.dragMetrics.eventCount / (duration / 1000)).toFixed(0));
+            logger.trace('dragDrop', 'Initial cursors:', this.dragMetrics.initialCursorCount);
+            logger.trace('dragDrop', 'Final cursors:', finalCursorCount);
+            logger.trace('dragDrop', 'Cursors created:', cursorDelta);
             if (cursorDelta > 0) {
-                console.warn('[PaneManager] ⚠️ WARNING: Cursors were created during drag!');
+                logger.warn('paneCreate', '⚠️ WARNING: Cursors were created during drag!');
             }
-            console.log('[PaneManager] ================================');
+            logger.trace('dragDrop', '================================');
 
             this.hideDragOverlay();
         });
@@ -1130,7 +1131,7 @@ class PaneManager {
         if (!targetPane) return;
 
         const zone = targetPane._currentDropZone || 'center';
-        console.log('[PaneManager] Drop on overlay:', { paneId: targetPane.id, zone, filePath });
+        logger.trace('dragDrop', 'Drop on overlay:', { paneId: targetPane.id, zone, filePath });
 
         // Clear drop indicators
         targetPane.element.classList.remove('drag-over-tab');
@@ -1178,7 +1179,7 @@ class PaneManager {
         this.container.addEventListener('drop', (e) => {
             e.preventDefault();
             const draggedPaneId = e.dataTransfer.getData('text/plain');
-            console.log('[PaneManager] Drop:', draggedPaneId);
+            logger.trace('dragDrop', 'Drop:', draggedPaneId);
             // TODO: Implement drop logic with drop zones
         });
     }
@@ -1197,7 +1198,7 @@ class PaneManager {
         if (pane) {
             pane.element.classList.add('active');
             this.activePane = pane;
-            console.log('[PaneManager] Active pane:', paneId);
+            logger.debug('paneCreate', 'Active pane:', paneId);
             eventBus.emit('pane:activated', { paneId });
         }
     }
@@ -1208,7 +1209,7 @@ class PaneManager {
     setPaneContent(paneId, contentElement, contentType, title = 'Untitled', filePath = null, metadata = {}) {
         const pane = this.panes.get(paneId);
         if (!pane) {
-            console.error('[PaneManager] Pane not found:', paneId);
+            logger.error('paneCreate', 'Pane not found:', paneId);
             return;
         }
 
@@ -1228,7 +1229,7 @@ class PaneManager {
             titleElement.textContent = title;
         }
 
-        console.log('[PaneManager] Content set:', { paneId, contentType, title, filePath });
+        logger.debug('paneCreate', 'Content set:', { paneId, contentType, title, filePath });
     }
 
     /**
@@ -1264,15 +1265,15 @@ class PaneManager {
      * Add a tab to a pane
      */
     addTab(paneId, filePath, title, content, contentType, lineNumber = null) {
-        console.log('[PaneManager] addTab called:', { paneId, filePath, title, contentType, lineNumber });
+        logger.debug('paneCreate', 'addTab called:', { paneId, filePath, title, contentType, lineNumber });
 
         const pane = this.panes.get(paneId);
         if (!pane) {
-            console.error('[PaneManager] Pane not found:', paneId);
+            logger.error('paneCreate', 'Pane not found:', paneId);
             return null;
         }
 
-        console.log('[PaneManager] Current pane state:', {
+        logger.debug('paneCreate', 'Current pane state:', {
             id: pane.id,
             existingTabs: pane.tabs.length,
             currentTitle: pane.element.querySelector('.pane-title')?.textContent
@@ -1284,7 +1285,7 @@ class PaneManager {
         // Check if file is already open in a tab
         const existingTab = pane.tabs.find(tab => tab.filePath === filePath);
         if (existingTab) {
-            console.log('[PaneManager] File already open in tab, switching to it:', existingTab.id);
+            logger.debug('paneCreate', 'File already open in tab, switching to it:', existingTab.id);
             // Switch to existing tab and navigate to line if specified
             this.switchTab(paneId, existingTab.id, lineNumber);
             return existingTab.id;
@@ -1299,7 +1300,7 @@ class PaneManager {
             contentType
         };
 
-        console.log('[PaneManager] Creating new tab:', { tabId, title, filePath });
+        logger.debug('paneCreate', 'Creating new tab:', { tabId, title, filePath });
 
         // Add to tabs array
         pane.tabs.push(tab);
@@ -1311,10 +1312,10 @@ class PaneManager {
         this.renderTabBar(pane);
 
         // Set as active tab
-        console.log('[PaneManager] Switching to new tab:', tabId);
+        logger.debug('paneCreate', 'Switching to new tab:', tabId);
         this.switchTab(paneId, tabId);
 
-        console.log('[PaneManager] ✓ Tab added successfully:', { paneId, tabId, title });
+        logger.debug('paneCreate', '✓ Tab added successfully:', { paneId, tabId, title });
         eventBus.emit('tab:added', { paneId, tabId, title, filePath });
         return tabId;
     }
@@ -1361,26 +1362,26 @@ class PaneManager {
     switchTab(paneId, tabId, lineNumber = null) {
         const pane = this.panes.get(paneId);
         if (!pane) {
-            console.error('[PaneManager] Pane not found:', paneId);
+            logger.error('paneCreate', 'Pane not found:', paneId);
             return;
         }
 
         const tab = pane.tabs.find(t => t.id === tabId);
         if (!tab) {
-            console.error('[PaneManager] Tab not found:', tabId);
+            logger.error('paneCreate', 'Tab not found:', tabId);
             return;
         }
 
-        console.log('[PaneManager] ========== SWITCHING TAB ==========');
-        console.log('[PaneManager] Switching to tab:', { paneId, tabId, title: tab.title, filePath: tab.filePath, lineNumber });
-        console.log('[PaneManager] Tab content element:', tab.content);
-        console.log('[PaneManager] Tab content dataset:', tab.content.dataset);
+        logger.trace('tabSwitch', '========== SWITCHING TAB ==========');
+        logger.trace('tabSwitch', 'Switching to tab:', { paneId, tabId, title: tab.title, filePath: tab.filePath, lineNumber });
+        logger.trace('tabSwitch', 'Tab content element:', tab.content);
+        logger.trace('tabSwitch', 'Tab content dataset:', tab.content.dataset);
 
         // CRITICAL FIX: Don't destroy DOM elements - just hide/show them
         // Hide all tab contents first and ensure they have absolute positioning
         pane.tabs.forEach(t => {
             if (t.content) {
-                console.log('[PaneManager] Processing tab:', {
+                logger.trace('tabSwitch', 'Processing tab:', {
                     id: t.id,
                     title: t.title,
                     filePath: t.filePath,
@@ -1397,12 +1398,12 @@ class PaneManager {
 
                 if (t.content.parentElement === pane.contentContainer) {
                     t.content.style.display = 'none';
-                    console.log('[PaneManager] Hiding tab:', t.title, 'filePath:', t.filePath);
+                    logger.trace('tabSwitch', 'Hiding tab:', t.title, 'filePath:', t.filePath);
 
                     // Log the actual DOM content preview
                     const previewElement = t.content.querySelector('.CodeMirror, pre, code, img, video');
                     if (previewElement) {
-                        console.log('[PaneManager] Content preview for', t.title, ':', previewElement.className, previewElement.tagName);
+                        logger.trace('tabSwitch', 'Content preview for', t.title, ':', previewElement.className, previewElement.tagName);
                     }
                 }
             }
@@ -1410,7 +1411,7 @@ class PaneManager {
 
         // Ensure the active tab content is in the DOM
         if (!tab.content.parentElement) {
-            console.log('[PaneManager] Adding tab content to DOM:', tab.title);
+            logger.trace('tabSwitch', 'Adding tab content to DOM:', tab.title);
             pane.contentContainer.appendChild(tab.content);
         }
 
@@ -1423,12 +1424,12 @@ class PaneManager {
 
         // Show the active tab content
         tab.content.style.display = 'flex';
-        console.log('[PaneManager] Showing tab:', tab.title, 'filePath:', tab.filePath);
+        logger.trace('tabSwitch', 'Showing tab:', tab.title, 'filePath:', tab.filePath);
 
         // Log the actual DOM content being shown
         const activePreviewElement = tab.content.querySelector('.CodeMirror, pre, code, img, video');
         if (activePreviewElement) {
-            console.log('[PaneManager] Active content preview:', activePreviewElement.className, activePreviewElement.tagName);
+            logger.trace('tabSwitch', 'Active content preview:', activePreviewElement.className, activePreviewElement.tagName);
 
             // For CodeMirror, log the actual content (first 5 lines)
             if (activePreviewElement.CodeMirror) {
@@ -1439,13 +1440,13 @@ class PaneManager {
                         first5Lines.push(`Line ${i}: ${line.substring(0, 80)}`);
                     }
                 }
-                console.log('[PaneManager] CodeMirror first 5 lines:', first5Lines.join(' | '));
+                logger.trace('tabSwitch', 'CodeMirror first 5 lines:', first5Lines.join(' | '));
             }
         }
 
         // Log a text snippet from the visible content
         const textContent = tab.content.textContent?.substring(0, 200) || '';
-        console.log('[PaneManager] Visible text snippet:', textContent);
+        logger.trace('tabSwitch', 'Visible text snippet:', textContent);
 
         // Update pane state
         pane.content = tab.content;
@@ -1459,14 +1460,14 @@ class PaneManager {
         // Update pane title - CRITICAL: This updates the header title
         const titleElement = pane.element.querySelector('.pane-title');
         if (titleElement) {
-            console.log('[PaneManager] Updating pane title from', titleElement.textContent, 'to', tab.title);
+            logger.trace('tabSwitch', 'Updating pane title from', titleElement.textContent, 'to', tab.title);
             titleElement.textContent = tab.title;
         } else {
-            console.warn('[PaneManager] ⚠️ Could not find pane title element for pane:', paneId);
+            logger.warn('paneCreate', '⚠️ Could not find pane title element for pane:', paneId);
         }
 
-        console.log('[PaneManager] ✓ Switched to tab successfully:', { paneId, tabId, title: tab.title });
-        console.log('[PaneManager] ========================================');
+        logger.trace('tabSwitch', '✓ Switched to tab successfully:', { paneId, tabId, title: tab.title });
+        logger.trace('tabSwitch', '========================================');
         eventBus.emit('tab:switched', { paneId, tabId, filePath: tab.filePath });
 
         // Navigate to line number if specified (for search results, etc.)
@@ -1474,14 +1475,14 @@ class PaneManager {
         if (lineNumber !== null && lineNumber !== undefined) {
             // Small delay to ensure DOM is ready
             setTimeout(() => {
-                console.log('[PaneManager] Navigating to line in existing tab:', lineNumber);
+                logger.trace('tabSwitch', 'Navigating to line in existing tab:', lineNumber);
                 // Access the FileViewer instance through the stored property
                 const fileViewerInstance = tab.content._fileViewerInstance;
                 if (fileViewerInstance && fileViewerInstance.textEditor) {
-                    console.log('[PaneManager] Found TextEditor instance, calling goToLine');
+                    logger.trace('tabSwitch', 'Found TextEditor instance, calling goToLine');
                     fileViewerInstance.textEditor.goToLine(lineNumber);
                 } else {
-                    console.warn('[PaneManager] Could not access TextEditor instance for line navigation');
+                    logger.warn('paneCreate', 'Could not access TextEditor instance for line navigation');
                 }
             }, 10);
         }
@@ -1493,13 +1494,13 @@ class PaneManager {
     closeTab(paneId, tabId) {
         const pane = this.panes.get(paneId);
         if (!pane) {
-            console.error('[PaneManager] Pane not found:', paneId);
+            logger.error('paneCreate', 'Pane not found:', paneId);
             return;
         }
 
         const tabIndex = pane.tabs.findIndex(t => t.id === tabId);
         if (tabIndex === -1) {
-            console.error('[PaneManager] Tab not found:', tabId);
+            logger.error('paneCreate', 'Tab not found:', tabId);
             return;
         }
 
@@ -1550,7 +1551,7 @@ class PaneManager {
             this.renderTabBar(pane);
         }
 
-        console.log('[PaneManager] Tab closed:', { paneId, tabId });
+        logger.debug('paneCreate', 'Tab closed:', { paneId, tabId });
         eventBus.emit('tab:closed', { paneId, tabId, filePath: tab.filePath });
     }
 
@@ -1597,10 +1598,10 @@ class PaneManager {
      * Deserialize layout from JSON
      */
     async deserializeLayout(data) {
-        console.log('[PaneManager] Restoring layout:', data);
+        logger.debug('paneCreate', 'Restoring layout:', data);
 
         if (!data) {
-            console.warn('[PaneManager] No layout data to restore');
+            logger.warn('paneCreate', 'No layout data to restore');
             return;
         }
 
@@ -1617,14 +1618,14 @@ class PaneManager {
             this.setActivePane(this.rootPane.id);
         }
 
-        console.log('[PaneManager] Layout restored successfully');
+        logger.debug('paneCreate', 'Layout restored successfully');
     }
 
     /**
      * Restore a pane and its children from serialized data
      */
     async restorePane(data, parent) {
-        console.log('[PaneManager] Restoring pane:', data.id);
+        logger.debug('paneCreate', 'Restoring pane:', data.id);
 
         // Determine pane styles based on whether it's root or child
         let styles = {};
@@ -1679,7 +1680,7 @@ class PaneManager {
 
         // If this pane has children (is split), restore them
         if (data.split && data.children && data.children.length === 2) {
-            console.log('[PaneManager] Restoring split pane with children');
+            logger.debug('paneCreate', 'Restoring split pane with children');
 
             // Update pane to be a container
             pane.split = data.split;
@@ -1717,7 +1718,7 @@ class PaneManager {
             this.setupResizeHandle(handle, pane);
         } else if (data.tabs && data.tabs.length > 0) {
             // This is a leaf pane with tabs - restore them
-            console.log('[PaneManager] Restoring pane with', data.tabs.length, 'tabs');
+            logger.debug('paneCreate', 'Restoring pane with', data.tabs.length, 'tabs');
 
             for (const tabData of data.tabs) {
                 // Request the file to be opened in this pane
@@ -1743,7 +1744,7 @@ class PaneManager {
             const currentCount = document.querySelectorAll('.CodeMirror-cursor').length;
             if (currentCount > this.dragMetrics.initialCursorCount) {
                 const delta = currentCount - this.dragMetrics.initialCursorCount;
-                console.warn('[PaneManager] ⚠️ CURSOR CREATED DURING DRAG! Total:', currentCount, 'Delta:', delta);
+                logger.warn('paneCreate', '⚠️ CURSOR CREATED DURING DRAG! Total:', currentCount, 'Delta:', delta);
                 this.dragMetrics.currentCursorCount = currentCount;
             }
         }, 100);
@@ -1770,7 +1771,7 @@ class PaneManager {
         this.panes.clear();
         this.rootPane = null;
         this.activePane = null;
-        console.log('[PaneManager] Destroyed');
+        logger.debug('paneCreate', 'Destroyed');
     }
 }
 

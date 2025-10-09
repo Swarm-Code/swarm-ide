@@ -12,6 +12,7 @@
 
 const eventBus = require('../modules/EventBus');
 const pathUtils = require('../utils/PathUtils');
+const logger = require('../utils/Logger');
 
 class WelcomeScreen {
     constructor(container, config, fileSystemService) {
@@ -84,20 +85,20 @@ class WelcomeScreen {
         // Open folder button
         const openFolderBtn = this.container.querySelector('#welcome-open-folder');
         if (openFolderBtn) {
-            console.log('[WelcomeScreen] Open folder button found, adding click listener');
+            logger.debug('appInit', 'Open folder button found, adding click listener');
             openFolderBtn.addEventListener('click', async () => {
-                console.log('[WelcomeScreen] Open folder button clicked!');
+                logger.debug('appInit', 'Open folder button clicked!');
                 const result = await this.fs.selectFolder();
-                console.log('[WelcomeScreen] selectFolder result:', result);
+                logger.debug('appInit', 'selectFolder result:', result);
                 if (!result.canceled && result.path) {
-                    console.log('[WelcomeScreen] Emitting explorer:open-folder with path:', result.path);
+                    logger.debug('appInit', 'Emitting explorer:open-folder with path:', result.path);
                     eventBus.emit('explorer:open-folder', { path: result.path });
                 } else {
-                    console.log('[WelcomeScreen] Folder selection cancelled or no path');
+                    logger.debug('appInit', 'Folder selection cancelled or no path');
                 }
             });
         } else {
-            console.error('[WelcomeScreen] Open folder button NOT found!');
+            logger.error('appInit', 'Open folder button NOT found!');
         }
 
         // Recent folder items

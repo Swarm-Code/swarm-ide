@@ -7,6 +7,7 @@
  */
 
 const eventBus = require('../modules/EventBus');
+const logger = require('../utils/Logger');
 
 // Simple ID generator
 function generateId() {
@@ -20,7 +21,7 @@ class BrowserProfileManager {
         this.activeProfile = null;
         this.defaultProfile = null;
 
-        console.log('[BrowserProfileManager] Initialized');
+        logger.debug('browserProfile', 'Initialized');
     }
 
     /**
@@ -30,7 +31,7 @@ class BrowserProfileManager {
         // Load profiles from localStorage
         const storedData = localStorage.getItem(this.storageKey);
         const storedProfiles = storedData ? JSON.parse(storedData) : [];
-        console.log('[BrowserProfileManager] Loaded profiles:', storedProfiles.length);
+        logger.debug('browserProfile', 'Loaded profiles:', storedProfiles.length);
 
         // If no profiles exist, create default one
         if (storedProfiles.length === 0) {
@@ -49,7 +50,7 @@ class BrowserProfileManager {
             this.defaultProfile = firstProfile;
         }
 
-        console.log('[BrowserProfileManager] Active profile:', this.activeProfile?.id);
+        logger.debug('browserProfile', 'Active profile:', this.activeProfile?.id);
     }
 
     /**
@@ -80,7 +81,7 @@ class BrowserProfileManager {
         this.profiles.set(profileId, profile);
         this.saveProfiles();
 
-        console.log('[BrowserProfileManager] Created profile:', profileId, name);
+        logger.debug('browserProfile', 'Created profile:', profileId, name);
         eventBus.emit('profile:created', { profileId, profile });
 
         return profile;
@@ -127,7 +128,7 @@ class BrowserProfileManager {
     setActiveProfile(profileId) {
         const profile = this.profiles.get(profileId);
         if (!profile) {
-            console.error('[BrowserProfileManager] Profile not found:', profileId);
+            logger.error('browserProfile', 'Profile not found:', profileId);
             return false;
         }
 
@@ -137,7 +138,7 @@ class BrowserProfileManager {
         }
 
         this.activeProfile = profile;
-        console.log('[BrowserProfileManager] Active profile set:', profileId);
+        logger.debug('browserProfile', 'Active profile set:', profileId);
 
         eventBus.emit('profile:activated', { profileId, profile });
 
@@ -150,7 +151,7 @@ class BrowserProfileManager {
     updateProfile(profileId, updates) {
         const profile = this.profiles.get(profileId);
         if (!profile) {
-            console.error('[BrowserProfileManager] Profile not found:', profileId);
+            logger.error('browserProfile', 'Profile not found:', profileId);
             return false;
         }
 
@@ -165,7 +166,7 @@ class BrowserProfileManager {
 
         this.saveProfiles();
 
-        console.log('[BrowserProfileManager] Updated profile:', profileId);
+        logger.debug('browserProfile', 'Updated profile:', profileId);
         eventBus.emit('profile:updated', { profileId, profile });
 
         return true;
@@ -177,7 +178,7 @@ class BrowserProfileManager {
     deleteProfile(profileId) {
         // Can't delete last profile
         if (this.profiles.size === 1) {
-            console.warn('[BrowserProfileManager] Cannot delete last profile');
+            logger.warn('browserProfile', 'Cannot delete last profile');
             return false;
         }
 
@@ -193,7 +194,7 @@ class BrowserProfileManager {
         this.profiles.delete(profileId);
         this.saveProfiles();
 
-        console.log('[BrowserProfileManager] Deleted profile:', profileId);
+        logger.debug('browserProfile', 'Deleted profile:', profileId);
         eventBus.emit('profile:deleted', { profileId });
 
         return true;
@@ -205,7 +206,7 @@ class BrowserProfileManager {
     duplicateProfile(profileId) {
         const sourceProfile = this.profiles.get(profileId);
         if (!sourceProfile) {
-            console.error('[BrowserProfileManager] Profile not found:', profileId);
+            logger.error('browserProfile', 'Profile not found:', profileId);
             return null;
         }
 
@@ -220,7 +221,7 @@ class BrowserProfileManager {
         this.profiles.set(newProfile.id, newProfile);
         this.saveProfiles();
 
-        console.log('[BrowserProfileManager] Duplicated profile:', newProfile.id);
+        logger.debug('browserProfile', 'Duplicated profile:', newProfile.id);
         eventBus.emit('profile:created', { profileId: newProfile.id, profile: newProfile });
 
         return newProfile;
@@ -232,7 +233,7 @@ class BrowserProfileManager {
     saveProfileState(profileId, state = {}) {
         const profile = this.profiles.get(profileId);
         if (!profile) {
-            console.error('[BrowserProfileManager] Profile not found:', profileId);
+            logger.error('browserProfile', 'Profile not found:', profileId);
             return false;
         }
 
@@ -243,7 +244,7 @@ class BrowserProfileManager {
 
         this.saveProfiles();
 
-        console.log('[BrowserProfileManager] Saved profile state:', profileId);
+        logger.debug('browserProfile', 'Saved profile state:', profileId);
         return true;
     }
 
@@ -270,7 +271,7 @@ class BrowserProfileManager {
         }
 
         this.saveProfiles();
-        console.log('[BrowserProfileManager] Added cookie:', cookie.name);
+        logger.debug('browserProfile', 'Added cookie:', cookie.name);
 
         return true;
     }
@@ -293,7 +294,7 @@ class BrowserProfileManager {
         profile.cookies = [];
         this.saveProfiles();
 
-        console.log('[BrowserProfileManager] Cleared cookies');
+        logger.debug('browserProfile', 'Cleared cookies');
         return true;
     }
 
@@ -305,7 +306,7 @@ class BrowserProfileManager {
         if (!profile) return false;
 
         if (!profile.settings.saveCredentials) {
-            console.log('[BrowserProfileManager] Credential saving disabled for profile');
+            logger.debug('browserProfile', 'Credential saving disabled for profile');
             return false;
         }
 
@@ -331,7 +332,7 @@ class BrowserProfileManager {
         }
 
         this.saveProfiles();
-        console.log('[BrowserProfileManager] Added credential for:', credential.domain);
+        logger.debug('browserProfile', 'Added credential for:', credential.domain);
 
         return true;
     }
@@ -368,7 +369,7 @@ class BrowserProfileManager {
         if (index > -1) {
             profile.credentials.splice(index, 1);
             this.saveProfiles();
-            console.log('[BrowserProfileManager] Deleted credential');
+            logger.debug('browserProfile', 'Deleted credential');
             return true;
         }
 
@@ -383,7 +384,7 @@ class BrowserProfileManager {
         if (!profile) return false;
 
         if (!profile.settings.trackHistory || profile.settings.privacyMode) {
-            console.log('[BrowserProfileManager] History tracking disabled');
+            logger.debug('browserProfile', 'History tracking disabled');
             return false;
         }
 
@@ -441,7 +442,7 @@ class BrowserProfileManager {
         profile.history = [];
         this.saveProfiles();
 
-        console.log('[BrowserProfileManager] Cleared history');
+        logger.debug('browserProfile', 'Cleared history');
         return true;
     }
 
@@ -497,7 +498,7 @@ class BrowserProfileManager {
         Object.assign(profile.settings, settings);
         this.saveProfiles();
 
-        console.log('[BrowserProfileManager] Updated settings');
+        logger.debug('browserProfile', 'Updated settings');
         return true;
     }
 
@@ -507,7 +508,7 @@ class BrowserProfileManager {
     saveProfiles() {
         const profilesArray = Array.from(this.profiles.values());
         localStorage.setItem(this.storageKey, JSON.stringify(profilesArray));
-        console.log('[BrowserProfileManager] Saved profiles to storage');
+        logger.debug('browserProfile', 'Saved profiles to storage');
     }
 
     /**
@@ -516,7 +517,7 @@ class BrowserProfileManager {
     exportProfile(profileId) {
         const profile = this.profiles.get(profileId);
         if (!profile) {
-            console.error('[BrowserProfileManager] Profile not found:', profileId);
+            logger.error('browserProfile', 'Profile not found:', profileId);
             return null;
         }
 
@@ -538,12 +539,12 @@ class BrowserProfileManager {
             this.profiles.set(profile.id, profile);
             this.saveProfiles();
 
-            console.log('[BrowserProfileManager] Imported profile:', profile.id);
+            logger.debug('browserProfile', 'Imported profile:', profile.id);
             eventBus.emit('profile:imported', { profileId: profile.id, profile });
 
             return profile;
         } catch (error) {
-            console.error('[BrowserProfileManager] Failed to import profile:', error);
+            logger.error('browserProfile', 'Failed to import profile:', error);
             return null;
         }
     }
@@ -556,7 +557,7 @@ class BrowserProfileManager {
             this.saveProfileState(this.activeProfile.id);
         }
         this.saveProfiles();
-        console.log('[BrowserProfileManager] Destroyed');
+        logger.debug('browserProfile', 'Destroyed');
     }
 }
 

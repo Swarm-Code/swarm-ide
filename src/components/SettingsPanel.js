@@ -6,6 +6,7 @@
 
 const eventBus = require('../modules/EventBus');
 const stateManager = require('../modules/StateManager');
+const logger = require('../utils/Logger');
 
 class SettingsPanel {
     constructor() {
@@ -25,12 +26,23 @@ class SettingsPanel {
             completionDelay: 100,
             hoverDelay: 200,
             markdownPreviewEnabled: true,
-            breadcrumbEnabled: true
+            breadcrumbEnabled: true,
+            // Logging settings
+            loggingEnabled: false,  // Disabled by default
+            loggingLevel: 'DEBUG',
+            loggingMode: 'blacklist', // 'whitelist' or 'blacklist'
+            loggingPreset: 'default', // 'default', 'quiet', 'verbose', 'gitOnly', etc.
+            loggingFunctionalities: [] // Whitelist/blacklist array
         };
 
         try {
             const stored = localStorage.getItem('ide-settings');
-            return stored ? { ...defaults, ...JSON.parse(stored) } : defaults;
+            const settings = stored ? { ...defaults, ...JSON.parse(stored) } : defaults;
+
+            // Apply logging settings to Logger on load
+            this.applyLoggingSettings(settings);
+
+            return settings;
         } catch (error) {
             return defaults;
         }
@@ -146,6 +158,139 @@ class SettingsPanel {
                         </div>
                     </div>
 
+                    <div class="settings-section settings-advanced">
+                        <h3 style="cursor: pointer; user-select: none;" id="advanced-toggle">
+                            🔧 Advanced Settings <span id="advanced-arrow">▼</span>
+                        </h3>
+                        <div id="advanced-content" style="display: none;">
+                            <h4>🐛 Debug Logging</h4>
+
+                            <div class="setting-item">
+                                <label>
+                                    <input type="checkbox" id="logging-enabled" ${this.settings.loggingEnabled ? 'checked' : ''}>
+                                    <span>Enable Logging</span>
+                                </label>
+                                <p class="setting-description">Master switch for all debug logging</p>
+                            </div>
+
+                            <div class="setting-item">
+                                <label>
+                                    <span>Log Level</span>
+                                    <select id="logging-level">
+                                        <option value="ERROR" ${this.settings.loggingLevel === 'ERROR' ? 'selected' : ''}>ERROR - Errors only</option>
+                                        <option value="WARN" ${this.settings.loggingLevel === 'WARN' ? 'selected' : ''}>WARN - Warnings & Errors</option>
+                                        <option value="INFO" ${this.settings.loggingLevel === 'INFO' ? 'selected' : ''}>INFO - Important events</option>
+                                        <option value="DEBUG" ${this.settings.loggingLevel === 'DEBUG' ? 'selected' : ''}>DEBUG - Detailed debugging</option>
+                                        <option value="TRACE" ${this.settings.loggingLevel === 'TRACE' ? 'selected' : ''}>TRACE - Everything</option>
+                                    </select>
+                                </label>
+                                <p class="setting-description">Minimum level of logs to display</p>
+                            </div>
+
+                            <div class="setting-item">
+                                <label>
+                                    <span>Quick Presets</span>
+                                    <select id="logging-preset">
+                                        <option value="default">Default - All except perfMonitor</option>
+                                        <option value="quiet">Quiet - Errors only</option>
+                                        <option value="verbose">Verbose - Everything</option>
+                                        <option value="gitOnly">Git Only - Only git operations</option>
+                                        <option value="lspOnly">LSP Only - Only editor/LSP</option>
+                                        <option value="lessNoisy">Less Noisy - Disable verbose stuff</option>
+                                    </select>
+                                </label>
+                                <p class="setting-description">Quick presets for common scenarios</p>
+                            </div>
+
+                            <h5 style="margin-top: 15px;">Git Operations</h5>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 10px;">
+                                <label><input type="checkbox" class="log-functionality" data-func="gitPush"> gitPush</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="gitPull"> gitPull</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="gitFetch"> gitFetch</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="gitCommit"> gitCommit</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="gitBranch"> gitBranch</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="gitMerge"> gitMerge</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="gitConflict"> gitConflict</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="gitDiff"> gitDiff</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="gitBlame"> gitBlame</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="gitHistory"> gitHistory</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="gitStatus"> gitStatus</label>
+                            </div>
+
+                            <h5>LSP Features</h5>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 10px;">
+                                <label><input type="checkbox" class="log-functionality" data-func="hover"> hover</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="goToDefinition"> goToDefinition</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="findReferences"> findReferences</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="renameSymbol"> renameSymbol</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="formatting"> formatting</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="lspClient"> lspClient</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="lspServer"> lspServer</label>
+                            </div>
+
+                            <h5>Editor</h5>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 10px;">
+                                <label><input type="checkbox" class="log-functionality" data-func="editorInit"> editorInit</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="editorChange"> editorChange</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="diffRender"> diffRender</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="syntaxHighlight"> syntaxHighlight</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="autocomplete"> autocomplete</label>
+                            </div>
+
+                            <h5>Panes & Tabs</h5>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 10px;">
+                                <label><input type="checkbox" class="log-functionality" data-func="tabSwitch"> tabSwitch</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="paneCreate"> paneCreate</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="paneSplit"> paneSplit</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="paneClose"> paneClose</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="dragDrop"> dragDrop</label>
+                            </div>
+
+                            <h5>Files</h5>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 10px;">
+                                <label><input type="checkbox" class="log-functionality" data-func="fileOpen"> fileOpen</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="fileClose"> fileClose</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="fileSave"> fileSave</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="fileWatch"> fileWatch</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="fileSystem"> fileSystem</label>
+                            </div>
+
+                            <h5>Application</h5>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 10px;">
+                                <label><input type="checkbox" class="log-functionality" data-func="appInit"> appInit</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="appShutdown"> appShutdown</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="settings"> settings</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="perfMonitor"> perfMonitor</label>
+                            </div>
+
+                            <h5>Browser</h5>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 10px;">
+                                <label><input type="checkbox" class="log-functionality" data-func="browserNav"> browserNav</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="browserProfile"> browserProfile</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="browserAutomation"> browserAutomation</label>
+                            </div>
+
+                            <h5>Workspace</h5>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 10px;">
+                                <label><input type="checkbox" class="log-functionality" data-func="workspaceLoad"> workspaceLoad</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="workspaceChange"> workspaceChange</label>
+                            </div>
+
+                            <h5>UI Components</h5>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 10px;">
+                                <label><input type="checkbox" class="log-functionality" data-func="menu"> menu</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="statusBar"> statusBar</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="dialog"> dialog</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="eventBus"> eventBus</label>
+                            </div>
+
+                            <div class="setting-item">
+                                <button class="settings-btn" id="apply-logging" style="background: #4CAF50;">Apply Logging Settings</button>
+                                <p class="setting-description">Click to apply logging changes immediately (without closing settings)</p>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="settings-footer">
                         <button class="settings-btn settings-save" id="settings-save">Save Settings</button>
                     </div>
@@ -189,6 +334,26 @@ class SettingsPanel {
             this.close();
         });
 
+        // Advanced toggle
+        const advancedToggle = this.panel.querySelector('#advanced-toggle');
+        const advancedContent = this.panel.querySelector('#advanced-content');
+        const advancedArrow = this.panel.querySelector('#advanced-arrow');
+        advancedToggle.addEventListener('click', () => {
+            if (advancedContent.style.display === 'none') {
+                advancedContent.style.display = 'block';
+                advancedArrow.textContent = '▲';
+            } else {
+                advancedContent.style.display = 'none';
+                advancedArrow.textContent = '▼';
+            }
+        });
+
+        // Apply logging button (immediate apply without closing)
+        const applyLogging = this.panel.querySelector('#apply-logging');
+        applyLogging.addEventListener('click', () => {
+            this.applyCurrentLoggingSettings();
+        });
+
         // ESC key to close
         this.escapeHandler = (e) => {
             if (e.key === 'Escape' && this.isOpen) {
@@ -210,10 +375,96 @@ class SettingsPanel {
         this.settings.markdownPreviewEnabled = this.panel.querySelector('#markdown-preview-enabled').checked;
         this.settings.breadcrumbEnabled = this.panel.querySelector('#breadcrumb-enabled').checked;
 
+        // Save logging settings
+        this.settings.loggingEnabled = this.panel.querySelector('#logging-enabled').checked;
+        this.settings.loggingLevel = this.panel.querySelector('#logging-level').value;
+        this.settings.loggingPreset = this.panel.querySelector('#logging-preset').value;
+
+        // Collect checked functionalities
+        const checkedFunctionalities = [];
+        this.panel.querySelectorAll('.log-functionality:checked').forEach(cb => {
+            checkedFunctionalities.push(cb.dataset.func);
+        });
+        this.settings.loggingMode = checkedFunctionalities.length > 0 ? 'whitelist' : 'blacklist';
+        this.settings.loggingFunctionalities = checkedFunctionalities;
+
         this.saveSettings();
+
+        // Apply logging settings immediately
+        this.applyLoggingSettings(this.settings);
 
         // Show notification
         this.showNotification('✓ Settings saved and applied!');
+    }
+
+    /**
+     * Apply logging settings to Logger
+     */
+    applyLoggingSettings(settings) {
+        const loggingConfig = require('../config/logging.config.js');
+
+        // Apply preset if specified
+        if (settings.loggingPreset && settings.loggingPreset !== 'default') {
+            const preset = loggingConfig.presets[settings.loggingPreset];
+            if (preset) {
+                logger.setEnabled(preset.enabled);
+                logger.setLevel(preset.logLevel);
+
+                if (preset.mode === 'whitelist' && preset.enabledFunctionalities) {
+                    logger.enableOnly(preset.enabledFunctionalities);
+                } else if (preset.mode === 'blacklist' && preset.disabledFunctionalities) {
+                    logger.disable(preset.disabledFunctionalities);
+                }
+
+                logger.info('settings', `Applied logging preset: ${settings.loggingPreset}`);
+                return;
+            }
+        }
+
+        // Apply individual settings
+        logger.setEnabled(settings.loggingEnabled);
+        logger.setLevel(settings.loggingLevel);
+
+        // Apply mode and functionalities if specified
+        if (settings.loggingMode === 'whitelist' && settings.loggingFunctionalities?.length > 0) {
+            logger.enableOnly(settings.loggingFunctionalities);
+        } else if (settings.loggingMode === 'blacklist' && settings.loggingFunctionalities?.length > 0) {
+            logger.disable(settings.loggingFunctionalities);
+        }
+
+        logger.info('settings', 'Logging settings applied', {
+            enabled: settings.loggingEnabled,
+            level: settings.loggingLevel,
+            mode: settings.loggingMode
+        });
+    }
+
+    /**
+     * Apply current logging settings from form (without saving)
+     */
+    applyCurrentLoggingSettings() {
+        const loggingEnabled = this.panel.querySelector('#logging-enabled').checked;
+        const loggingLevel = this.panel.querySelector('#logging-level').value;
+        const loggingPreset = this.panel.querySelector('#logging-preset').value;
+
+        // Collect checked functionalities
+        const checkedFunctionalities = [];
+        this.panel.querySelectorAll('.log-functionality:checked').forEach(cb => {
+            checkedFunctionalities.push(cb.dataset.func);
+        });
+
+        const tempSettings = {
+            loggingEnabled,
+            loggingLevel,
+            loggingPreset,
+            loggingMode: checkedFunctionalities.length > 0 ? 'whitelist' : 'blacklist',
+            loggingFunctionalities: checkedFunctionalities
+        };
+
+        this.applyLoggingSettings(tempSettings);
+
+        // Show notification
+        this.showNotification('✓ Logging settings applied!');
     }
 
     /**

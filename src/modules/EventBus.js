@@ -10,10 +10,11 @@
  *   eventBus.off('file:opened', handler);
  */
 
+const logger = require('../utils/Logger');
+
 class EventBus {
     constructor() {
         this.events = new Map();
-        this.debug = false;
     }
 
     /**
@@ -29,9 +30,7 @@ class EventBus {
 
         this.events.get(event).add(handler);
 
-        if (this.debug) {
-            console.log(`[EventBus] Subscribed to '${event}'`);
-        }
+        logger.debug('eventBus', `Subscribed to '${event}'`);
 
         // Return unsubscribe function
         return () => this.off(event, handler);
@@ -65,9 +64,7 @@ class EventBus {
             this.events.delete(event);
         }
 
-        if (this.debug) {
-            console.log(`[EventBus] Unsubscribed from '${event}'`);
-        }
+        logger.debug('eventBus', `Unsubscribed from '${event}'`);
     }
 
     /**
@@ -76,9 +73,7 @@ class EventBus {
      * @param {*} data - Data to pass to handlers
      */
     emit(event, data) {
-        if (this.debug) {
-            console.log(`[EventBus] Emitting '${event}'`, data);
-        }
+        logger.debug('eventBus', `Emitting '${event}'`, data);
 
         if (!this.events.has(event)) return;
 
@@ -86,7 +81,7 @@ class EventBus {
             try {
                 handler(data);
             } catch (error) {
-                console.error(`[EventBus] Error in handler for '${event}':`, error);
+                logger.error('eventBus', `Error in handler for '${event}':`, error);
             }
         });
     }
@@ -109,14 +104,6 @@ class EventBus {
      */
     getEvents() {
         return Array.from(this.events.keys());
-    }
-
-    /**
-     * Enable/disable debug logging
-     * @param {boolean} enabled - Enable debug mode
-     */
-    setDebug(enabled) {
-        this.debug = enabled;
     }
 }
 

@@ -8,6 +8,7 @@
  *   await viewer.openFile('/path/to/file.js');
  */
 
+const logger = require('../utils/Logger');
 const eventBus = require('../modules/EventBus');
 const stateManager = require('../modules/StateManager');
 const fileTypes = require('../utils/FileTypes');
@@ -151,7 +152,7 @@ class FileViewer {
         eventBus.on('file:replaced', (data) => {
             // If this file is currently open, reload it to show updated content
             if (this.currentFile && data.path === this.currentFile) {
-                console.log('[FileViewer] File was replaced, reloading:', data.path);
+                logger.debug('fileOpen', 'File was replaced, reloading:', data.path);
                 this.refreshCurrentFile();
             }
         });
@@ -187,14 +188,14 @@ class FileViewer {
      * @param {boolean} enableGitDiff - Whether to enable git diff visualization
      */
     async openFile(filePath, lineNumber = null, enableGitDiff = false) {
-        console.log('[FileViewer] ========== OPENING FILE ==========');
-        console.log('[FileViewer] this:', this);
-        console.log('[FileViewer] filePath:', filePath);
-        console.log('[FileViewer] lineNumber:', lineNumber);
-        console.log('[FileViewer] enableGitDiff:', enableGitDiff);
-        console.log('[FileViewer] viewerElement:', this.viewerElement);
-        console.log('[FileViewer] viewerElement dataset:', this.viewerElement.dataset);
-        console.log('[FileViewer] headerElement:', this.headerElement);
+        logger.debug('fileOpen', '========== OPENING FILE ==========');
+        logger.debug('fileOpen', 'this:', this);
+        logger.debug('fileOpen', 'filePath:', filePath);
+        logger.debug('fileOpen', 'lineNumber:', lineNumber);
+        logger.debug('fileOpen', 'enableGitDiff:', enableGitDiff);
+        logger.debug('fileOpen', 'viewerElement:', this.viewerElement);
+        logger.debug('fileOpen', 'viewerElement dataset:', this.viewerElement.dataset);
+        logger.debug('fileOpen', 'headerElement:', this.headerElement);
 
         // Wrap entire file opening operation with performance measurement
         return performanceMonitor.measure('FileViewer.openFile', async () => {
@@ -214,7 +215,7 @@ class FileViewer {
             this.cleanupViewers();
 
             const fileName = pathUtils.basename(filePath);
-            console.log('[FileViewer] fileName:', fileName);
+            logger.debug('fileOpen', 'fileName:', fileName);
 
             // Check if file is an image
             if (fileTypes.isImage(fileName)) {
@@ -271,7 +272,7 @@ class FileViewer {
 
             eventBus.emit('file:opened', { path: filePath, size: result.content.length });
         } catch (error) {
-            console.error('[FileViewer] Error opening file:', error);
+            logger.error('fileOpen', 'Error opening file:', error);
             this.renderError('Failed to open file');
         }
     }
@@ -284,29 +285,29 @@ class FileViewer {
      * @param {boolean} enableGitDiff - Whether to enable git diff visualization
      */
     renderTextEditor(content, filePath, lineNumber = null, enableGitDiff = false) {
-        console.log('[FileViewer] ========== RENDERING TEXT EDITOR ==========');
-        console.log('[FileViewer] filePath:', filePath);
-        console.log('[FileViewer] lineNumber:', lineNumber);
-        console.log('[FileViewer] enableGitDiff:', enableGitDiff);
-        console.log('[FileViewer] viewerElement:', this.viewerElement);
-        console.log('[FileViewer] viewerElement dataset:', this.viewerElement.dataset);
-        console.log('[FileViewer] content length:', content.length);
-        console.log('[FileViewer] content preview:', content.substring(0, 200));
+        logger.debug('fileOpen', '========== RENDERING TEXT EDITOR ==========');
+        logger.debug('fileOpen', 'filePath:', filePath);
+        logger.debug('fileOpen', 'lineNumber:', lineNumber);
+        logger.debug('fileOpen', 'enableGitDiff:', enableGitDiff);
+        logger.debug('fileOpen', 'viewerElement:', this.viewerElement);
+        logger.debug('fileOpen', 'viewerElement dataset:', this.viewerElement.dataset);
+        logger.debug('fileOpen', 'content length:', content.length);
+        logger.debug('fileOpen', 'content preview:', content.substring(0, 200));
 
         // Create new text editor with options
         this.textEditor = new TextEditor(this.viewerElement, content, filePath, { enableGitDiff });
-        console.log('[FileViewer] TextEditor instance created:', this.textEditor);
+        logger.debug('fileOpen', 'TextEditor instance created:', this.textEditor);
 
         // Navigate to line if specified
         if (lineNumber !== null && lineNumber !== undefined) {
-            console.log('[FileViewer] Navigating to line:', lineNumber);
+            logger.debug('fileOpen', 'Navigating to line:', lineNumber);
             // Use setTimeout to ensure CodeMirror is fully initialized
             setTimeout(() => {
                 this.textEditor.goToLine(lineNumber);
             }, 100);
         }
 
-        console.log('[FileViewer] ========================================');
+        logger.debug('fileOpen', '========================================');
 
         // Listen for dirty state changes
         eventBus.on('file:dirty-changed', (data) => {
@@ -322,7 +323,7 @@ class FileViewer {
      * @param {string} filePath - File path
      */
     renderMarkdown(content, filePath) {
-        console.log('[FileViewer] Rendering markdown viewer for:', filePath);
+        logger.debug('fileOpen', 'Rendering markdown viewer for:', filePath);
 
         // Create new markdown viewer
         this.markdownViewer = new MarkdownViewer(this.viewerElement, content, filePath);
@@ -461,7 +462,7 @@ class FileViewer {
      * @param {string} filePath - Full file path
      */
     renderImage(fileName, filePath) {
-        console.log('[FileViewer] Rendering image:', filePath);
+        logger.debug('fileOpen', 'Rendering image:', filePath);
 
         this.currentFile = filePath;
         stateManager.set('openFile', filePath);
@@ -479,7 +480,7 @@ class FileViewer {
      * @param {string} filePath - Full file path
      */
     renderVideo(fileName, filePath) {
-        console.log('[FileViewer] Rendering video:', filePath);
+        logger.debug('fileOpen', 'Rendering video:', filePath);
 
         this.currentFile = filePath;
         stateManager.set('openFile', filePath);
@@ -501,7 +502,7 @@ class FileViewer {
 
         // Check if it's a SQLite database
         if (['db', 'sqlite', 'sqlite3'].includes(ext) && this.sqlite) {
-            console.log('[FileViewer] Rendering SQLite database:', filePath);
+            logger.debug('fileOpen', 'Rendering SQLite database:', filePath);
             // Clean up previous SQLite viewer if any
             if (this.sqliteViewer) {
                 this.sqliteViewer.destroy();

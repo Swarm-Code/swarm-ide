@@ -11,6 +11,7 @@ const { DiffParser } = require('./parsers/DiffParser');
 const { LogParser } = require('./parsers/LogParser');
 const { StatusParser } = require('./parsers/StatusParser');
 const { BranchParser } = require('./parsers/BranchParser');
+const logger = require('../../utils/Logger');
 
 class GitRepository {
     /**
@@ -31,7 +32,7 @@ class GitRepository {
             lastStatusCheck: 0
         };
 
-        console.log(`[GitRepository] Initialized for: ${repositoryPath}`);
+        logger.debug('gitStatus', `Initialized for: ${repositoryPath}`);
     }
 
     /**
@@ -106,7 +107,7 @@ class GitRepository {
             parser.addLine(line);
         });
 
-        console.log(`[GitRepository] Blame stream complete for: ${filePath}`, parser.getStats());
+        logger.debug('gitStatus', `Blame stream complete for: ${filePath}`, parser.getStats());
     }
 
     // ============================================

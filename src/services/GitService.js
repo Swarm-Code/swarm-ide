@@ -10,6 +10,7 @@
 const path = require('path');
 const { GitRepository } = require('../lib/git/GitRepository');
 const EventBus = require('../modules/EventBus');
+const logger = require('../utils/Logger');
 
 class GitService {
     constructor() {
@@ -431,6 +432,7 @@ class GitService {
             const sha = await this.activeRepository.commit(message, options);
 
             EventBus.emit('git:commit-created', { sha, message });
+            EventBus.emit('git:repository-updated', { operation: 'commit' });
 
             // Refresh state
             await this.refreshStatus();
@@ -551,6 +553,7 @@ class GitService {
             await this.activeRepository.push(options);
 
             EventBus.emit('git:push-completed');
+            EventBus.emit('git:repository-updated', { operation: 'push' });
 
             await this.refreshStatus();
             await this.getBranches({ useCache: false });
@@ -578,6 +581,7 @@ class GitService {
             await this.activeRepository.pull(options);
 
             EventBus.emit('git:pull-completed');
+            EventBus.emit('git:repository-updated', { operation: 'pull' });
 
             await this.refreshStatus();
             await this.getBranches({ useCache: false });
@@ -612,6 +616,201 @@ class GitService {
         } catch (error) {
             console.error('[GitService] Fetch failed:', error);
             EventBus.emit('git:fetch-failed', { error: error.message });
+            return false;
+        }
+    }
+
+    // ============================================
+    // STASH OPERATIONS
+    // ============================================
+
+    /**
+     * Stash current changes with a message
+     *
+     * Creates a new stash entry with a descriptive message. Used for temporarily
+     * saving uncommitted changes, especially before branch switches.
+     *
+     * @param {string} message - Stash message/description
+     * @returns {Promise<boolean>} Success status
+     */
+    async stashChanges(message = 'Stashed changes') {
+        if (!this.activeRepository) {
+            logger.warn('gitStash', 'No active repository for stash operation');
+            return false;
+        }
+
+        try {
+            logger.info('gitStash', 'Creating stash', { message });
+
+            // Generate auto-stash message if it's an auto-stash
+            const currentBranch = await this.getCurrentBranch();
+            const timestamp = new Date().toISOString().split('T')[0];
+            const stashMessage = message.startsWith('auto-stash')
+                ? `auto-stash-from-${currentBranch}-${timestamp}`
+                : message;
+
+            // Execute git stash push with message
+            await this.activeRepository.client.execute([
+                'stash', 'push', '-m', stashMessage
+            ]);
+
+            EventBus.emit('git:stash-created', { message: stashMessage });
+            EventBus.emit('git:repository-updated', { operation: 'stash' });
+
+            logger.info('gitStash', 'Stash created successfully', { message: stashMessage });
+
+            // Refresh status after stashing
+            await this.refreshStatus();
+
+            return true;
+        } catch (error) {
+            logger.error('gitStash', 'Failed to create stash', { error: error.message });
+            return false;
+        }
+    }
+
+    /**
+     * Get list of all stashes
+     *
+     * @returns {Promise<Array|null>} Array of stash entries
+     */
+    async getStashes() {
+        if (!this.activeRepository) {
+            logger.warn('gitStash', 'No active repository for stash list');
+            return null;
+        }
+
+        try {
+            logger.debug('gitStash', 'Fetching stash list');
+
+            const result = await this.activeRepository.client.execute([
+                'stash', 'list', '--format=%gd|%gs|%cr'
+            ]);
+
+            if (!result || !result.trim()) {
+                logger.debug('gitStash', 'No stashes found');
+                return [];
+            }
+
+            const stashes = result.trim().split('\n').map(line => {
+                const [ref, message, relativeTime] = line.split('|');
+                return {
+                    ref,          // e.g., "stash@{0}"
+                    message,      // Stash message
+                    relativeTime  // e.g., "2 hours ago"
+                };
+            });
+
+            logger.debug('gitStash', 'Stash list retrieved', { count: stashes.length });
+
+            return stashes;
+        } catch (error) {
+            logger.error('gitStash', 'Failed to get stash list', { error: error.message });
+            return null;
+        }
+    }
+
+    /**
+     * Apply a stash without removing it
+     *
+     * @param {string} stashRef - Stash reference (e.g., "stash@{0}")
+     * @returns {Promise<boolean>}
+     */
+    async applyStash(stashRef = 'stash@{0}') {
+        if (!this.activeRepository) {
+            logger.warn('gitStash', 'No active repository for stash apply');
+            return false;
+        }
+
+        try {
+            logger.info('gitStash', 'Applying stash', { stashRef });
+
+            await this.activeRepository.client.execute([
+                'stash', 'apply', stashRef
+            ]);
+
+            EventBus.emit('git:stash-applied', { stashRef });
+            EventBus.emit('git:repository-updated', { operation: 'stash-apply' });
+
+            logger.info('gitStash', 'Stash applied successfully', { stashRef });
+
+            await this.refreshStatus();
+
+            return true;
+        } catch (error) {
+            logger.error('gitStash', 'Failed to apply stash', {
+                stashRef,
+                error: error.message
+            });
+            return false;
+        }
+    }
+
+    /**
+     * Pop a stash (apply and remove)
+     *
+     * @param {string} stashRef - Stash reference (e.g., "stash@{0}")
+     * @returns {Promise<boolean>}
+     */
+    async popStash(stashRef = 'stash@{0}') {
+        if (!this.activeRepository) {
+            logger.warn('gitStash', 'No active repository for stash pop');
+            return false;
+        }
+
+        try {
+            logger.info('gitStash', 'Popping stash', { stashRef });
+
+            await this.activeRepository.client.execute([
+                'stash', 'pop', stashRef
+            ]);
+
+            EventBus.emit('git:stash-popped', { stashRef });
+            EventBus.emit('git:repository-updated', { operation: 'stash-pop' });
+
+            logger.info('gitStash', 'Stash popped successfully', { stashRef });
+
+            await this.refreshStatus();
+
+            return true;
+        } catch (error) {
+            logger.error('gitStash', 'Failed to pop stash', {
+                stashRef,
+                error: error.message
+            });
+            return false;
+        }
+    }
+
+    /**
+     * Drop/delete a stash
+     *
+     * @param {string} stashRef - Stash reference (e.g., "stash@{0}")
+     * @returns {Promise<boolean>}
+     */
+    async dropStash(stashRef) {
+        if (!this.activeRepository) {
+            logger.warn('gitStash', 'No active repository for stash drop');
+            return false;
+        }
+
+        try {
+            logger.info('gitStash', 'Dropping stash', { stashRef });
+
+            await this.activeRepository.client.execute([
+                'stash', 'drop', stashRef
+            ]);
+
+            EventBus.emit('git:stash-dropped', { stashRef });
+
+            logger.info('gitStash', 'Stash dropped successfully', { stashRef });
+
+            return true;
+        } catch (error) {
+            logger.error('gitStash', 'Failed to drop stash', {
+                stashRef,
+                error: error.message
+            });
             return false;
         }
     }

@@ -9,6 +9,7 @@
 
 const EventBus = require('../modules/EventBus');
 const { DiffParser } = require('../lib/git/parsers/DiffParser');
+const logger = require('../utils/Logger');
 
 class GitDiffService {
     constructor(gitService) {
@@ -23,7 +24,7 @@ class GitDiffService {
         // Cache timeout (ms)
         this.cacheTimeout = 2 * 60 * 1000; // 2 minutes
 
-        console.log('[GitDiffService] Initialized');
+        logger.debug('gitDiff', '[GitDiffService] Initialized');
 
         // Setup event listeners for cache invalidation
         this._setupEventListeners();
@@ -92,7 +93,7 @@ class GitDiffService {
         if (useCache) {
             const cached = this._getCachedDiff(filePath, 'unstaged');
             if (cached) {
-                console.log(`[GitDiffService] Using cached unstaged diff for: ${filePath}`);
+                logger.debug('gitDiff', `[GitDiffService] Using cached unstaged diff for: ${filePath}`);
                 return cached;
             }
         }
@@ -116,7 +117,7 @@ class GitDiffService {
         if (useCache) {
             const cached = this._getCachedDiff(filePath, 'staged');
             if (cached) {
-                console.log(`[GitDiffService] Using cached staged diff for: ${filePath}`);
+                logger.debug('gitDiff', `[GitDiffService] Using cached staged diff for: ${filePath}`);
                 return cached;
             }
         }
@@ -152,13 +153,13 @@ class GitDiffService {
     async _fetchDiff(filePath, options = {}) {
         try {
             const diffType = options.staged ? 'staged' : 'unstaged';
-            console.log(`[GitDiffService] Fetching ${diffType} diff for: ${filePath}`);
+            logger.debug('gitDiff', `[GitDiffService] Fetching ${diffType} diff for: ${filePath}`);
 
             // Fetch from GitService
             const diffs = await this.gitService.getDiff(filePath, options);
 
             if (!diffs || diffs.length === 0) {
-                console.log(`[GitDiffService] No ${diffType} changes for: ${filePath}`);
+                logger.debug('gitDiff', `[GitDiffService] No ${diffType} changes for: ${filePath}`);
 
                 // Cache empty result
                 this._updateCache(filePath, diffType, null);
@@ -168,7 +169,7 @@ class GitDiffService {
             // Cache the result
             this._updateCache(filePath, diffType, diffs);
 
-            console.log(`[GitDiffService] Cached ${diffs.length} ${diffType} diff(s) for: ${filePath}`);
+            logger.debug('gitDiff', `[GitDiffService] Cached ${diffs.length} ${diffType} diff(s) for: ${filePath}`);
 
             // Emit event
             EventBus.emit('git-diff:loaded', {
@@ -179,7 +180,7 @@ class GitDiffService {
 
             return diffs;
         } catch (error) {
-            console.error(`[GitDiffService] Failed to fetch diff for ${filePath}:`, error);
+            logger.error('gitDiff', `[GitDiffService] Failed to fetch diff for ${filePath}:`, error);
             return null;
         }
     }
@@ -191,7 +192,7 @@ class GitDiffService {
      * @returns {Promise<void>}
      */
     async refreshDiff(filePath) {
-        console.log(`[GitDiffService] Refreshing diff for: ${filePath}`);
+        logger.debug('gitDiff', `[GitDiffService] Refreshing diff for: ${filePath}`);
 
         // Invalidate cache
         this.invalidateCache(filePath);
@@ -467,7 +468,7 @@ class GitDiffService {
     async enableDiff(filePath) {
         if (!this.activeDiffFiles.has(filePath)) {
             this.activeDiffFiles.add(filePath);
-            console.log(`[GitDiffService] Diff tracking enabled for: ${filePath}`);
+            logger.debug('gitDiff', `[GitDiffService] Diff tracking enabled for: ${filePath}`);
 
             // Fetch initial diff
             await this.getAllDiffs(filePath, { useCache: false });
@@ -484,7 +485,7 @@ class GitDiffService {
     disableDiff(filePath) {
         if (this.activeDiffFiles.has(filePath)) {
             this.activeDiffFiles.delete(filePath);
-            console.log(`[GitDiffService] Diff tracking disabled for: ${filePath}`);
+            logger.debug('gitDiff', `[GitDiffService] Diff tracking disabled for: ${filePath}`);
 
             EventBus.emit('git-diff:disabled', { filePath });
         }
@@ -557,7 +558,7 @@ class GitDiffService {
         // Check cache timeout
         const age = Date.now() - cached.timestamp;
         if (age > this.cacheTimeout) {
-            console.log(`[GitDiffService] Cache expired for ${filePath} (age: ${age}ms)`);
+            logger.debug('gitDiff', `[GitDiffService] Cache expired for ${filePath} (age: ${age}ms)`);
             this.diffCache.delete(filePath);
             return null;
         }
@@ -597,7 +598,7 @@ class GitDiffService {
     invalidateCache(filePath) {
         if (this.diffCache.has(filePath)) {
             this.diffCache.delete(filePath);
-            console.log(`[GitDiffService] Cache invalidated for: ${filePath}`);
+            logger.debug('gitDiff', `[GitDiffService] Cache invalidated for: ${filePath}`);
 
             EventBus.emit('git-diff:cache-invalidated', { filePath });
         }
@@ -609,7 +610,7 @@ class GitDiffService {
     invalidateAllCache() {
         const count = this.diffCache.size;
         this.diffCache.clear();
-        console.log(`[GitDiffService] All cache invalidated (${count} entries)`);
+        logger.debug('gitDiff', `[GitDiffService] All cache invalidated (${count} entries)`);
 
         EventBus.emit('git-diff:cache-invalidated', { all: true });
     }
@@ -632,7 +633,7 @@ class GitDiffService {
         }
 
         if (cleared > 0) {
-            console.log(`[GitDiffService] Cleared ${cleared} old cache entries`);
+            logger.debug('gitDiff', `[GitDiffService] Cleared ${cleared} old cache entries`);
         }
     }
 
@@ -672,7 +673,7 @@ class GitDiffService {
      */
     setCacheTimeout(timeout) {
         this.cacheTimeout = timeout;
-        console.log(`[GitDiffService] Cache timeout set to: ${timeout}ms`);
+        logger.debug('gitDiff', `[GitDiffService] Cache timeout set to: ${timeout}ms`);
     }
 
     /**
@@ -681,7 +682,7 @@ class GitDiffService {
     dispose() {
         this.diffCache.clear();
         this.activeDiffFiles.clear();
-        console.log('[GitDiffService] Disposed');
+        logger.debug('gitDiff', '[GitDiffService] Disposed');
     }
 }
 
