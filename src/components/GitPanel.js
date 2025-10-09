@@ -2474,11 +2474,13 @@ class GitPanel {
         const { gitStore } = getGitServices();
         if (!gitStore) return;
 
-        const repoPath = gitStore.getCurrentRepository();
+        const repoPath = this.currentRepoPath || gitStore.getCurrentRepository();
         if (!repoPath) {
             console.warn('[GitPanel] No repository path available');
             return;
         }
+
+        console.log('[GitPanel] Opening commit view with repoPath:', repoPath);
 
         // Emit event to open commit view in editor
         eventBus.emit('git:view-commit', {
