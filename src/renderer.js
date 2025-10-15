@@ -907,6 +907,138 @@ class Application {
             });
         }
     }
+
+    /**
+     * Setup SSH menu action handlers
+     * @param {SSHPanel} sshPanel - SSH panel instance
+     */
+    setupSSHMenuHandlers(sshPanel) {
+        // Handle new connection action
+        eventBus.on('ssh:new-connection', () => {
+            logger.debug('ssh', 'New connection menu action triggered');
+            sshPanel.showAddConnectionDialog();
+        });
+
+        // Handle quick connect action
+        eventBus.on('ssh:quick-connect', () => {
+            logger.debug('ssh', 'Quick connect menu action triggered');
+            this.showQuickConnectDialog();
+        });
+
+        // Handle disconnect all action
+        eventBus.on('ssh:disconnect-all', async () => {
+            logger.debug('ssh', 'Disconnect all menu action triggered');
+            try {
+                if (window.sshService && window.sshService.isInitialized()) {
+                    const connections = await window.sshService.getConnections();
+                    const connectedConnections = connections.filter(conn => conn.state === 'connected');
+
+                    if (connectedConnections.length === 0) {
+                        alert('No active SSH connections to disconnect.');
+                        return;
+                    }
+
+                    const confirmed = confirm(`Are you sure you want to disconnect ${connectedConnections.length} SSH connection(s)?`);
+                    if (confirmed) {
+                        for (const conn of connectedConnections) {
+                            await window.sshService.disconnect(conn.id);
+                        }
+                        logger.info('ssh', `Disconnected ${connectedConnections.length} SSH connections`);
+                    }
+                } else {
+                    alert('SSH service not available.');
+                }
+            } catch (error) {
+                logger.error('ssh', 'Failed to disconnect all SSH connections:', error);
+                alert('Failed to disconnect SSH connections: ' + error.message);
+            }
+        });
+
+        // Handle health check action
+        eventBus.on('ssh:health-check', async () => {
+            logger.debug('ssh', 'Health check menu action triggered');
+            try {
+                if (window.sshService && window.sshService.isInitialized()) {
+                    const status = await window.sshService.getHealthStatus();
+                    const message = `SSH Health Status:\n\nTotal connections: ${status.total}\nHealthy: ${status.healthy}\nUnhealthy: ${status.unhealthy}`;
+                    alert(message);
+                } else {
+                    alert('SSH service not available.');
+                }
+            } catch (error) {
+                logger.error('ssh', 'Failed to get SSH health status:', error);
+                alert('Failed to get SSH health status: ' + error.message);
+            }
+        });
+
+        // Handle SSH settings action
+        eventBus.on('ssh:settings', () => {
+            logger.debug('ssh', 'SSH settings menu action triggered');
+            alert('SSH Settings functionality coming soon!');
+        });
+
+        logger.debug('ssh', 'SSH menu handlers setup complete');
+    }
+
+    /**
+     * Show quick connect dialog
+     */
+    showQuickConnectDialog() {
+        const host = prompt('Enter SSH host (e.g., user@hostname):');
+        if (!host || !host.trim()) return;
+
+        const parts = host.includes('@') ? host.split('@') : ['', host];
+        const username = parts[0] || prompt('Enter username:');
+        const hostname = parts[1] || host;
+
+        if (!username || !hostname) {
+            alert('Invalid host format. Please use user@hostname or provide username separately.');
+            return;
+        }
+
+        const port = prompt('Enter port (default: 22):', '22');
+        const password = prompt('Enter password (leave empty for key authentication):');
+
+        const connectionConfig = {
+            name: `Quick Connect - ${hostname}`,
+            host: hostname,
+            username: username,
+            port: parseInt(port) || 22
+        };
+
+        if (password) {
+            connectionConfig.password = password;
+        }
+
+        // Create and connect
+        this.createAndConnectSSH(connectionConfig);
+    }
+
+    /**
+     * Create and connect SSH connection
+     * @param {Object} connectionConfig - SSH connection configuration
+     */
+    async createAndConnectSSH(connectionConfig) {
+        try {
+            if (!window.sshService || !window.sshService.isInitialized()) {
+                alert('SSH service not available.');
+                return;
+            }
+
+            logger.info('ssh', 'Creating quick connect SSH connection:', connectionConfig.name);
+
+            const connectionId = await window.sshService.createConnection(connectionConfig);
+            logger.info('ssh', 'SSH connection created with ID:', connectionId);
+
+            await window.sshService.connect(connectionId);
+            logger.info('ssh', 'SSH connection established successfully');
+
+            alert(`Successfully connected to ${connectionConfig.host}`);
+        } catch (error) {
+            logger.error('ssh', 'Failed to create/connect SSH:', error);
+            alert('Failed to connect to SSH server: ' + error.message);
+        }
+    }
 }
 
 // Initialize when DOM is ready
