@@ -155,6 +155,15 @@ class SSHPanel {
             this.onConnectionSaved(data);
         });
 
+        // Panel visibility events
+        eventBus.on('ssh:toggle-panel', () => {
+            this.toggle();
+        });
+
+        eventBus.on('ssh:hide-panel', () => {
+            this.hide();
+        });
+
         logger.debug('ssh', 'SSH Panel event listeners setup');
     }
 
