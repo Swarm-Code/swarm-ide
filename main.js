@@ -1077,6 +1077,325 @@ ipcMain.handle('git-execute', async (event, gitPath, args, options) => {
   }
 });
 
+// ========================================
+// SSH IPC Handlers
+// ========================================
+
+// Initialize SSH Connection Manager
+ipcMain.handle('ssh-init', async () => {
+  try {
+    await sshConnectionManager.init();
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error initializing SSH manager:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Create SSH connection
+ipcMain.handle('ssh-create-connection', async (event, connectionConfig) => {
+  try {
+    const connectionId = await sshConnectionManager.createConnection(connectionConfig);
+    return { success: true, connectionId };
+  } catch (error) {
+    console.error('[Main] Error creating SSH connection:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Connect to SSH server
+ipcMain.handle('ssh-connect', async (event, connectionId) => {
+  try {
+    await sshConnectionManager.connect(connectionId);
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error connecting SSH:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Disconnect from SSH server
+ipcMain.handle('ssh-disconnect', async (event, connectionId) => {
+  try {
+    await sshConnectionManager.disconnect(connectionId);
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error disconnecting SSH:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Remove SSH connection
+ipcMain.handle('ssh-remove-connection', async (event, connectionId) => {
+  try {
+    await sshConnectionManager.removeConnection(connectionId);
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error removing SSH connection:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get all SSH connections
+ipcMain.handle('ssh-get-connections', async () => {
+  try {
+    const connections = sshConnectionManager.getAllConnections();
+    return { success: true, connections };
+  } catch (error) {
+    console.error('[Main] Error getting SSH connections:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get SSH connection info
+ipcMain.handle('ssh-get-connection', async (event, connectionId) => {
+  try {
+    const connection = sshConnectionManager.getConnection(connectionId);
+    if (!connection) {
+      return { success: false, error: 'Connection not found' };
+    }
+    return { success: true, connection: connection.getInfo() };
+  } catch (error) {
+    console.error('[Main] Error getting SSH connection:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Execute SSH command
+ipcMain.handle('ssh-exec-command', async (event, connectionId, command, options = {}) => {
+  try {
+    const result = await sshConnectionManager.execCommand(connectionId, command, options);
+    return { success: true, result };
+  } catch (error) {
+    console.error('[Main] Error executing SSH command:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// SSH SFTP operations - List directory
+ipcMain.handle('ssh-list-directory', async (event, connectionId, remotePath) => {
+  try {
+    const connection = sshConnectionManager.getConnection(connectionId);
+    if (!connection || !connection.sftp) {
+      throw new Error('SFTP not available for this connection');
+    }
+
+    return new Promise((resolve) => {
+      connection.sftp.readdir(remotePath, (err, list) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+        } else {
+          const entries = list.map(item => ({
+            name: item.filename,
+            isDirectory: item.attrs.isDirectory(),
+            isFile: item.attrs.isFile(),
+            size: item.attrs.size,
+            mode: item.attrs.mode,
+            mtime: new Date(item.attrs.mtime * 1000),
+            path: remotePath.endsWith('/') ? remotePath + item.filename : remotePath + '/' + item.filename
+          }));
+          resolve({ success: true, entries });
+        }
+      });
+    });
+  } catch (error) {
+    console.error('[Main] Error listing SSH directory:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// SSH SFTP operations - Read file
+ipcMain.handle('ssh-read-file', async (event, connectionId, remotePath, encoding = 'utf8') => {
+  try {
+    const connection = sshConnectionManager.getConnection(connectionId);
+    if (!connection || !connection.sftp) {
+      throw new Error('SFTP not available for this connection');
+    }
+
+    return new Promise((resolve) => {
+      connection.sftp.readFile(remotePath, encoding, (err, data) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+        } else {
+          resolve({ success: true, content: data });
+        }
+      });
+    });
+  } catch (error) {
+    console.error('[Main] Error reading SSH file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// SSH SFTP operations - Write file
+ipcMain.handle('ssh-write-file', async (event, connectionId, remotePath, content, encoding = 'utf8') => {
+  try {
+    const connection = sshConnectionManager.getConnection(connectionId);
+    if (!connection || !connection.sftp) {
+      throw new Error('SFTP not available for this connection');
+    }
+
+    return new Promise((resolve) => {
+      connection.sftp.writeFile(remotePath, content, encoding, (err) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+        } else {
+          resolve({ success: true });
+        }
+      });
+    });
+  } catch (error) {
+    console.error('[Main] Error writing SSH file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// SSH SFTP operations - Create directory
+ipcMain.handle('ssh-create-directory', async (event, connectionId, remotePath) => {
+  try {
+    const connection = sshConnectionManager.getConnection(connectionId);
+    if (!connection || !connection.sftp) {
+      throw new Error('SFTP not available for this connection');
+    }
+
+    return new Promise((resolve) => {
+      connection.sftp.mkdir(remotePath, (err) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+        } else {
+          resolve({ success: true });
+        }
+      });
+    });
+  } catch (error) {
+    console.error('[Main] Error creating SSH directory:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// SSH SFTP operations - Delete file/directory
+ipcMain.handle('ssh-delete-item', async (event, connectionId, remotePath, isDirectory = false) => {
+  try {
+    const connection = sshConnectionManager.getConnection(connectionId);
+    if (!connection || !connection.sftp) {
+      throw new Error('SFTP not available for this connection');
+    }
+
+    return new Promise((resolve) => {
+      const operation = isDirectory ? connection.sftp.rmdir : connection.sftp.unlink;
+      operation.call(connection.sftp, remotePath, (err) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+        } else {
+          resolve({ success: true });
+        }
+      });
+    });
+  } catch (error) {
+    console.error('[Main] Error deleting SSH item:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// SSH SFTP operations - Rename/move item
+ipcMain.handle('ssh-rename-item', async (event, connectionId, oldPath, newPath) => {
+  try {
+    const connection = sshConnectionManager.getConnection(connectionId);
+    if (!connection || !connection.sftp) {
+      throw new Error('SFTP not available for this connection');
+    }
+
+    return new Promise((resolve) => {
+      connection.sftp.rename(oldPath, newPath, (err) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+        } else {
+          resolve({ success: true });
+        }
+      });
+    });
+  } catch (error) {
+    console.error('[Main] Error renaming SSH item:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// SSH SFTP operations - Get file stats
+ipcMain.handle('ssh-get-stats', async (event, connectionId, remotePath) => {
+  try {
+    const connection = sshConnectionManager.getConnection(connectionId);
+    if (!connection || !connection.sftp) {
+      throw new Error('SFTP not available for this connection');
+    }
+
+    return new Promise((resolve) => {
+      connection.sftp.stat(remotePath, (err, stats) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+        } else {
+          resolve({
+            success: true,
+            stats: {
+              isFile: stats.isFile(),
+              isDirectory: stats.isDirectory(),
+              size: stats.size,
+              mode: stats.mode,
+              mtime: new Date(stats.mtime * 1000),
+              atime: new Date(stats.atime * 1000)
+            }
+          });
+        }
+      });
+    });
+  } catch (error) {
+    console.error('[Main] Error getting SSH stats:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// SSH download file
+ipcMain.handle('ssh-download-file', async (event, connectionId, remotePath, localPath) => {
+  try {
+    const connection = sshConnectionManager.getConnection(connectionId);
+    if (!connection) {
+      throw new Error('SSH connection not found');
+    }
+
+    await connection.ssh.getFile(localPath, remotePath);
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error downloading SSH file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// SSH upload file
+ipcMain.handle('ssh-upload-file', async (event, connectionId, localPath, remotePath) => {
+  try {
+    const connection = sshConnectionManager.getConnection(connectionId);
+    if (!connection) {
+      throw new Error('SSH connection not found');
+    }
+
+    await connection.ssh.putFile(localPath, remotePath);
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error uploading SSH file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get SSH health status
+ipcMain.handle('ssh-get-health-status', async () => {
+  try {
+    const status = sshConnectionManager.getHealthStatus();
+    return { success: true, status };
+  } catch (error) {
+    console.error('[Main] Error getting SSH health status:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 app.whenReady().then(async () => {
   // Initialize crash logger
   await crashLogger.init();
