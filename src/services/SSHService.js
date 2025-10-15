@@ -209,12 +209,18 @@ class SSHService {
      * @returns {Promise<Array>} Array of connection info
      */
     async getConnections() {
+        logger.debug('ssh', 'getConnections() called, initialized state:', this.initialized);
+
         if (!this.initialized) {
+            logger.error('ssh', 'getConnections called but service not initialized!');
             throw new Error('SSH Service not initialized');
         }
 
         try {
+            logger.debug('ssh', 'Calling sshGetConnections via API...');
             const result = await this.api.sshGetConnections();
+            logger.debug('ssh', 'sshGetConnections result:', result);
+
             if (!result.success) {
                 throw new Error(result.error);
             }
@@ -224,10 +230,12 @@ class SSHService {
                 this.connections.set(conn.id, conn);
             });
 
+            logger.debug('ssh', 'Successfully retrieved connections, count:', result.connections.length);
             return result.connections;
 
         } catch (error) {
             logger.error('ssh', 'Failed to get SSH connections:', error.message);
+            logger.error('ssh', 'Get connections error stack:', error.stack);
             throw error;
         }
     }
