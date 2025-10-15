@@ -861,6 +861,54 @@ class SSHPanel {
     }
 
     /**
+     * Show the panel
+     */
+    show() {
+        if (!this.panel) return;
+
+        // Hide file explorer sidebar
+        const sidebar = document.querySelector('.sidebar');
+        if (sidebar) {
+            sidebar.style.display = 'none';
+        }
+
+        // Show SSH panel
+        this.panel.style.display = 'flex';
+        this.isVisible = true;
+        this.loadConnections();
+        logger.debug('ssh', 'SSH Panel shown');
+    }
+
+    /**
+     * Hide the panel
+     */
+    hide() {
+        if (!this.panel) return;
+
+        // Show file explorer sidebar
+        const sidebar = document.querySelector('.sidebar');
+        if (sidebar) {
+            sidebar.style.display = 'flex';
+        }
+
+        // Hide SSH panel
+        this.panel.style.display = 'none';
+        this.isVisible = false;
+        logger.debug('ssh', 'SSH Panel hidden');
+    }
+
+    /**
+     * Toggle panel visibility
+     */
+    toggle() {
+        if (this.isVisible) {
+            this.hide();
+        } else {
+            this.show();
+        }
+    }
+
+    /**
      * Clean up resources
      */
     destroy() {
