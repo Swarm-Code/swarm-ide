@@ -502,6 +502,158 @@ class FileExplorer {
     }
 
     /**
+     * Start polling for external file changes (git operations, etc.)
+     * Checks every 200ms for changes that file watcher might miss
+     */
+    startChangePolling() {
+        if (this.changePolling.enabled || !this.currentPath) {
+            return;
+        }
+
+        logger.debug('fileSystem', 'Starting change polling for:', this.currentPath);
+        this.changePolling.enabled = true;
+
+        // Create initial snapshot
+        this.createDirectorySnapshot();
+
+        // Start polling interval
+        this.changePolling.interval = setInterval(async () => {
+            // Only check if window is active to save resources
+            if (document.hidden) return;
+
+            await this.checkForChanges();
+        }, this.changePolling.intervalMs);
+    }
+
+    /**
+     * Stop polling for changes
+     */
+    stopChangePolling() {
+        if (!this.changePolling.enabled) return;
+
+        logger.debug('fileSystem', 'Stopping change polling');
+        this.changePolling.enabled = false;
+
+        if (this.changePolling.interval) {
+            clearInterval(this.changePolling.interval);
+            this.changePolling.interval = null;
+        }
+
+        this.changePolling.lastSnapshot = null;
+    }
+
+    /**
+     * Create a snapshot of current directory for change detection
+     */
+    async createDirectorySnapshot() {
+        if (!this.currentPath) return;
+
+        try {
+            const result = await this.fs.readDirectory(this.currentPath);
+            if (!result.success) return;
+
+            // Create a map of file paths to modification times
+            const snapshot = new Map();
+
+            for (const entry of result.files) {
+                try {
+                    const stats = await this.fs.getFileStats(entry.path);
+                    if (stats.success) {
+                        snapshot.set(entry.path, {
+                            isDirectory: entry.isDirectory,
+                            mtime: stats.stats.mtime,
+                            size: stats.stats.size || 0
+                        });
+                    }
+                } catch (error) {
+                    // Skip files we can't stat
+                    continue;
+                }
+            }
+
+            this.changePolling.lastSnapshot = snapshot;
+        } catch (error) {
+            logger.debug('fileSystem', 'Failed to create directory snapshot:', error);
+        }
+    }
+
+    /**
+     * Check for changes by comparing current state with last snapshot
+     */
+    async checkForChanges() {
+        if (!this.currentPath || !this.changePolling.lastSnapshot) {
+            return;
+        }
+
+        try {
+            const result = await this.fs.readDirectory(this.currentPath);
+            if (!result.success) return;
+
+            const currentSnapshot = new Map();
+            let hasChanges = false;
+
+            // Build current snapshot
+            for (const entry of result.files) {
+                try {
+                    const stats = await this.fs.getFileStats(entry.path);
+                    if (stats.success) {
+                        currentSnapshot.set(entry.path, {
+                            isDirectory: entry.isDirectory,
+                            mtime: stats.stats.mtime,
+                            size: stats.stats.size || 0
+                        });
+                    }
+                } catch (error) {
+                    continue;
+                }
+            }
+
+            // Check for new files or removed files
+            if (currentSnapshot.size !== this.changePolling.lastSnapshot.size) {
+                hasChanges = true;
+            } else {
+                // Check for modified files
+                for (const [path, currentInfo] of currentSnapshot) {
+                    const lastInfo = this.changePolling.lastSnapshot.get(path);
+
+                    if (!lastInfo) {
+                        // New file
+                        hasChanges = true;
+                        break;
+                    }
+
+                    // Check if modified
+                    if (currentInfo.mtime > lastInfo.mtime ||
+                        currentInfo.size !== lastInfo.size ||
+                        currentInfo.isDirectory !== lastInfo.isDirectory) {
+                        hasChanges = true;
+                        break;
+                    }
+                }
+
+                // Check for deleted files
+                if (!hasChanges) {
+                    for (const path of this.changePolling.lastSnapshot.keys()) {
+                        if (!currentSnapshot.has(path)) {
+                            hasChanges = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (hasChanges) {
+                logger.debug('fileSystem', 'External changes detected via polling, refreshing...');
+                this.changePolling.lastSnapshot = currentSnapshot;
+                await this.refreshCurrentDirectory();
+            }
+
+        } catch (error) {
+            logger.debug('fileSystem', 'Error checking for changes:', error);
+        }
+    }
+
+    /**
      * Render empty state
      */
     renderEmpty() {
