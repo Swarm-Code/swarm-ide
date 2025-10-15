@@ -618,9 +618,13 @@ class SSHPanel {
             }
 
             .ssh-panel-header {
-                padding: 12px 16px;
+                padding: 16px;
                 border-bottom: 1px solid var(--color-border, #333);
                 background: var(--color-bg-secondary, #252526);
+                min-height: 60px;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
             }
 
             .ssh-panel-title {
@@ -632,9 +636,11 @@ class SSHPanel {
 
             .ssh-panel-title h3 {
                 margin: 0;
-                font-size: 14px;
+                font-size: 13px;
                 font-weight: 600;
                 color: var(--color-text-primary, #cccccc);
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
             }
 
             .ssh-panel-actions {
