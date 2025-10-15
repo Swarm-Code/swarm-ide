@@ -438,6 +438,187 @@ const electronAPI = {
      */
     gitExecute: (gitPath, args, options) => {
         return ipcRenderer.invoke('git-execute', gitPath, args, options);
+    },
+
+    // ========================================
+    // SSH API
+    // ========================================
+
+    /**
+     * Initialize SSH Connection Manager
+     * @returns {Promise<Object>} Initialization result
+     */
+    sshInit: () => {
+        return ipcRenderer.invoke('ssh-init');
+    },
+
+    /**
+     * Create SSH connection
+     * @param {Object} connectionConfig - SSH connection configuration
+     * @returns {Promise<Object>} Result with connection ID
+     */
+    sshCreateConnection: (connectionConfig) => {
+        return ipcRenderer.invoke('ssh-create-connection', connectionConfig);
+    },
+
+    /**
+     * Connect to SSH server
+     * @param {string} connectionId - Connection ID
+     * @returns {Promise<Object>} Connection result
+     */
+    sshConnect: (connectionId) => {
+        return ipcRenderer.invoke('ssh-connect', connectionId);
+    },
+
+    /**
+     * Disconnect from SSH server
+     * @param {string} connectionId - Connection ID
+     * @returns {Promise<Object>} Disconnection result
+     */
+    sshDisconnect: (connectionId) => {
+        return ipcRenderer.invoke('ssh-disconnect', connectionId);
+    },
+
+    /**
+     * Remove SSH connection
+     * @param {string} connectionId - Connection ID
+     * @returns {Promise<Object>} Removal result
+     */
+    sshRemoveConnection: (connectionId) => {
+        return ipcRenderer.invoke('ssh-remove-connection', connectionId);
+    },
+
+    /**
+     * Get all SSH connections
+     * @returns {Promise<Object>} Result with connections array
+     */
+    sshGetConnections: () => {
+        return ipcRenderer.invoke('ssh-get-connections');
+    },
+
+    /**
+     * Get specific SSH connection info
+     * @param {string} connectionId - Connection ID
+     * @returns {Promise<Object>} Result with connection info
+     */
+    sshGetConnection: (connectionId) => {
+        return ipcRenderer.invoke('ssh-get-connection', connectionId);
+    },
+
+    /**
+     * Execute command on SSH server
+     * @param {string} connectionId - Connection ID
+     * @param {string} command - Command to execute
+     * @param {Object} options - Execution options
+     * @returns {Promise<Object>} Command result
+     */
+    sshExecCommand: (connectionId, command, options = {}) => {
+        return ipcRenderer.invoke('ssh-exec-command', connectionId, command, options);
+    },
+
+    /**
+     * List directory contents on SSH server
+     * @param {string} connectionId - Connection ID
+     * @param {string} remotePath - Remote directory path
+     * @returns {Promise<Object>} Result with directory entries
+     */
+    sshListDirectory: (connectionId, remotePath) => {
+        return ipcRenderer.invoke('ssh-list-directory', connectionId, remotePath);
+    },
+
+    /**
+     * Read file from SSH server
+     * @param {string} connectionId - Connection ID
+     * @param {string} remotePath - Remote file path
+     * @param {string} encoding - File encoding (default: utf8)
+     * @returns {Promise<Object>} Result with file content
+     */
+    sshReadFile: (connectionId, remotePath, encoding = 'utf8') => {
+        return ipcRenderer.invoke('ssh-read-file', connectionId, remotePath, encoding);
+    },
+
+    /**
+     * Write file to SSH server
+     * @param {string} connectionId - Connection ID
+     * @param {string} remotePath - Remote file path
+     * @param {string} content - File content
+     * @param {string} encoding - File encoding (default: utf8)
+     * @returns {Promise<Object>} Write result
+     */
+    sshWriteFile: (connectionId, remotePath, content, encoding = 'utf8') => {
+        return ipcRenderer.invoke('ssh-write-file', connectionId, remotePath, content, encoding);
+    },
+
+    /**
+     * Create directory on SSH server
+     * @param {string} connectionId - Connection ID
+     * @param {string} remotePath - Remote directory path
+     * @returns {Promise<Object>} Creation result
+     */
+    sshCreateDirectory: (connectionId, remotePath) => {
+        return ipcRenderer.invoke('ssh-create-directory', connectionId, remotePath);
+    },
+
+    /**
+     * Delete item from SSH server
+     * @param {string} connectionId - Connection ID
+     * @param {string} remotePath - Remote item path
+     * @param {boolean} isDirectory - Whether item is a directory
+     * @returns {Promise<Object>} Deletion result
+     */
+    sshDeleteItem: (connectionId, remotePath, isDirectory = false) => {
+        return ipcRenderer.invoke('ssh-delete-item', connectionId, remotePath, isDirectory);
+    },
+
+    /**
+     * Rename/move item on SSH server
+     * @param {string} connectionId - Connection ID
+     * @param {string} oldPath - Current path
+     * @param {string} newPath - New path
+     * @returns {Promise<Object>} Rename result
+     */
+    sshRenameItem: (connectionId, oldPath, newPath) => {
+        return ipcRenderer.invoke('ssh-rename-item', connectionId, oldPath, newPath);
+    },
+
+    /**
+     * Get file/directory stats from SSH server
+     * @param {string} connectionId - Connection ID
+     * @param {string} remotePath - Remote path
+     * @returns {Promise<Object>} Result with file stats
+     */
+    sshGetStats: (connectionId, remotePath) => {
+        return ipcRenderer.invoke('ssh-get-stats', connectionId, remotePath);
+    },
+
+    /**
+     * Download file from SSH server
+     * @param {string} connectionId - Connection ID
+     * @param {string} remotePath - Remote file path
+     * @param {string} localPath - Local file path
+     * @returns {Promise<Object>} Download result
+     */
+    sshDownloadFile: (connectionId, remotePath, localPath) => {
+        return ipcRenderer.invoke('ssh-download-file', connectionId, remotePath, localPath);
+    },
+
+    /**
+     * Upload file to SSH server
+     * @param {string} connectionId - Connection ID
+     * @param {string} localPath - Local file path
+     * @param {string} remotePath - Remote file path
+     * @returns {Promise<Object>} Upload result
+     */
+    sshUploadFile: (connectionId, localPath, remotePath) => {
+        return ipcRenderer.invoke('ssh-upload-file', connectionId, localPath, remotePath);
+    },
+
+    /**
+     * Get SSH health status
+     * @returns {Promise<Object>} Result with health status
+     */
+    sshGetHealthStatus: () => {
+        return ipcRenderer.invoke('ssh-get-health-status');
     }
 };
 
