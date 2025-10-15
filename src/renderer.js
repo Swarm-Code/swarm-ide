@@ -842,6 +842,7 @@ class Application {
                 // Toggle active state
                 if (iconFiles) iconFiles.classList.remove('active');
                 iconGit.classList.add('active');
+                if (iconSSH) iconSSH.classList.remove('active');
                 if (iconBrowser) iconBrowser.classList.remove('active');
 
                 // Close browser if open
