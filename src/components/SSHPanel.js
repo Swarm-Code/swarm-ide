@@ -962,29 +962,29 @@ class SSHPanel {
      * Show the panel
      */
     show() {
-        logger.info('ssh', '👁️ SHOW SSH PANEL CALLED');
-        logger.info('ssh', 'Panel exists:', !!this.panel);
+        logger.info('sshPanel', '👁️ SHOW SSH PANEL CALLED');
+        logger.info('sshPanel', 'Panel exists:', !!this.panel);
 
         if (!this.panel) {
-            logger.error('ssh', 'Cannot show panel - panel element is null!');
+            logger.error('sshPanel', 'Cannot show panel - panel element is null!');
             return;
         }
 
         // Hide file explorer sidebar
         const sidebar = document.querySelector('.sidebar');
-        logger.info('ssh', 'Sidebar found:', !!sidebar);
+        logger.info('sshPanel', 'Sidebar found:', !!sidebar);
         if (sidebar) {
             sidebar.style.display = 'none';
-            logger.info('ssh', 'Sidebar hidden');
+            logger.info('sshPanel', 'Sidebar hidden');
         }
 
         // Show SSH panel
-        logger.info('ssh', 'Setting panel display to flex');
+        logger.info('sshPanel', 'Setting panel display to flex');
         this.panel.style.display = 'flex';
         this.isVisible = true;
-        logger.info('ssh', 'Panel is now visible, loading connections...');
+        logger.info('sshPanel', 'Panel is now visible, loading connections...');
         this.loadConnections();
-        logger.info('ssh', '✅ SSH Panel shown successfully');
+        logger.info('sshPanel', '✅ SSH Panel shown successfully');
     }
 
     /**
