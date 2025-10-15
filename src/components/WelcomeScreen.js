@@ -48,6 +48,20 @@ class WelcomeScreen {
                                     <div class="welcome-action-desc">Open a folder to start browsing files</div>
                                 </div>
                             </button>
+                            <button class="welcome-action-btn" id="welcome-ssh-connect">
+                                <span class="welcome-action-icon">🔗</span>
+                                <div class="welcome-action-content">
+                                    <div class="welcome-action-title">SSH Connect</div>
+                                    <div class="welcome-action-desc">Connect to a remote server via SSH</div>
+                                </div>
+                            </button>
+                            <button class="welcome-action-btn" id="welcome-ssh-panel">
+                                <span class="welcome-action-icon">⚡</span>
+                                <div class="welcome-action-content">
+                                    <div class="welcome-action-title">SSH Manager</div>
+                                    <div class="welcome-action-desc">Manage your SSH connections</div>
+                                </div>
+                            </button>
                         </div>
                     </div>
 
