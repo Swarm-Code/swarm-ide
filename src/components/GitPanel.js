@@ -866,6 +866,12 @@ class GitPanel {
             this.commits = [];
             this.totalCommitCount = 0;
 
+            // Reset stashes for new repository
+            this.stashes = [];
+            if (this.stashBadge) {
+                this.stashBadge.textContent = '0';
+            }
+
             // Force immediate refresh with new path if we have a repository
             if (data && data.hasRepository && this.isVisible) {
                 console.log('[GitPanel] - Force refreshing with new repo path');
@@ -873,6 +879,7 @@ class GitPanel {
                 setTimeout(() => {
                     this.loadBranches();
                     this.loadCommitHistory();
+                    this.loadStashes();
                 }, 50);
             }
         });
