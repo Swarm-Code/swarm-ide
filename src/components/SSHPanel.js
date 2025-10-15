@@ -602,12 +602,19 @@ class SSHPanel {
         style.id = 'ssh-panel-styles';
         style.textContent = `
             .ssh-panel {
-                display: flex;
-                flex-direction: column;
-                height: 100%;
+                position: fixed;
+                top: 32px;
+                left: 48px;
+                width: 320px;
+                height: calc(100vh - 32px);
                 background: var(--color-bg-primary, #1e1e1e);
                 color: var(--color-text-primary, #cccccc);
-                font-family: var(--font-family, sans-serif);
+                font-family: var(--font-family, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif);
+                border-right: 1px solid var(--color-border, #333);
+                display: flex;
+                flex-direction: column;
+                z-index: 100;
+                box-shadow: 2px 0 8px rgba(0, 0, 0, 0.3);
             }
 
             .ssh-panel-header {
