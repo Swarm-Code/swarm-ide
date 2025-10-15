@@ -38,28 +38,38 @@ class SSHService {
      * @param {Object} electronAPI - The API exposed via preload script
      */
     async initialize(electronAPI) {
+        logger.debug('ssh', 'SSH Service initialize() called, current state:', this.initialized);
+
         if (this.initialized) {
+            logger.debug('ssh', 'SSH Service already initialized, returning');
             return;
         }
 
+        logger.debug('ssh', 'Setting up SSH Service with electronAPI:', !!electronAPI);
         this.api = electronAPI;
 
         try {
+            logger.debug('ssh', 'Calling sshInit on main process...');
             // Initialize SSH in main process
             const result = await this.api.sshInit();
+            logger.debug('ssh', 'sshInit result:', result);
+
             if (!result.success) {
                 throw new Error(result.error);
             }
 
+            logger.debug('ssh', 'Loading existing connections...');
             // Load existing connections
             await this.loadConnections();
 
             this.initialized = true;
+            logger.debug('ssh', 'SSH Service initialization complete, emitting event');
             eventBus.emit('ssh:serviceInitialized');
             logger.info('ssh', 'SSH Service initialized successfully');
 
         } catch (error) {
             logger.error('ssh', 'Failed to initialize SSH Service:', error.message);
+            logger.error('ssh', 'Error stack:', error.stack);
             throw error;
         }
     }
