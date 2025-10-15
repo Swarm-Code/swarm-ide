@@ -952,12 +952,12 @@ class SSHPanel {
                 background: var(--color-accent-hover, #005a9e);
             }
         `;
-            logger.debug('ssh', 'Appending style element to document head...');
+            logger.debug('sshPanel', 'Appending style element to document head...');
             document.head.appendChild(style);
-            logger.debug('ssh', 'SSH panel styles added successfully');
+            logger.debug('sshPanel', 'SSH panel styles added successfully');
         } catch (error) {
-            logger.error('ssh', 'Failed to add SSH panel styles:', error);
-            logger.error('ssh', 'Style error stack:', error.stack);
+            logger.error('sshPanel', 'Failed to add SSH panel styles:', error);
+            logger.error('sshPanel', 'Style error stack:', error.stack);
         }
     }
 
