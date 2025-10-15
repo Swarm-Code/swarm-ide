@@ -28,6 +28,14 @@ class FileExplorer {
         this.contextMenu = null; // Context menu element
         this.clipboard = { items: [], operation: null }; // Clipboard for copy/cut/paste
 
+        // File change polling for external changes (git operations, etc.)
+        this.changePolling = {
+            enabled: false,
+            interval: null,
+            lastSnapshot: null,
+            intervalMs: 200
+        };
+
         this.init();
     }
 
