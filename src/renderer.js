@@ -81,6 +81,7 @@ const uiManager = require('./modules/UIManager');
 // Import services
 const fileSystemService = require('./services/FileSystemService');
 const sqliteService = require('./services/SQLiteService');
+const sshService = require('./services/SSHService');
 const PaneManager = require('./services/PaneManager');
 const workspaceManager = require('./services/WorkspaceManager');
 const browserProfileManager = require('./services/BrowserProfileManager');
