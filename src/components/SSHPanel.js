@@ -161,14 +161,29 @@ class SSHPanel {
      */
     async loadConnections() {
         try {
+            logger.debug('ssh', 'SSHPanel loadConnections() called');
             this.showStatus('Loading connections...', 'info');
 
-            if (!window.sshService || !window.sshService.isInitialized()) {
+            logger.debug('ssh', 'Checking window.sshService availability:', !!window.sshService);
+
+            if (!window.sshService) {
+                logger.error('ssh', 'window.sshService is not available!');
                 this.showStatus('SSH service not available', 'error');
                 return;
             }
 
+            logger.debug('ssh', 'Checking SSH service initialization state:', window.sshService.isInitialized());
+
+            if (!window.sshService.isInitialized()) {
+                logger.error('ssh', 'SSH service is not initialized!');
+                this.showStatus('SSH service not initialized', 'error');
+                return;
+            }
+
+            logger.debug('ssh', 'SSH service is available and initialized, getting connections...');
             const connections = await window.sshService.getConnections();
+            logger.debug('ssh', 'Got connections from service:', connections.length);
+
             this.connections.clear();
             this.connectionElements.clear();
 
@@ -184,6 +199,7 @@ class SSHPanel {
         } catch (error) {
             this.showStatus('Failed to load connections: ' + error.message, 'error');
             logger.error('ssh', 'Failed to load connections:', error);
+            logger.error('ssh', 'Error stack:', error.stack);
         }
     }
 
