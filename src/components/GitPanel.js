@@ -2719,6 +2719,247 @@ class GitPanel {
     }
 
     /**
+     * Load stashes from repository
+     */
+    async loadStashes() {
+        const { gitService, gitStore } = getGitServices();
+        if (!gitService || !gitStore) return;
+
+        try {
+            console.log('[GitPanel] Loading stashes');
+            const repoPath = this.currentRepoPath || gitStore.getCurrentRepository();
+            if (!repoPath) {
+                console.warn('[GitPanel] No repository path available');
+                return;
+            }
+
+            const client = new GitClient(repoPath);
+
+            try {
+                // Get stash list
+                const stashOutput = await client.execute(['stash', 'list', '--format=%gd|%s|%cr']);
+
+                // Parse stashes
+                this.stashes = stashOutput.split('\n')
+                    .filter(line => line.trim())
+                    .map(line => {
+                        const [ref, message, time] = line.split('|');
+                        return {
+                            ref: ref.trim(),
+                            message: message.trim(),
+                            time: time.trim()
+                        };
+                    });
+
+                this.renderStashes();
+
+                // Update count in badge
+                if (this.stashBadge) {
+                    this.stashBadge.textContent = this.stashes.length;
+                }
+
+                console.log('[GitPanel] Loaded', this.stashes.length, 'stashes');
+            } catch (error) {
+                // Handle no stashes gracefully
+                if (error.message && error.message.includes('No stash entries found')) {
+                    console.log('[GitPanel] No stashes found');
+                    this.stashes = [];
+                    this.renderStashes();
+                    if (this.stashBadge) {
+                        this.stashBadge.textContent = '0';
+                    }
+                    return;
+                }
+                throw error;
+            }
+        } catch (error) {
+            console.error('[GitPanel] Error loading stashes:', error);
+            this.stashes = [];
+            this.renderStashes();
+            if (this.stashBadge) {
+                this.stashBadge.textContent = '0';
+            }
+        }
+    }
+
+    /**
+     * Render stashes
+     */
+    renderStashes() {
+        if (!this.stashList) return;
+
+        this.stashList.innerHTML = '';
+
+        if (this.stashes.length === 0) {
+            const emptyMsg = document.createElement('div');
+            emptyMsg.style.cssText = 'padding: 12px; color: rgba(255, 255, 255, 0.5); text-align: center;';
+            emptyMsg.textContent = 'No stashes yet';
+            this.stashList.appendChild(emptyMsg);
+            return;
+        }
+
+        this.stashes.forEach((stash, index) => {
+            const stashItem = document.createElement('div');
+            stashItem.className = 'git-stash-item';
+            stashItem.style.cssText = `
+                padding: 8px 12px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                transition: background-color 0.2s;
+            `;
+
+            stashItem.addEventListener('mouseenter', () => {
+                stashItem.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+            });
+            stashItem.addEventListener('mouseleave', () => {
+                stashItem.style.backgroundColor = 'transparent';
+            });
+
+            const messageDiv = document.createElement('div');
+            messageDiv.style.cssText = 'font-size: 13px; margin-bottom: 4px; font-weight: 500;';
+            messageDiv.textContent = stash.message;
+
+            const metaDiv = document.createElement('div');
+            metaDiv.style.cssText = 'font-size: 11px; color: rgba(255, 255, 255, 0.5); margin-bottom: 6px;';
+            metaDiv.innerHTML = `
+                <span style="font-family: monospace; color: #28a745;">${stash.ref}</span>
+                · ${stash.time}
+            `;
+
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.cssText = 'display: flex; gap: 6px;';
+
+            const applyBtn = document.createElement('button');
+            applyBtn.textContent = 'Apply';
+            applyBtn.title = 'Apply stash (keep in stash list)';
+            applyBtn.style.cssText = `
+                padding: 4px 8px;
+                font-size: 11px;
+                background-color: #0078d4;
+                color: white;
+                border: none;
+                border-radius: 3px;
+                cursor: pointer;
+            `;
+            applyBtn.onclick = (e) => {
+                e.stopPropagation();
+                this.applyStash(stash.ref, false);
+            };
+
+            const popBtn = document.createElement('button');
+            popBtn.textContent = 'Pop';
+            popBtn.title = 'Apply stash and remove from stash list';
+            popBtn.style.cssText = `
+                padding: 4px 8px;
+                font-size: 11px;
+                background-color: #28a745;
+                color: white;
+                border: none;
+                border-radius: 3px;
+                cursor: pointer;
+            `;
+            popBtn.onclick = (e) => {
+                e.stopPropagation();
+                this.applyStash(stash.ref, true);
+            };
+
+            const dropBtn = document.createElement('button');
+            dropBtn.textContent = 'Drop';
+            dropBtn.title = 'Delete stash permanently';
+            dropBtn.style.cssText = `
+                padding: 4px 8px;
+                font-size: 11px;
+                background-color: #dc3545;
+                color: white;
+                border: none;
+                border-radius: 3px;
+                cursor: pointer;
+            `;
+            dropBtn.onclick = (e) => {
+                e.stopPropagation();
+                this.dropStash(stash.ref);
+            };
+
+            buttonContainer.appendChild(applyBtn);
+            buttonContainer.appendChild(popBtn);
+            buttonContainer.appendChild(dropBtn);
+
+            stashItem.appendChild(messageDiv);
+            stashItem.appendChild(metaDiv);
+            stashItem.appendChild(buttonContainer);
+
+            this.stashList.appendChild(stashItem);
+        });
+    }
+
+    /**
+     * Apply stash
+     * @param {string} stashRef - Stash reference (e.g., "stash@{0}")
+     * @param {boolean} pop - Whether to remove from stash list after applying
+     */
+    async applyStash(stashRef, pop = false) {
+        const { gitService } = getGitServices();
+        if (!gitService) return;
+
+        try {
+            const action = pop ? 'pop' : 'apply';
+            console.log(`[GitPanel] ${action}ing stash:`, stashRef);
+
+            const repoPath = this.currentRepoPath || gitService.getRepository()?.workingDirectory;
+            if (!repoPath) {
+                this.showError('No repository path available');
+                return;
+            }
+
+            const client = new GitClient(repoPath);
+
+            if (pop) {
+                await client.execute(['stash', 'pop', stashRef]);
+            } else {
+                await client.execute(['stash', 'apply', stashRef]);
+            }
+
+            this.showSuccess(`Stash ${action}ed successfully`);
+
+            // Refresh status and reload stashes
+            this.refreshStatus();
+            this.loadStashes();
+        } catch (error) {
+            console.error(`[GitPanel] Failed to ${pop ? 'pop' : 'apply'} stash:`, error);
+            this.showError(`Failed to ${pop ? 'pop' : 'apply'} stash: ${error.message}`);
+        }
+    }
+
+    /**
+     * Drop (delete) stash
+     * @param {string} stashRef - Stash reference (e.g., "stash@{0}")
+     */
+    async dropStash(stashRef) {
+        const { gitService } = getGitServices();
+        if (!gitService) return;
+
+        try {
+            console.log('[GitPanel] Dropping stash:', stashRef);
+
+            const repoPath = this.currentRepoPath || gitService.getRepository()?.workingDirectory;
+            if (!repoPath) {
+                this.showError('No repository path available');
+                return;
+            }
+
+            const client = new GitClient(repoPath);
+            await client.execute(['stash', 'drop', stashRef]);
+
+            this.showSuccess('Stash dropped successfully');
+
+            // Reload stashes
+            this.loadStashes();
+        } catch (error) {
+            console.error('[GitPanel] Failed to drop stash:', error);
+            this.showError(`Failed to drop stash: ${error.message}`);
+        }
+    }
+
+    /**
      * View commit details and diff
      */
     async viewCommit(commit) {
