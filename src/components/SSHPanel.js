@@ -52,7 +52,8 @@ class SSHPanel {
      */
     render(container) {
         this.panel = document.createElement('div');
-        this.panel.className = 'ssh-panel';
+        this.panel.className = 'ssh-panel panel';
+        this.panel.style.display = 'none'; // Hidden by default
         this.panel.innerHTML = this.getHTML();
 
         this.initializeElements();
