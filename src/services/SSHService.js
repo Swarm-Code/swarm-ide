@@ -630,10 +630,14 @@ class SSHService {
      */
     async loadConnections() {
         try {
+            logger.debug('ssh', 'loadConnections() called, initialized state:', this.initialized);
+            logger.debug('ssh', 'API available:', !!this.api);
+
             const connections = await this.getConnections();
             logger.debug('ssh', `Loaded ${connections.length} SSH connections`);
         } catch (error) {
             logger.error('ssh', 'Failed to load SSH connections:', error.message);
+            logger.error('ssh', 'Load connections error stack:', error.stack);
         }
     }
 
