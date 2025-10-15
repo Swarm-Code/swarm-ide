@@ -1307,6 +1307,10 @@ class FileExplorer {
         this.expandedPaths.clear();
         this.selectedPaths.clear();
         this.hideContextMenu();
+
+        // Stop change polling
+        this.stopChangePolling();
+
         eventBus.off('explorer:open-folder');
         eventBus.off('explorer:refresh');
     }
