@@ -1185,21 +1185,20 @@ body {
 
 .welcome-header {
     text-align: center;
-    margin-bottom: 80px;
+    margin-bottom: 48px;
     position: relative;
 }
 
 .welcome-title {
-    font-size: 72px;
-    font-weight: 800;
+    font-size: 42px;
+    font-weight: 700;
     background: linear-gradient(135deg, #ffffff 0%, #0e639c 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    margin: 0 0 16px 0;
-    letter-spacing: 4px;
+    margin: 0 0 12px 0;
+    letter-spacing: 1px;
     text-transform: uppercase;
-    animation: glow 2s ease-in-out infinite alternate;
 }
 
 @keyframes glow {
