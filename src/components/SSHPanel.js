@@ -590,6 +590,9 @@ class SSHPanel {
     }
 
     clearStatus() {
+        if (!this.statusDiv) {
+            return;
+        }
         this.statusDiv.textContent = '';
         this.statusDiv.className = 'ssh-panel-status';
     }
