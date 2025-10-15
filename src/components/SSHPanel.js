@@ -972,11 +972,19 @@ class SSHPanel {
      * Toggle panel visibility
      */
     toggle() {
+        logger.info('ssh', '🔄 TOGGLE SSH PANEL CALLED');
+        logger.info('ssh', 'Current state - isVisible:', this.isVisible);
+        logger.info('ssh', 'Panel exists:', !!this.panel);
+
         if (this.isVisible) {
+            logger.info('ssh', 'Panel is visible, calling hide()');
             this.hide();
         } else {
+            logger.info('ssh', 'Panel is hidden, calling show()');
             this.show();
         }
+
+        logger.info('ssh', 'Toggle completed, new state - isVisible:', this.isVisible);
     }
 
     /**
