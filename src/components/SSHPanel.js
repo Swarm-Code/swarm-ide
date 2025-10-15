@@ -107,8 +107,8 @@ class SSHPanel {
 
             logger.info('sshPanel', '✅ SSH Panel rendered successfully');
         } catch (error) {
-            logger.error('ssh', '❌ Failed to render SSH Panel:', error);
-            logger.error('ssh', 'Render error stack:', error.stack);
+            logger.error('sshPanel', '❌ Failed to render SSH Panel:', error);
+            logger.error('sshPanel', 'Render error stack:', error.stack);
             throw error;
         }
     }
