@@ -368,6 +368,31 @@ class MenuBar {
                 eventBus.emit('app:quit-request');
                 break;
 
+            // SSH menu actions
+            case 'ssh:toggle-panel':
+                eventBus.emit('ssh:toggle-panel');
+                break;
+
+            case 'ssh:new-connection':
+                eventBus.emit('ssh:new-connection');
+                break;
+
+            case 'ssh:quick-connect':
+                eventBus.emit('ssh:quick-connect');
+                break;
+
+            case 'ssh:disconnect-all':
+                eventBus.emit('ssh:disconnect-all');
+                break;
+
+            case 'ssh:health-check':
+                eventBus.emit('ssh:health-check');
+                break;
+
+            case 'ssh:settings':
+                eventBus.emit('ssh:settings');
+                break;
+
             default:
                 logger.debug('menu', 'Unhandled action:', action);
                 eventBus.emit('menu:action', { action });
