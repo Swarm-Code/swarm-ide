@@ -1034,7 +1034,15 @@ class Application {
             await window.sshService.connect(connectionId);
             logger.info('ssh', 'SSH connection established successfully');
 
-            alert(`Successfully connected to ${connectionConfig.host}`);
+            // Treat SSH connection like opening a folder - transition to main IDE
+            eventBus.emit('explorer:directory-opened', {
+                path: `ssh://${connectionConfig.host}`,
+                type: 'ssh',
+                connectionId: connectionId,
+                connectionConfig: connectionConfig
+            });
+
+            logger.info('ssh', `SSH workspace opened for ${connectionConfig.host}`);
         } catch (error) {
             logger.error('ssh', 'Failed to create/connect SSH:', error);
             alert('Failed to connect to SSH server: ' + error.message);
