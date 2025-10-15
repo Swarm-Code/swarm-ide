@@ -147,6 +147,10 @@ class Application {
             sqliteService.initialize(window.electronAPI);
             logger.info('appInit', '✓ SQLiteService initialized');
 
+            // 2.5.1. Initialize SSHService with Electron API
+            await sshService.initialize(window.electronAPI);
+            logger.info('appInit', '✓ SSHService initialized');
+
             // 2.6. Initialize WorkspaceManager
             await this.workspaceManager.init();
             logger.info('appInit', '✓ WorkspaceManager initialized');
