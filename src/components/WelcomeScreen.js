@@ -84,7 +84,7 @@ class WelcomeScreen {
 
                     <div class="welcome-footer">
                         <div class="welcome-help">
-                            <p>Press <kbd>Ctrl+O</kbd> to open a folder</p>
+                            <p>Press <kbd>Ctrl+O</kbd> to open a folder • <kbd>Ctrl+Shift+S</kbd> for SSH connections</p>
                         </div>
                     </div>
                 </div>
