@@ -151,8 +151,14 @@ class Application {
             logger.info('appInit', '✓ SQLiteService initialized');
 
             // 2.5.1. Initialize SSHService with Electron API
+            logger.debug('appInit', 'About to initialize SSH Service...');
+            logger.debug('appInit', 'window.electronAPI available:', !!window.electronAPI);
+            logger.debug('appInit', 'window.electronAPI.sshInit available:', !!window.electronAPI?.sshInit);
+
             await sshService.initialize(window.electronAPI);
             window.sshService = sshService; // Make SSH service globally available
+
+            logger.debug('appInit', 'SSH Service init complete, checking state:', sshService.isInitialized());
             logger.info('appInit', '✓ SSHService initialized');
 
             // 2.6. Initialize WorkspaceManager
