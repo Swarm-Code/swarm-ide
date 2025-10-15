@@ -809,6 +809,7 @@ class Application {
     setupIconSidebar() {
         const iconFiles = document.getElementById('icon-files');
         const iconGit = document.getElementById('icon-git');
+        const iconSSH = document.getElementById('icon-ssh');
         const iconBrowser = document.getElementById('icon-browser');
 
         if (iconFiles) {
