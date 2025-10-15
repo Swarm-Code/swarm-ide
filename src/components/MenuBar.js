@@ -108,6 +108,19 @@ class MenuBar {
                 ]
             },
             {
+                label: 'SSH',
+                items: [
+                    { label: 'Connections', action: 'ssh:toggle-panel', shortcut: 'Ctrl+Shift+S' },
+                    { label: 'New Connection...', action: 'ssh:new-connection' },
+                    { label: 'Quick Connect...', action: 'ssh:quick-connect' },
+                    { type: 'separator' },
+                    { label: 'Disconnect All', action: 'ssh:disconnect-all' },
+                    { label: 'Health Check', action: 'ssh:health-check' },
+                    { type: 'separator' },
+                    { label: 'Settings', action: 'ssh:settings' }
+                ]
+            },
+            {
                 label: 'Help',
                 items: [
                     { label: 'Documentation', action: 'help:docs' },
