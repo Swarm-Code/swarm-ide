@@ -961,6 +961,9 @@ ipcMain.handle('browser-update-bounds', async (event, tabId, bounds) => {
 
 const { spawn } = require('child_process');
 
+// SSH Connection Manager
+const sshConnectionManager = require('./src/services/SSHConnectionManager');
+
 /**
  * Execute a git command in the main process
  * @param {string} gitPath - Git binary path
