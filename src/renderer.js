@@ -149,6 +149,7 @@ class Application {
 
             // 2.5.1. Initialize SSHService with Electron API
             await sshService.initialize(window.electronAPI);
+            window.sshService = sshService; // Make SSH service globally available
             logger.info('appInit', '✓ SSHService initialized');
 
             // 2.6. Initialize WorkspaceManager
