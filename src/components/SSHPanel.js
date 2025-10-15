@@ -52,7 +52,7 @@ class SSHPanel {
      */
     render(container) {
         try {
-            logger.info('ssh', '🎨 Starting SSH Panel render...');
+            logger.info('sshPanel', '🎨 Starting SSH Panel render...');
 
             // Create panel element
             logger.debug('ssh', 'Creating panel element...');
