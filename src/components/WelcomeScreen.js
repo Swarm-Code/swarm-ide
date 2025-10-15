@@ -132,11 +132,18 @@ class WelcomeScreen {
         if (sshPanelBtn) {
             logger.debug('appInit', 'SSH Panel button found, adding click listener');
             sshPanelBtn.addEventListener('click', () => {
-                logger.debug('appInit', 'SSH Panel button clicked!');
+                logger.info('appInit', '🔗 SSH PANEL BUTTON CLICKED!');
+                logger.info('appInit', 'Emitting ssh:toggle-panel event...');
                 eventBus.emit('ssh:toggle-panel');
+                logger.info('appInit', 'ssh:toggle-panel event emitted successfully');
             });
         } else {
             logger.error('appInit', 'SSH Panel button NOT found!');
+            logger.error('appInit', 'Available buttons in container:');
+            const allButtons = this.container.querySelectorAll('button');
+            allButtons.forEach((btn, index) => {
+                logger.error('appInit', `Button ${index}:`, btn.id, btn.className, btn.textContent.substring(0, 50));
+            });
         }
 
         // Recent folder items
