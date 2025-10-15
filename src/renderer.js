@@ -292,12 +292,13 @@ class Application {
         // Create and register SSH UI components
         try {
             const sshPanel = new SSHPanel();
+            sshPanel.render(); // Render the SSH panel to DOM
             uiManager.registerComponent('sshPanel', sshPanel);
 
             // Setup SSH menu action handlers
             this.setupSSHMenuHandlers(sshPanel);
 
-            logger.info('appInit', '✓ SSH UI components registered');
+            logger.info('appInit', '✓ SSH UI components registered and rendered');
         } catch (error) {
             logger.warn('appInit', 'Failed to initialize SSH UI components:', error.message);
         }
