@@ -110,6 +110,9 @@ const GitPanel = require('./components/GitPanel');
 const GitHistoryPanel = require('./components/GitHistoryPanel');
 const CommitView = require('./components/CommitView');
 const GitBranchMenu = require('./components/GitBranchMenu');
+
+// Import SSH components
+const SSHPanel = require('./components/SSHPanel');
 const GitDiffPanel = require('./components/GitDiffPanel');
 const GitBlamePanel = require('./components/GitBlamePanel');
 
