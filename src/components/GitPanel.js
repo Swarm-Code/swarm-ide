@@ -828,6 +828,9 @@ class GitPanel {
                     await gitService.stashChanges(message);
                     this.showSuccess(`Changes stashed: ${message}`);
                     // gitService.stashChanges() already calls refreshStatus() internally
+
+                    // Refresh stash list to show new stash
+                    this.loadStashes();
                 } catch (error) {
                     console.error('[GitPanel] Stash failed:', error);
                     this.showError('Failed to stash changes: ' + error.message);
