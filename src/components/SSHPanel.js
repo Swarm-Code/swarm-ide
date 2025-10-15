@@ -162,10 +162,14 @@ class SSHPanel {
 
         // Panel visibility events
         eventBus.on('ssh:toggle-panel', () => {
+            logger.info('ssh', '🎛️ SSH TOGGLE PANEL EVENT RECEIVED!');
+            logger.info('ssh', 'Current panel state - isVisible:', this.isVisible);
+            logger.info('ssh', 'Panel element exists:', !!this.panel);
             this.toggle();
         });
 
         eventBus.on('ssh:hide-panel', () => {
+            logger.info('ssh', '🔒 SSH HIDE PANEL EVENT RECEIVED!');
             this.hide();
         });
 
