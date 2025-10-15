@@ -639,13 +639,19 @@ class SSHPanel {
      * Add panel styles
      */
     addPanelStyles() {
-        if (document.getElementById('ssh-panel-styles')) {
-            return; // Styles already added
-        }
+        try {
+            logger.debug('ssh', 'Checking for existing SSH panel styles...');
+            if (document.getElementById('ssh-panel-styles')) {
+                logger.debug('ssh', 'SSH panel styles already exist, skipping');
+                return; // Styles already added
+            }
 
-        const style = document.createElement('style');
-        style.id = 'ssh-panel-styles';
-        style.textContent = `
+            logger.debug('ssh', 'Creating new style element...');
+            const style = document.createElement('style');
+            style.id = 'ssh-panel-styles';
+
+            logger.debug('ssh', 'Setting style content...');
+            style.textContent = `
             .ssh-panel {
                 position: fixed;
                 top: 32px;
