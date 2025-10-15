@@ -888,6 +888,7 @@ class Application {
                 // Toggle active state
                 if (iconFiles) iconFiles.classList.remove('active');
                 if (iconGit) iconGit.classList.remove('active');
+                if (iconSSH) iconSSH.classList.remove('active');
                 iconBrowser.classList.add('active');
 
                 // Toggle browser
