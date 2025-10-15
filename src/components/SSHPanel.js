@@ -866,28 +866,32 @@ class SSHPanel {
 
             .ssh-no-connections {
                 text-align: center;
-                padding: 40px 20px;
+                padding: 32px 20px;
                 color: var(--color-text-secondary, #969696);
+                margin-top: 20px;
             }
 
             .ssh-no-connections-icon {
-                font-size: 48px;
-                margin-bottom: 16px;
+                font-size: 32px;
+                margin-bottom: 12px;
+                opacity: 0.7;
             }
 
             .ssh-no-connections p {
-                margin: 0 0 20px 0;
-                font-size: 16px;
+                margin: 0 0 16px 0;
+                font-size: 13px;
+                line-height: 1.4;
             }
 
             .ssh-add-first-btn {
                 background: var(--color-accent, #007acc);
                 border: 1px solid var(--color-accent, #007acc);
                 color: white;
-                padding: 10px 20px;
-                border-radius: 6px;
+                padding: 8px 16px;
+                border-radius: 3px;
                 cursor: pointer;
-                font-size: 14px;
+                font-size: 12px;
+                transition: background-color 0.15s ease;
             }
 
             .ssh-add-first-btn:hover {
