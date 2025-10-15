@@ -60,7 +60,12 @@ class SSHPanel {
         this.setupPanelEventListeners();
         this.addPanelStyles();
 
-        container.appendChild(this.panel);
+        // Append to container or document.body like GitPanel
+        if (container) {
+            container.appendChild(this.panel);
+        } else {
+            document.body.appendChild(this.panel);
+        }
 
         // Load connections
         this.loadConnections();
