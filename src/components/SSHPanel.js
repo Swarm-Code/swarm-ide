@@ -650,25 +650,30 @@ class SSHPanel {
 
             .ssh-refresh-btn,
             .ssh-add-btn {
-                background: var(--color-button-secondary, #4a4a4a);
-                border: 1px solid var(--color-border, #5a5a5a);
-                color: var(--color-text-primary, #cccccc);
-                padding: 4px 8px;
-                border-radius: 4px;
+                background: transparent;
+                border: 1px solid transparent;
+                color: var(--color-text-secondary, #969696);
+                padding: 6px 8px;
+                border-radius: 3px;
                 cursor: pointer;
                 font-size: 14px;
                 display: flex;
                 align-items: center;
-                gap: 4px;
+                justify-content: center;
+                width: 28px;
+                height: 28px;
+                transition: all 0.2s ease;
             }
 
             .ssh-refresh-btn:hover,
             .ssh-add-btn:hover {
-                background: var(--color-button-secondary-hover, #5a5a5a);
+                background: var(--color-button-secondary-hover, #37373d);
+                color: var(--color-text-primary, #cccccc);
+                border-color: var(--color-border, #5a5a5a);
             }
 
             .ssh-refresh-btn:disabled {
-                opacity: 0.6;
+                opacity: 0.5;
                 cursor: not-allowed;
             }
 
