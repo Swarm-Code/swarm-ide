@@ -29,6 +29,7 @@ class SSHPanel {
         this.addConnectionBtn = null;
         this.refreshBtn = null;
         this.statusDiv = null;
+        this.isVisible = false;
 
         // SSH Dialog instance
         this.sshDialog = new SSHConnectionDialog();
