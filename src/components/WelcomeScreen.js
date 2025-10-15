@@ -115,6 +115,30 @@ class WelcomeScreen {
             logger.error('appInit', 'Open folder button NOT found!');
         }
 
+        // SSH Connect button
+        const sshConnectBtn = this.container.querySelector('#welcome-ssh-connect');
+        if (sshConnectBtn) {
+            logger.debug('appInit', 'SSH Connect button found, adding click listener');
+            sshConnectBtn.addEventListener('click', () => {
+                logger.debug('appInit', 'SSH Connect button clicked!');
+                eventBus.emit('ssh:quick-connect');
+            });
+        } else {
+            logger.error('appInit', 'SSH Connect button NOT found!');
+        }
+
+        // SSH Panel button
+        const sshPanelBtn = this.container.querySelector('#welcome-ssh-panel');
+        if (sshPanelBtn) {
+            logger.debug('appInit', 'SSH Panel button found, adding click listener');
+            sshPanelBtn.addEventListener('click', () => {
+                logger.debug('appInit', 'SSH Panel button clicked!');
+                eventBus.emit('ssh:toggle-panel');
+            });
+        } else {
+            logger.error('appInit', 'SSH Panel button NOT found!');
+        }
+
         // Recent folder items
         const recentItems = this.container.querySelectorAll('.welcome-recent-item');
         recentItems.forEach(item => {
