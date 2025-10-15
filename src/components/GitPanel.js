@@ -2007,7 +2007,7 @@ class GitPanel {
      * Create a new branch
      */
     async createNewBranch() {
-        const branchName = prompt('Enter new branch name:');
+        const branchName = await this.showInputDialog('Create New Branch', 'Enter new branch name:', 'feature/new-feature');
         if (!branchName) return;
 
         // Validate branch name
