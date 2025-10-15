@@ -244,28 +244,44 @@ class Application {
      * Initialize UI components
      */
     initializeComponents() {
+        logger.info('appInit', '🎯 Starting initializeComponents...');
+
         // Get DOM elements
+        logger.debug('appInit', 'Getting DOM elements...');
         const welcomeContainer = document.getElementById('welcome-container');
         const appContainer = document.getElementById('app-container');
         const menuBarContainer = document.getElementById('menu-bar');
         const fileTreeContainer = document.getElementById('file-tree');
         const paneContainer = document.getElementById('pane-container');
+        logger.debug('appInit', 'DOM elements retrieved');
 
         // Create and register WelcomeScreen
+        logger.info('appInit', 'Creating WelcomeScreen...');
         const welcomeScreen = new WelcomeScreen(welcomeContainer, config, fileSystemService);
+        logger.info('appInit', 'WelcomeScreen created, registering...');
         uiManager.registerComponent('welcomeScreen', welcomeScreen);
+        logger.info('appInit', '✓ WelcomeScreen registered');
 
         // Create and register MenuBar
+        logger.info('appInit', 'Creating MenuBar...');
         const menuBar = new MenuBar(menuBarContainer, fileSystemService);
+        logger.info('appInit', 'MenuBar created, registering...');
         uiManager.registerComponent('menuBar', menuBar);
+        logger.info('appInit', '✓ MenuBar registered');
 
         // Create and register WorkspacePanel
+        logger.info('appInit', 'Creating WorkspacePanel...');
         const workspacePanel = new WorkspacePanel();
+        logger.info('appInit', 'WorkspacePanel created, registering...');
         uiManager.registerComponent('workspacePanel', workspacePanel);
+        logger.info('appInit', '✓ WorkspacePanel registered');
 
         // Create and register FileExplorer
+        logger.info('appInit', 'Creating FileExplorer...');
         const explorer = new FileExplorer(fileTreeContainer, fileSystemService, config);
+        logger.info('appInit', 'FileExplorer created, registering...');
         uiManager.registerComponent('fileExplorer', explorer);
+        logger.info('appInit', '✓ FileExplorer registered');
 
         // Create and register Git UI components
         try {
@@ -382,26 +398,35 @@ class Application {
      * Setup global event handlers
      */
     setupGlobalHandlers() {
-        // Handle shortcut: open folder
-        eventBus.on('shortcut:open-folder', async () => {
-            const homeDir = await fileSystemService.getHomeDirectory();
-            if (homeDir) {
-                const explorer = uiManager.getComponent('fileExplorer');
-                if (explorer) {
-                    await explorer.openDirectory(homeDir);
+        logger.info('appInit', '🎯 Starting setupGlobalHandlers...');
+
+        try {
+            // Handle shortcut: open folder
+            logger.debug('appInit', 'Setting up shortcut:open-folder handler...');
+            eventBus.on('shortcut:open-folder', async () => {
+                const homeDir = await fileSystemService.getHomeDirectory();
+                if (homeDir) {
+                    const explorer = uiManager.getComponent('fileExplorer');
+                    if (explorer) {
+                        await explorer.openDirectory(homeDir);
+                    }
                 }
-            }
-        });
+            });
+            logger.debug('appInit', '✓ shortcut:open-folder handler set');
 
-        // Handle shortcut: refresh
-        eventBus.on('shortcut:refresh', () => {
-            eventBus.emit('explorer:refresh');
-        });
+            // Handle shortcut: refresh
+            logger.debug('appInit', 'Setting up shortcut:refresh handler...');
+            eventBus.on('shortcut:refresh', () => {
+                eventBus.emit('explorer:refresh');
+            });
+            logger.debug('appInit', '✓ shortcut:refresh handler set');
 
-        // Handle browser toggle
-        eventBus.on('browser:toggle', () => {
-            this.toggleBrowser();
-        });
+            // Handle browser toggle
+            logger.debug('appInit', 'Setting up browser:toggle handler...');
+            eventBus.on('browser:toggle', () => {
+                this.toggleBrowser();
+            });
+            logger.debug('appInit', '✓ browser:toggle handler set');
 
         // Handle request to open file in specific pane
         eventBus.on('pane:request-file-open', async (data) => {
@@ -509,6 +534,12 @@ class Application {
         // Log all events in debug mode
         if (config.get('debug', false)) {
             eventBus.setDebug(true);
+        }
+
+        logger.info('appInit', '✅ setupGlobalHandlers completed successfully');
+        } catch (error) {
+            logger.error('appInit', '❌ Error in setupGlobalHandlers:', error);
+            logger.error('appInit', 'setupGlobalHandlers error stack:', error.stack);
         }
     }
 
