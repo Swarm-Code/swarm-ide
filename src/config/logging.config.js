@@ -118,6 +118,15 @@ module.exports = {
             'menu': 'Menu operations',
             'statusBar': 'Status bar updates',
             'dialog': 'Dialog operations'
+        },
+
+        // SSH Operations
+        ssh: {
+            'ssh': 'SSH connection operations',
+            'sshPanel': 'SSH panel UI operations',
+            'sshService': 'SSH service operations',
+            'sshConnection': 'SSH connection management',
+            'sshDialog': 'SSH connection dialog'
         }
     },
 
