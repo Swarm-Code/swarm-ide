@@ -130,7 +130,7 @@ class WelcomeScreen {
         // SSH Panel button
         const sshPanelBtn = this.container.querySelector('#welcome-ssh-panel');
         if (sshPanelBtn) {
-            logger.debug('appInit', 'SSH Panel button found, adding click listener');
+            logger.info('appInit', 'SSH Panel button found, adding click listener');
             sshPanelBtn.addEventListener('click', () => {
                 logger.info('appInit', '🔗 SSH PANEL BUTTON CLICKED!');
                 logger.info('appInit', 'Emitting ssh:toggle-panel event...');
