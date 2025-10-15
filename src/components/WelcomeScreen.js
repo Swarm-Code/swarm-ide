@@ -143,7 +143,7 @@ class WelcomeScreen {
         }
 
         // Recent folder items
-        const recentItems = this.container.querySelectorAll('.welcome-recent-item');
+        const recentItems = this.container.querySelectorAll('.recent-card');
         recentItems.forEach(item => {
             item.addEventListener('click', () => {
                 const path = item.dataset.path;
