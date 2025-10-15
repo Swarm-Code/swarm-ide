@@ -147,6 +147,12 @@ class UIManager {
             eventBus.emit('git:toggle-blame');
         }
 
+        // Cmd/Ctrl + Shift + S: Toggle SSH panel
+        if (modKey && shiftKey && key === 'S') {
+            event.preventDefault();
+            eventBus.emit('ssh:toggle-panel');
+        }
+
         // Emit generic keyboard event for plugins
         eventBus.emit('ui:keyboard', { event, modKey, key, shiftKey });
     }
