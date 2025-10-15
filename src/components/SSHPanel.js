@@ -706,25 +706,29 @@ class SSHPanel {
             .ssh-panel-content {
                 flex: 1;
                 overflow-y: auto;
-                padding: 8px;
+                padding: 0;
             }
 
             .ssh-connections-list {
                 display: flex;
                 flex-direction: column;
-                gap: 8px;
+                gap: 1px;
+                padding: 8px 0;
             }
 
             .ssh-connection-item {
-                background: var(--color-bg-secondary, #252526);
-                border: 1px solid var(--color-border, #333);
-                border-radius: 6px;
-                padding: 12px;
-                transition: background-color 0.2s;
+                background: transparent;
+                border: none;
+                border-radius: 0;
+                padding: 12px 16px;
+                transition: background-color 0.15s ease;
+                cursor: pointer;
+                border-left: 3px solid transparent;
             }
 
             .ssh-connection-item:hover {
                 background: var(--color-bg-hover, #2a2d2e);
+                border-left-color: var(--color-accent, #0e639c);
             }
 
             .ssh-connection-header {
