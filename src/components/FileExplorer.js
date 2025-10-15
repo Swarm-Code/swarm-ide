@@ -145,6 +145,10 @@ class FileExplorer {
             logger.debug('fileSystem', 'Setting up file watcher for:', dirPath);
             await this.fs.watchDirectory(dirPath);
 
+            // Start polling for external changes (git operations, etc.)
+            this.stopChangePolling(); // Stop any existing polling
+            this.startChangePolling();
+
             // Add to recent folders
             if (this.config) {
                 this.config.addRecentFolder(dirPath);
