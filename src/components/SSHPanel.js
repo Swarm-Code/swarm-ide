@@ -91,16 +91,19 @@ class SSHPanel {
                 logger.debug('sshPanel', 'Panel appended to document.body');
             }
 
-            // Load connections (async)
-            logger.debug('sshPanel', 'Starting connection loading...');
-            this.loadConnections().catch(error => {
-                logger.error('sshPanel', 'Failed to load connections during render:', error);
-            });
+            // Load connections (deferred to avoid blocking initialization)
+            logger.debug('sshPanel', 'Scheduling connection loading...');
+            setTimeout(() => {
+                this.loadConnections().catch(error => {
+                    logger.error('sshPanel', 'Failed to load connections:', error);
+                });
+            }, 100);
 
-            // Start status updates
-            logger.debug('sshPanel', 'Starting status updates...');
-            this.startStatusUpdates();
-            logger.debug('sshPanel', 'Status updates started');
+            // Start status updates (deferred)
+            logger.debug('sshPanel', 'Scheduling status updates...');
+            setTimeout(() => {
+                this.startStatusUpdates();
+            }, 200);
 
             logger.info('sshPanel', '✅ SSH Panel rendered successfully');
         } catch (error) {
