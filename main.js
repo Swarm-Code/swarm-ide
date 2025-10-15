@@ -1418,4 +1418,5 @@ app.on('window-all-closed', () => {
 
 app.on('quit', async () => {
   await languageServerManager.shutdownAll();
+  await sshConnectionManager.shutdown();
 });
