@@ -829,6 +829,9 @@ class Application {
 
                 // Hide Git panel if visible
                 eventBus.emit('git:hide-panel');
+
+                // Hide SSH panel if visible
+                eventBus.emit('ssh:hide-panel');
             });
         }
 
