@@ -43,7 +43,7 @@ class SSHPanel {
         this.healthCheckInterval = null;
 
         this.setupEventListeners();
-        logger.debug('ssh', 'SSH Panel initialized');
+        logger.debug('sshPanel', 'SSH Panel initialized');
     }
 
     /**
