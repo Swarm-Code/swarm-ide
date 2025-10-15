@@ -51,29 +51,63 @@ class SSHPanel {
      * @param {HTMLElement} container - Container element
      */
     render(container) {
-        this.panel = document.createElement('div');
-        this.panel.className = 'ssh-panel panel';
-        this.panel.style.display = 'none'; // Hidden by default
-        this.panel.innerHTML = this.getHTML();
+        try {
+            logger.info('ssh', '🎨 Starting SSH Panel render...');
 
-        this.initializeElements();
-        this.setupPanelEventListeners();
-        this.addPanelStyles();
+            // Create panel element
+            logger.debug('ssh', 'Creating panel element...');
+            this.panel = document.createElement('div');
+            this.panel.className = 'ssh-panel panel';
+            this.panel.style.display = 'none'; // Hidden by default
+            logger.debug('ssh', 'Panel element created');
 
-        // Append to container or document.body like GitPanel
-        if (container) {
-            container.appendChild(this.panel);
-        } else {
-            document.body.appendChild(this.panel);
+            // Set HTML content
+            logger.debug('ssh', 'Setting panel HTML content...');
+            this.panel.innerHTML = this.getHTML();
+            logger.debug('ssh', 'Panel HTML content set');
+
+            // Initialize elements
+            logger.debug('ssh', 'Initializing elements...');
+            this.initializeElements();
+            logger.debug('ssh', 'Elements initialized');
+
+            // Setup event listeners
+            logger.debug('ssh', 'Setting up panel event listeners...');
+            this.setupPanelEventListeners();
+            logger.debug('ssh', 'Panel event listeners setup complete');
+
+            // Add styles
+            logger.debug('ssh', 'Adding panel styles...');
+            this.addPanelStyles();
+            logger.debug('ssh', 'Panel styles added');
+
+            // Append to DOM
+            logger.debug('ssh', 'Appending panel to DOM...');
+            if (container) {
+                container.appendChild(this.panel);
+                logger.debug('ssh', 'Panel appended to provided container');
+            } else {
+                document.body.appendChild(this.panel);
+                logger.debug('ssh', 'Panel appended to document.body');
+            }
+
+            // Load connections (async)
+            logger.debug('ssh', 'Starting connection loading...');
+            this.loadConnections().catch(error => {
+                logger.error('ssh', 'Failed to load connections during render:', error);
+            });
+
+            // Start status updates
+            logger.debug('ssh', 'Starting status updates...');
+            this.startStatusUpdates();
+            logger.debug('ssh', 'Status updates started');
+
+            logger.info('ssh', '✅ SSH Panel rendered successfully');
+        } catch (error) {
+            logger.error('ssh', '❌ Failed to render SSH Panel:', error);
+            logger.error('ssh', 'Render error stack:', error.stack);
+            throw error;
         }
-
-        // Load connections
-        this.loadConnections();
-
-        // Start status updates
-        this.startStatusUpdates();
-
-        logger.debug('ssh', 'SSH Panel rendered');
     }
 
     /**
