@@ -794,29 +794,39 @@ class SSHPanel {
             .ssh-connection-actions {
                 display: flex;
                 flex-wrap: wrap;
-                gap: 6px;
+                gap: 4px;
+                margin-top: 8px;
+                opacity: 0;
+                transition: opacity 0.15s ease;
+            }
+
+            .ssh-connection-item:hover .ssh-connection-actions {
+                opacity: 1;
             }
 
             .ssh-action-btn {
-                background: var(--color-button-secondary, #4a4a4a);
+                background: transparent;
                 border: 1px solid var(--color-border, #5a5a5a);
-                color: var(--color-text-primary, #cccccc);
-                padding: 6px 10px;
-                border-radius: 4px;
+                color: var(--color-text-secondary, #969696);
+                padding: 4px 8px;
+                border-radius: 3px;
                 cursor: pointer;
-                font-size: 12px;
+                font-size: 11px;
                 display: inline-flex;
                 align-items: center;
                 gap: 4px;
-                transition: background-color 0.2s;
+                transition: all 0.15s ease;
+                min-height: 24px;
             }
 
             .ssh-action-btn:hover:not(:disabled) {
-                background: var(--color-button-secondary-hover, #5a5a5a);
+                background: var(--color-button-secondary-hover, #37373d);
+                color: var(--color-text-primary, #cccccc);
+                border-color: var(--color-accent, #0e639c);
             }
 
             .ssh-action-btn:disabled {
-                opacity: 0.6;
+                opacity: 0.4;
                 cursor: not-allowed;
             }
 
