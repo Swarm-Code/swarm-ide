@@ -1239,6 +1239,20 @@ body {
     gap: 12px;
 }
 
+@media (max-width: 600px) {
+    .welcome-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .welcome-content {
+        padding: 24px 16px;
+    }
+
+    .welcome-title {
+        font-size: 32px;
+    }
+}
+
 .welcome-action-btn {
     display: flex;
     align-items: center;
