@@ -83,6 +83,19 @@ class FileExplorer {
             this.handleFileSystemChanges(data.rootPath, data.events);
         });
 
+        // Listen for visibility changes to optimize polling
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                logger.debug('fileSystem', 'Window hidden, polling continues but checks skip');
+            } else {
+                logger.debug('fileSystem', 'Window visible, resuming active polling');
+                // When becoming visible, do an immediate check for changes
+                if (this.changePolling.enabled) {
+                    this.checkForChanges();
+                }
+            }
+        });
+
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             // Only handle if file tree has focus or selection
