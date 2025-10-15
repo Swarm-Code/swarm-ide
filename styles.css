@@ -1234,23 +1234,23 @@ body {
 }
 
 .welcome-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
 }
 
 .welcome-action-btn {
     display: flex;
     align-items: center;
-    padding: 24px 28px;
-    background: linear-gradient(135deg, rgba(37, 37, 38, 0.8) 0%, rgba(45, 45, 48, 0.8) 100%);
-    border: 2px solid rgba(14, 99, 156, 0.3);
-    border-radius: 8px;
+    padding: 16px 20px;
+    background: rgba(45, 45, 48, 0.7);
+    border: 1px solid rgba(14, 99, 156, 0.3);
+    border-radius: 6px;
     cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all 0.2s ease;
     text-align: left;
-    backdrop-filter: blur(10px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(5px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .welcome-action-btn:hover {
