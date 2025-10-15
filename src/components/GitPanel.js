@@ -701,7 +701,7 @@ class GitPanel {
      * Show stash dialog
      */
     async showStashDialog() {
-        const message = prompt('Enter stash message (optional):') || 'Stashed changes';
+        const message = await this.showInputDialog('Stash Changes', 'Enter stash message (optional):', 'Stashed changes');
 
         if (message !== null) {
             const { gitService } = getGitServices();
