@@ -505,6 +505,109 @@ class GitPanel {
     }
 
     /**
+     * Create stash section
+     */
+    createStashSection() {
+        const section = document.createElement('div');
+        section.className = 'git-section git-stash-section';
+
+        // Header with badge
+        const header = document.createElement('div');
+        header.className = 'git-section-header';
+        header.style.cssText = `
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background-color: rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            font-weight: 500;
+        `;
+
+        const headerLeft = document.createElement('div');
+        headerLeft.style.display = 'flex';
+        headerLeft.style.alignItems = 'center';
+
+        const arrow = document.createElement('span');
+        arrow.textContent = '▶';
+        arrow.style.cssText = 'margin-right: 6px; font-size: 10px; transition: transform 0.2s;';
+
+        const title = document.createElement('span');
+        title.textContent = 'Stashes';
+        title.style.color = '#ffffff';
+
+        const badge = document.createElement('span');
+        badge.className = 'git-badge';
+        badge.textContent = '0';
+        badge.style.cssText = `
+            background-color: #0078d4;
+            color: white;
+            border-radius: 10px;
+            padding: 2px 8px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 8px;
+        `;
+
+        headerLeft.appendChild(arrow);
+        headerLeft.appendChild(title);
+        headerLeft.appendChild(badge);
+
+        const refreshButton = document.createElement('button');
+        refreshButton.textContent = '⟳';
+        refreshButton.title = 'Refresh stashes';
+        refreshButton.style.cssText = `
+            background: none;
+            border: none;
+            color: #ffffff;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 3px;
+            font-size: 12px;
+        `;
+        refreshButton.onclick = (e) => {
+            e.stopPropagation();
+            this.loadStashes();
+        };
+
+        header.appendChild(headerLeft);
+        header.appendChild(refreshButton);
+
+        // Stash list container
+        this.stashList = document.createElement('div');
+        this.stashList.className = 'git-stash-list';
+        this.stashList.style.cssText = `
+            display: none;
+            max-height: 200px;
+            overflow-y: auto;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        `;
+
+        // Toggle on header click
+        let stashExpanded = false;
+        header.addEventListener('click', () => {
+            stashExpanded = !stashExpanded;
+            this.stashList.style.display = stashExpanded ? 'block' : 'none';
+            arrow.textContent = stashExpanded ? '▼' : '▶';
+            if (stashExpanded && this.stashes.length === 0) {
+                this.loadStashes();
+            }
+        });
+
+        section.appendChild(header);
+        section.appendChild(this.stashList);
+
+        // Store reference to badge for updating count
+        this.stashBadge = badge;
+
+        // Initialize stashes array
+        this.stashes = [];
+
+        return section;
+    }
+
+    /**
      * Create modern file item with checkbox (Zed style)
      */
     createModernFileItem(file, isStaged) {
