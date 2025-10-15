@@ -211,11 +211,21 @@ class GitPanel {
         });
         this.fetchBtn = fetchBtn;
 
+        const stashBtn = this.createToolbarButton({
+            icon: 'package.svg',
+            title: 'Stash Changes',
+            text: 'Stash',
+            iconOnly: false,
+            onclick: () => this.showStashDialog()
+        });
+        this.stashBtn = stashBtn;
+
         // GESTALT: PROXIMITY - Group related actions
         toolbar.appendChild(branchContainer);
         toolbar.appendChild(pullBtn);
         toolbar.appendChild(pushBtn);
         toolbar.appendChild(fetchBtn);
+        toolbar.appendChild(stashBtn);
 
         return toolbar;
     }
