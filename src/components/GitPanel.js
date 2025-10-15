@@ -354,14 +354,19 @@ class GitPanel {
         // Commit History Section
         const historySection = this.createCommitHistorySection();
 
+        // Stash Section
+        const stashSection = this.createStashSection();
+
         // Store references
         this.stagedSection = stagedSection;
         this.changesSection = changesSection;
         this.historySection = historySection;
+        this.stashSection = stashSection;
 
         container.appendChild(stagedSection);
         container.appendChild(changesSection);
         container.appendChild(historySection);
+        container.appendChild(stashSection);
 
         return container;
     }
