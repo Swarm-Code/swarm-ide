@@ -1018,19 +1018,19 @@ class SSHPanel {
      * Toggle panel visibility
      */
     toggle() {
-        logger.info('ssh', '🔄 TOGGLE SSH PANEL CALLED');
-        logger.info('ssh', 'Current state - isVisible:', this.isVisible);
-        logger.info('ssh', 'Panel exists:', !!this.panel);
+        logger.info('sshPanel', '🔄 TOGGLE SSH PANEL CALLED');
+        logger.info('sshPanel', 'Current state - isVisible:', this.isVisible);
+        logger.info('sshPanel', 'Panel exists:', !!this.panel);
 
         if (this.isVisible) {
-            logger.info('ssh', 'Panel is visible, calling hide()');
+            logger.info('sshPanel', 'Panel is visible, calling hide()');
             this.hide();
         } else {
-            logger.info('ssh', 'Panel is hidden, calling show()');
+            logger.info('sshPanel', 'Panel is hidden, calling show()');
             this.show();
         }
 
-        logger.info('ssh', 'Toggle completed, new state - isVisible:', this.isVisible);
+        logger.info('sshPanel', 'Toggle completed, new state - isVisible:', this.isVisible);
     }
 
     /**
