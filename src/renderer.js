@@ -289,6 +289,16 @@ class Application {
             logger.warn('appInit', 'Failed to initialize Git UI components:', error.message);
         }
 
+        // Create and register SSH UI components
+        try {
+            const sshPanel = new SSHPanel();
+            uiManager.registerComponent('sshPanel', sshPanel);
+
+            logger.info('appInit', '✓ SSH UI components registered');
+        } catch (error) {
+            logger.warn('appInit', 'Failed to initialize SSH UI components:', error.message);
+        }
+
         // Initialize PaneManager
         this.paneManager = new PaneManager(paneContainer);
         const rootPane = this.paneManager.init();
