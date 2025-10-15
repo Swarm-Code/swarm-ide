@@ -581,6 +581,10 @@ class SSHPanel {
     }
 
     showStatus(message, type = 'info') {
+        if (!this.statusDiv) {
+            logger.warn('ssh', 'Status div not available, status:', message);
+            return;
+        }
         this.statusDiv.textContent = message;
         this.statusDiv.className = `ssh-panel-status ssh-status-${type}`;
     }
