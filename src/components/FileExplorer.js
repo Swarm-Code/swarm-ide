@@ -701,11 +701,150 @@ class FileExplorer {
     }
 
     /**
+     * Show input dialog
+     * @param {string} title - Dialog title
+     * @param {string} label - Input label
+     * @param {string} placeholder - Input placeholder
+     * @returns {Promise<string|null>} - User input or null if cancelled
+     */
+    async showInputDialog(title, label, placeholder = '') {
+        return new Promise((resolve) => {
+            const dialogContainer = document.createElement('div');
+            dialogContainer.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background-color: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+            `;
+
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `
+                background-color: #2d2d2d;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 6px;
+                padding: 20px;
+                min-width: 400px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            `;
+
+            const titleElement = document.createElement('h3');
+            titleElement.textContent = title;
+            titleElement.style.cssText = 'margin: 0 0 12px 0; color: #ffffff;';
+
+            const labelElement = document.createElement('label');
+            labelElement.textContent = label;
+            labelElement.style.cssText = 'display: block; margin-bottom: 8px; color: #cccccc; font-weight: 500;';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.placeholder = placeholder;
+            input.style.cssText = `
+                width: 100%;
+                padding: 8px 12px;
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                border-radius: 4px;
+                background-color: #1e1e1e;
+                color: #ffffff;
+                font-size: 14px;
+                margin-bottom: 16px;
+                box-sizing: border-box;
+            `;
+
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.cssText = 'display: flex; gap: 8px; justify-content: flex-end;';
+
+            const cancelButton = document.createElement('button');
+            cancelButton.textContent = 'Cancel';
+            cancelButton.style.cssText = `
+                padding: 8px 16px;
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                border-radius: 4px;
+                background-color: transparent;
+                color: #ffffff;
+                cursor: pointer;
+                font-size: 14px;
+            `;
+
+            const createButton = document.createElement('button');
+            createButton.textContent = 'Create';
+            createButton.style.cssText = `
+                padding: 8px 16px;
+                border: none;
+                border-radius: 4px;
+                background-color: #0078d4;
+                color: #ffffff;
+                cursor: pointer;
+                font-size: 14px;
+            `;
+
+            const cleanup = () => {
+                document.body.removeChild(dialogContainer);
+            };
+
+            // Event handlers
+            cancelButton.addEventListener('click', () => {
+                cleanup();
+                resolve(null);
+            });
+
+            createButton.addEventListener('click', () => {
+                const value = input.value.trim();
+                if (value) {
+                    cleanup();
+                    resolve(value);
+                }
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const value = input.value.trim();
+                    if (value) {
+                        cleanup();
+                        resolve(value);
+                    }
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cleanup();
+                    resolve(null);
+                }
+            });
+
+            // Close on backdrop click
+            dialogContainer.addEventListener('click', (e) => {
+                if (e.target === dialogContainer) {
+                    cleanup();
+                    resolve(null);
+                }
+            });
+
+            // Build dialog
+            buttonContainer.appendChild(cancelButton);
+            buttonContainer.appendChild(createButton);
+            dialog.appendChild(titleElement);
+            dialog.appendChild(labelElement);
+            dialog.appendChild(input);
+            dialog.appendChild(buttonContainer);
+            dialogContainer.appendChild(dialog);
+            document.body.appendChild(dialogContainer);
+
+            // Focus input
+            input.focus();
+        });
+    }
+
+    /**
      * Create new file
      * @param {string} dirPath - Directory path
      */
     async createNewFile(dirPath) {
-        const fileName = prompt('Enter file name:');
+        const fileName = await this.showInputDialog('New File', 'File name:', 'example.txt');
         if (!fileName) return;
 
         const filePath = pathUtils.join(dirPath, fileName);
@@ -723,7 +862,7 @@ class FileExplorer {
      * @param {string} dirPath - Directory path
      */
     async createNewFolder(dirPath) {
-        const folderName = prompt('Enter folder name:');
+        const folderName = await this.showInputDialog('New Folder', 'Folder name:', 'new-folder');
         if (!folderName) return;
 
         const folderPath = pathUtils.join(dirPath, folderName);
