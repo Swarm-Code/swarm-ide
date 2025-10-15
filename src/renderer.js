@@ -858,6 +858,29 @@ class Application {
             });
         }
 
+        if (iconSSH) {
+            iconSSH.addEventListener('click', () => {
+                logger.debug('appInit', 'SSH icon clicked');
+
+                // Toggle active state
+                if (iconFiles) iconFiles.classList.remove('active');
+                if (iconGit) iconGit.classList.remove('active');
+                iconSSH.classList.add('active');
+                if (iconBrowser) iconBrowser.classList.remove('active');
+
+                // Close browser if open
+                if (this.browserInstance) {
+                    this.toggleBrowser();
+                }
+
+                // Hide Git panel if visible
+                eventBus.emit('git:hide-panel');
+
+                // Toggle SSH panel
+                eventBus.emit('ssh:toggle-panel');
+            });
+        }
+
         if (iconBrowser) {
             iconBrowser.addEventListener('click', () => {
                 logger.debug('appInit', 'Browser icon clicked');
