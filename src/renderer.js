@@ -850,6 +850,9 @@ class Application {
                     this.toggleBrowser();
                 }
 
+                // Hide SSH panel if visible
+                eventBus.emit('ssh:hide-panel');
+
                 // Toggle Git panel
                 eventBus.emit('git:toggle-panel');
             });
