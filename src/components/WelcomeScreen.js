@@ -38,58 +38,61 @@ class WelcomeScreen {
                         <p class="welcome-subtitle">A modular, extensible code editor</p>
                     </div>
 
-                    <div class="welcome-section">
-                        <h2 class="welcome-section-title">Start</h2>
-                        <div class="welcome-actions">
-                            <button class="welcome-action-btn" id="welcome-open-folder">
-                                <span class="welcome-action-icon">📁</span>
-                                <div class="welcome-action-content">
-                                    <div class="welcome-action-title">Open Folder</div>
-                                    <div class="welcome-action-desc">Open a folder to start browsing files</div>
-                                </div>
-                            </button>
-                            <button class="welcome-action-btn" id="welcome-ssh-connect">
-                                <span class="welcome-action-icon">🔗</span>
-                                <div class="welcome-action-content">
-                                    <div class="welcome-action-title">SSH Connect</div>
-                                    <div class="welcome-action-desc">Connect to a remote server via SSH</div>
-                                </div>
-                            </button>
-                            <button class="welcome-action-btn" id="welcome-ssh-panel">
-                                <span class="welcome-action-icon">⚡</span>
-                                <div class="welcome-action-content">
-                                    <div class="welcome-action-title">SSH Manager</div>
-                                    <div class="welcome-action-desc">Manage your SSH connections</div>
-                                </div>
-                            </button>
-                        </div>
-                    </div>
+                    <div class="welcome-main">
+                        <!-- Quick Actions Grid -->
+                        <div class="welcome-actions-grid">
+                            <div class="action-group local-group">
+                                <h3 class="action-group-title">Local</h3>
+                                <button class="action-card" id="welcome-open-folder">
+                                    <span class="action-icon">📁</span>
+                                    <span class="action-title">Open Folder</span>
+                                    <kbd class="action-shortcut">Ctrl+O</kbd>
+                                </button>
+                            </div>
 
-                    ${recentFolders.length > 0 ? `
-                        <div class="welcome-section">
-                            <h2 class="welcome-section-title">Recent</h2>
-                            <div class="welcome-recent-list">
-                                ${recentFolders.slice(0, 8).map(folder => `
-                                    <div class="welcome-recent-item" data-path="${this.escapeHtml(folder)}">
-                                        <span class="welcome-recent-icon">📂</span>
-                                        <div class="welcome-recent-content">
-                                            <div class="welcome-recent-name">${this.escapeHtml(this.getFolderName(folder))}</div>
-                                            <div class="welcome-recent-path">${this.escapeHtml(folder)}</div>
-                                        </div>
-                                    </div>
-                                `).join('')}
+                            <div class="action-group remote-group">
+                                <h3 class="action-group-title">Remote</h3>
+                                <button class="action-card" id="welcome-ssh-connect">
+                                    <span class="action-icon">🔗</span>
+                                    <span class="action-title">Quick Connect</span>
+                                    <kbd class="action-shortcut">SSH</kbd>
+                                </button>
+                                <button class="action-card" id="welcome-ssh-panel">
+                                    <span class="action-icon">⚡</span>
+                                    <span class="action-title">SSH Manager</span>
+                                    <kbd class="action-shortcut">Ctrl+Shift+S</kbd>
+                                </button>
                             </div>
                         </div>
-                    ` : ''}
 
-                    <div class="welcome-footer">
-                        <div class="welcome-help">
-                            <p>Press <kbd>Ctrl+O</kbd> to open a folder • <kbd>Ctrl+Shift+S</kbd> for SSH connections</p>
-                        </div>
+                        ${recentFolders.length > 0 ? `
+                            <!-- Recent Projects -->
+                            <div class="welcome-recent">
+                                <h3 class="recent-title">Recent Projects</h3>
+                                <div class="recent-grid">
+                                    ${recentFolders.slice(0, 6).map(folder => `
+                                        <button class="recent-card" data-path="${this.escapeHtml(folder)}">
+                                            <span class="recent-icon">📂</span>
+                                            <div class="recent-info">
+                                                <div class="recent-name">${this.escapeHtml(this.getFolderName(folder))}</div>
+                                                <div class="recent-path">${this.escapeHtml(this.getShortPath(folder))}</div>
+                                            </div>
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : `
+                            <div class="welcome-empty">
+                                <div class="empty-icon">🚀</div>
+                                <p class="empty-text">Start by opening a folder or connecting to an SSH server</p>
+                            </div>
+                        `}
                     </div>
                 </div>
             </div>
         `;
+
+        this.addCompactStyles();
     }
 
     /**
