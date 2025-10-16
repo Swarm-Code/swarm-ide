@@ -16,22 +16,27 @@ const eventBus = require('../modules/EventBus');
 const logger = require('../utils/Logger');
 
 class Browser {
-    constructor(container) {
+    constructor(container, paneId, tabId) {
         this.container = container;
+        this.paneId = paneId;
+        this.tabId = tabId;
         this.tabs = [];
         this.activeTabId = null;
         this.currentUrl = 'https://google.com';
         this.canGoBack = false;
         this.canGoForward = false;
+        this.resizeObserver = null;
+        this.isVisible = true;
+        this.overlayIsVisible = false; // Track if modal/settings is open
 
         this.init();
+        this.setupTabVisibilityHandlers();
     }
 
     /**
      * Initialize the browser component
      */
     async init() {
-        logger.debug('browserNav', 'Initializing browser component');
         this.render();
         this.setupEventListeners();
 
@@ -109,8 +114,6 @@ class Browser {
                 </div>
             </div>
         `;
-
-        logger.debug('browserNav', 'UI rendered');
     }
 
     /**
@@ -161,15 +164,12 @@ class Browser {
         // Logs button
         const logsBtn = this.container.querySelector('.browser-logs');
         logsBtn.addEventListener('click', () => this.toggleLogs());
-
-        logger.debug('browserNav', 'Event listeners attached');
     }
 
     /**
      * Create a new browser tab
      */
     async createTab(url = 'about:blank') {
-        logger.debug('browserNav', 'Creating new tab with URL:', url);
 
         try {
             // Generate tab ID
@@ -180,8 +180,6 @@ class Browser {
             const result = await window.electronAPI.browserCreateView(tabId, bounds);
 
             if (result.success) {
-                logger.debug('browserNav', 'BrowserView created:', tabId);
-
                 // Store tab
                 this.tabs.push({
                     id: tabId,
@@ -200,6 +198,9 @@ class Browser {
                 // Hide loading indicator
                 const loading = this.container.querySelector('.browser-loading');
                 if (loading) loading.style.display = 'none';
+
+                // Setup resize observer for pane changes
+                this.setupResizeObserver();
 
                 return tabId;
             } else {
@@ -231,11 +232,145 @@ class Browser {
     }
 
     /**
+     * Setup tab visibility handlers
+     */
+    setupTabVisibilityHandlers() {
+        // Listen for tab switches in our pane
+        eventBus.on('tab:switched', (data) => {
+            logger.debug('browserNav', 'tab:switched event received:', {
+                eventPaneId: data.paneId,
+                eventTabId: data.tabId,
+                browserPaneId: this.paneId,
+                browserTabId: this.tabId,
+                isOurPane: data.paneId === this.paneId
+            });
+
+            if (data.paneId !== this.paneId) {
+                logger.debug('browserNav', 'Event for different pane, ignoring');
+                return;
+            }
+
+            if (data.tabId === this.tabId) {
+                // Our tab became active - show and update bounds
+                logger.debug('browserNav', 'Browser tab became active, showing BrowserView');
+                this.showBrowserView();
+            } else {
+                // Another tab became active - hide
+                logger.debug('browserNav', 'Another tab became active, hiding BrowserView');
+                this.hideBrowserView();
+            }
+        });
+
+        // Listen for overlays (modals, settings) that should hide browser
+        eventBus.on('overlay:shown', () => {
+            this.overlayIsVisible = true;
+            this.hideBrowserView();
+        });
+
+        eventBus.on('overlay:hidden', () => {
+            this.overlayIsVisible = false;
+            // Restore browser visibility if it was visible before overlay
+            if (!this.isVisible) {
+                this.showBrowserView();
+            }
+        });
+    }
+
+    /**
+     * Show BrowserView and update bounds
+     */
+    async showBrowserView() {
+        logger.debug('browserNav', 'showBrowserView() called:', {
+            isVisible: this.isVisible,
+            activeTabId: this.activeTabId,
+            overlayIsVisible: this.overlayIsVisible
+        });
+
+        if (this.isVisible || !this.activeTabId || this.overlayIsVisible) {
+            logger.debug('browserNav', 'Skipping show - already visible or blocked');
+            return;
+        }
+
+        this.isVisible = true;
+        const bounds = this.calculateBrowserBounds();
+
+        logger.debug('browserNav', 'Showing BrowserView with bounds:', bounds);
+
+        try {
+            await window.electronAPI.browserUpdateBounds(this.activeTabId, bounds);
+            logger.debug('browserNav', 'BrowserView shown successfully');
+        } catch (error) {
+            logger.error('browserNav', 'Error showing browser view:', error);
+        }
+    }
+
+    /**
+     * Hide BrowserView by moving it off-screen
+     */
+    async hideBrowserView() {
+        logger.debug('browserNav', 'hideBrowserView() called:', {
+            isVisible: this.isVisible,
+            activeTabId: this.activeTabId
+        });
+
+        if (!this.isVisible || !this.activeTabId) {
+            logger.debug('browserNav', 'Skipping hide - already hidden or no tab');
+            return;
+        }
+
+        this.isVisible = false;
+
+        logger.debug('browserNav', 'Hiding BrowserView by moving off-screen');
+
+        try {
+            // Move BrowserView off-screen (negative coordinates)
+            await window.electronAPI.browserUpdateBounds(this.activeTabId, {
+                x: -10000,
+                y: -10000,
+                width: 1,
+                height: 1
+            });
+            logger.debug('browserNav', 'BrowserView hidden successfully');
+        } catch (error) {
+            logger.error('browserNav', 'Error hiding browser view:', error);
+        }
+    }
+
+    /**
+     * Setup resize observer for pane changes
+     */
+    setupResizeObserver() {
+        const browserViewContainer = this.container.querySelector('.browser-view-container');
+        if (!browserViewContainer) {
+            return;
+        }
+
+        // Disconnect existing observer if any
+        if (this.resizeObserver) {
+            this.resizeObserver.disconnect();
+        }
+
+        // Create new ResizeObserver - NO DEBOUNCING for immediate updates
+        this.resizeObserver = new ResizeObserver((entries) => {
+            if (!this.activeTabId || !this.isVisible || this.overlayIsVisible) return;
+
+            const bounds = this.calculateBrowserBounds();
+
+            // Update BrowserView immediately
+            window.electronAPI.browserUpdateBounds(this.activeTabId, bounds)
+                .catch(error => {
+                    logger.error('browserNav', 'Error updating bounds:', error);
+                });
+        });
+
+        // Start observing
+        this.resizeObserver.observe(browserViewContainer);
+    }
+
+    /**
      * Navigate to URL
      */
     async navigateToUrl(url) {
-        logger.debug('browserNav', 'Navigating to:', url);
-
         if (!this.activeTabId) {
             logger.error('browserNav', 'No active tab');
             return;
@@ -250,8 +385,6 @@ class Browser {
                 // Update address bar
                 const urlInput = this.container.querySelector('.browser-url-input');
                 if (urlInput) urlInput.value = url;
-
-                logger.debug('browserNav', 'Navigation successful');
             } else {
                 logger.error('browserNav', 'Navigation failed:', result.error);
             }
@@ -264,8 +397,6 @@ class Browser {
      * Go back in history
      */
     async goBack() {
-        logger.debug('browserNav', 'Going back');
-
         if (!this.activeTabId) return;
 
         try {
@@ -279,8 +410,6 @@ class Browser {
      * Go forward in history
      */
     async goForward() {
-        logger.debug('browserNav', 'Going forward');
-
         if (!this.activeTabId) return;
 
         try {
@@ -294,8 +423,6 @@ class Browser {
      * Reload current page
      */
     async reload() {
-        logger.debug('browserNav', 'Reloading page');
-
         if (!this.activeTabId) return;
 
         try {
@@ -309,8 +436,6 @@ class Browser {
      * Toggle DevTools
      */
     async toggleDevTools() {
-        logger.debug('browserNav', 'Toggling DevTools');
-
         if (!this.activeTabId) return;
 
         try {
@@ -324,7 +449,6 @@ class Browser {
      * Toggle logs panel
      */
     toggleLogs() {
-        logger.debug('browserNav', 'Toggling logs panel');
 
         const panel = this.container.querySelector('.browser-logs-panel');
         if (panel) {
@@ -357,23 +481,34 @@ class Browser {
     }
 
     /**
-     * Destroy the browser
+     * Destroy the browser - complete cleanup
      */
     async destroy() {
-        logger.debug('browserNav', 'Destroying browser');
+        logger.debug('browserNav', 'Destroying browser instance');
 
-        // Destroy all tabs
+        // Disconnect resize observer
+        if (this.resizeObserver) {
+            this.resizeObserver.disconnect();
+            this.resizeObserver = null;
+        }
+
+        // Destroy all BrowserView tabs
         for (const tab of this.tabs) {
             try {
+                logger.debug('browserNav', 'Destroying BrowserView:', tab.id);
                 await window.electronAPI.browserDestroyView(tab.id);
             } catch (error) {
                 logger.error('browserNav', 'Error destroying tab:', error);
             }
         }
 
+        // Clear all state
         this.tabs = [];
         this.activeTabId = null;
+        this.isVisible = false;
         this.container.innerHTML = '';
+
+        logger.debug('browserNav', 'Browser instance destroyed');
     }
 }
 

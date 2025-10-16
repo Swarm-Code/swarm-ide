@@ -36,6 +36,13 @@ class FileExplorer {
             remotePath: '/' // Current remote path for SSH
         };
 
+        // SSH directory cache for improved performance
+        this.sshDirectoryCache = {
+            enabled: true,
+            cache: new Map(), // Key: remote path, Value: { entries, timestamp, connectionId }
+            ttl: 60000 // Cache time-to-live in milliseconds (60 seconds)
+        };
+
         // File change polling for external changes (git operations, etc.)
         this.changePolling = {
             enabled: false,
@@ -76,21 +83,15 @@ class FileExplorer {
         });
 
         // Listen for directory opened events (including SSH connections)
+        // NOTE: This event is emitted AFTER a directory is opened, for notification purposes only.
+        // It should NOT trigger another openDirectory call, as that would create an infinite loop.
         console.log('[FileExplorer] 📡 Registering listener for explorer:directory-opened');
         logger.info('sshFileExplorer', '📡 Registering listener for explorer:directory-opened');
         eventBus.on('explorer:directory-opened', async (data) => {
-            console.log('[FileExplorer] 🔔 RECEIVED explorer:directory-opened event!');
-            console.log('[FileExplorer] Event data path:', data.path);
-            console.log('[FileExplorer] Event data type:', data.type);
-            console.log('[FileExplorer] Event data connectionId:', data.connectionId);
-            console.log('[FileExplorer] Event data connectionConfig:', data.connectionConfig);
-            console.log('[FileExplorer] Full event data:', JSON.stringify(data, null, 2));
-            logger.info('sshFileExplorer', '🔔 FileExplorer RECEIVED explorer:directory-opened event!');
-            logger.debug('sshFileExplorer', 'Event data:', data);
-
-            console.log('[FileExplorer] About to call openDirectory with path:', data.path);
-            await this.openDirectory(data.path, data);
-            console.log('[FileExplorer] openDirectory call completed');
+            // This handler is intentionally empty - the event is used by other components
+            // like GitPanel to react to directory changes, but FileExplorer should not
+            // call openDirectory() here as that would create an infinite loop.
+            logger.debug('sshFileExplorer', 'Directory opened (notification only):', data.path);
         });
         console.log('[FileExplorer] ✅ Event listener for explorer:directory-opened registered');
         logger.info('sshFileExplorer', '✅ Event listener for explorer:directory-opened registered');
@@ -289,36 +290,49 @@ class FileExplorer {
                 remotePath: this.sshContext.remotePath
             });
 
-            // Use IPC to list remote directory
-            logger.info('sshListDir', '📡 Calling IPC: ssh-list-directory');
-            logger.debug('sshListDir', 'IPC params:', {
-                connectionId: this.sshContext.connectionId,
-                remotePath: remotePath
-            });
+            // Check cache first
+            let entries;
+            const cachedEntries = this.getCachedSSHDirectory(remotePath);
 
-            const { ipcRenderer } = require('electron');
-            const result = await ipcRenderer.invoke('ssh-list-directory', this.sshContext.connectionId, remotePath);
+            if (cachedEntries) {
+                // Use cached entries
+                logger.info('sshListDir', `✨ Using cached entries for: ${remotePath}`);
+                entries = cachedEntries;
+            } else {
+                // Cache miss or expired - fetch from SSH
+                logger.info('sshListDir', '📡 Calling IPC: ssh-list-directory');
+                logger.debug('sshListDir', 'IPC params:', {
+                    connectionId: this.sshContext.connectionId,
+                    remotePath: remotePath
+                });
 
-            logger.debug('sshListDir', '📥 IPC result received:', {
-                success: result.success,
-                error: result.error,
-                entriesCount: result.entries?.length
-            });
+                const { ipcRenderer } = require('electron');
+                const result = await ipcRenderer.invoke('ssh-list-directory', this.sshContext.connectionId, remotePath);
 
-            if (!result.success) {
-                logger.error('sshListDir', '❌ IPC returned error:', result.error);
-                throw new Error(result.error || 'Failed to list SSH directory');
+                logger.debug('sshListDir', '📥 IPC result received:', {
+                    success: result.success,
+                    error: result.error,
+                    entriesCount: result.entries?.length
+                });
+
+                if (!result.success) {
+                    logger.error('sshListDir', '❌ IPC returned error:', result.error);
+                    throw new Error(result.error || 'Failed to list SSH directory');
+                }
+
+                logger.info('sshListDir', `✅ Successfully listed ${result.entries.length} entries from SSH`);
+                logger.trace('sshListDir', 'Raw entries:', result.entries);
+
+                // Convert SSH entries to standard format
+                entries = result.entries.map(entry => ({
+                    name: entry.name,
+                    isDirectory: entry.isDirectory,
+                    path: `ssh://${this.sshContext.connectionConfig?.host}${entry.path}`
+                }));
+
+                // Cache the results
+                this.setCachedSSHDirectory(remotePath, entries);
             }
-
-            logger.info('sshListDir', `✅ Successfully listed ${result.entries.length} entries from SSH`);
-            logger.trace('sshListDir', 'Raw entries:', result.entries);
-
-            // Convert SSH entries to standard format
-            const entries = result.entries.map(entry => ({
-                name: entry.name,
-                isDirectory: entry.isDirectory,
-                path: `ssh://${this.sshContext.connectionConfig?.host}${entry.path}`
-            }));
 
             logger.debug('sshListDir', 'Converted entries to standard format:', entries.length);
 
@@ -329,6 +343,9 @@ class FileExplorer {
 
             logger.info('sshListDir', '🎨 Rendering tree with', filtered.length, 'entries');
             this.renderTree(filtered, this.currentPath);
+
+            logger.debug('sshListDir', '📢 Emitting explorer:directory-opened event');
+            eventBus.emit('explorer:directory-opened', { path: this.currentPath, entries: filtered });
 
             logger.debug('sshListDir', '📢 Emitting explorer:ssh-directory-opened event');
             eventBus.emit('explorer:ssh-directory-opened', {
@@ -533,20 +550,32 @@ class FileExplorer {
 
                 logger.debug('sshFileExplorer', 'Expanding SSH directory:', remotePath);
 
-                // Use IPC to list remote directory
-                const { ipcRenderer } = require('electron');
-                const result = await ipcRenderer.invoke('ssh-list-directory', this.sshContext.connectionId, remotePath);
+                // Check cache first
+                const cachedEntries = this.getCachedSSHDirectory(remotePath);
 
-                if (!result.success) {
-                    throw new Error(result.error || 'Failed to list SSH directory');
+                if (cachedEntries) {
+                    // Use cached entries
+                    logger.debug('sshFileExplorer', `✨ Using cached entries for expansion: ${remotePath}`);
+                    entries = cachedEntries;
+                } else {
+                    // Cache miss - fetch from SSH
+                    const { ipcRenderer } = require('electron');
+                    const result = await ipcRenderer.invoke('ssh-list-directory', this.sshContext.connectionId, remotePath);
+
+                    if (!result.success) {
+                        throw new Error(result.error || 'Failed to list SSH directory');
+                    }
+
+                    // Convert SSH entries to standard format
+                    entries = result.entries.map(entry => ({
+                        name: entry.name,
+                        isDirectory: entry.isDirectory,
+                        path: `ssh://${this.sshContext.connectionConfig?.host}${entry.path}`
+                    }));
+
+                    // Cache the results
+                    this.setCachedSSHDirectory(remotePath, entries);
                 }
-
-                // Convert SSH entries to standard format
-                entries = result.entries.map(entry => ({
-                    name: entry.name,
-                    isDirectory: entry.isDirectory,
-                    path: `ssh://${this.sshContext.connectionConfig?.host}${entry.path}`
-                }));
             } else {
                 // Local filesystem
                 entries = await this.fs.readDirectory(dirPath);
@@ -687,6 +716,8 @@ class FileExplorer {
 
         // Check if this is an SSH path
         if (this.sshContext.isSSH && this.currentPath.startsWith('ssh://')) {
+            // Invalidate cache for current directory to force fresh fetch
+            this.invalidateSSHCache(this.sshContext.remotePath);
             // For SSH, use the stored remote path
             await this.openSSHDirectory(this.sshContext.remotePath);
         } else {
@@ -1305,6 +1336,12 @@ class FileExplorer {
         }
 
         if (result.success) {
+            // Invalidate cache for the directory where the file was created
+            if (this.sshContext.isSSH && dirPath.startsWith('ssh://')) {
+                const sshPrefix = `ssh://${this.sshContext.connectionConfig?.host}`;
+                const remoteDirPath = dirPath.startsWith(sshPrefix) ? dirPath.substring(sshPrefix.length) : dirPath;
+                this.invalidateSSHCache(remoteDirPath);
+            }
             await this.refreshCurrentDirectory();
         } else {
             alert(`Failed to create file: ${result.error}`);
@@ -1338,6 +1375,12 @@ class FileExplorer {
         }
 
         if (result.success) {
+            // Invalidate cache for the directory where the folder was created
+            if (this.sshContext.isSSH && dirPath.startsWith('ssh://')) {
+                const sshPrefix = `ssh://${this.sshContext.connectionConfig?.host}`;
+                const remoteDirPath = dirPath.startsWith(sshPrefix) ? dirPath.substring(sshPrefix.length) : dirPath;
+                this.invalidateSSHCache(remoteDirPath);
+            }
             await this.refreshCurrentDirectory();
         } else {
             alert(`Failed to create folder: ${result.error}`);
@@ -1376,6 +1419,13 @@ class FileExplorer {
         }
 
         if (result.success) {
+            // Invalidate cache for parent directory
+            if (this.sshContext.isSSH && oldPath.startsWith('ssh://')) {
+                const sshPrefix = `ssh://${this.sshContext.connectionConfig?.host}`;
+                const oldRemotePath = oldPath.startsWith(sshPrefix) ? oldPath.substring(sshPrefix.length) : oldPath;
+                const parentRemotePath = oldRemotePath.substring(0, oldRemotePath.lastIndexOf('/'));
+                this.invalidateSSHCache(parentRemotePath);
+            }
             await this.refreshCurrentDirectory();
         } else {
             alert(`Failed to rename: ${result.error}`);
@@ -1415,6 +1465,14 @@ class FileExplorer {
 
             if (!result.success) {
                 alert(`Failed to delete ${itemPath}: ${result.error}`);
+            } else {
+                // Invalidate cache for parent directory on successful delete
+                if (this.sshContext.isSSH && itemPath.startsWith('ssh://')) {
+                    const sshPrefix = `ssh://${this.sshContext.connectionConfig?.host}`;
+                    const remotePath = itemPath.startsWith(sshPrefix) ? itemPath.substring(sshPrefix.length) : itemPath;
+                    const parentRemotePath = remotePath.substring(0, remotePath.lastIndexOf('/'));
+                    this.invalidateSSHCache(parentRemotePath);
+                }
             }
         }
 
@@ -1641,6 +1699,70 @@ class FileExplorer {
     }
 
     /**
+     * Get cached SSH directory if valid
+     * @param {string} remotePath - Remote directory path
+     * @returns {Array|null} Cached entries or null if not found/expired
+     */
+    getCachedSSHDirectory(remotePath) {
+        if (!this.sshDirectoryCache.enabled) return null;
+
+        const cached = this.sshDirectoryCache.cache.get(remotePath);
+        if (!cached) {
+            logger.debug('sshFileExplorer', `Cache MISS for: ${remotePath}`);
+            return null;
+        }
+
+        // Check if cache is still valid
+        const age = Date.now() - cached.timestamp;
+        if (age > this.sshDirectoryCache.ttl) {
+            logger.debug('sshFileExplorer', `Cache EXPIRED for: ${remotePath} (age: ${age}ms)`);
+            this.sshDirectoryCache.cache.delete(remotePath);
+            return null;
+        }
+
+        // Check if connection ID matches
+        if (cached.connectionId !== this.sshContext.connectionId) {
+            logger.debug('sshFileExplorer', `Cache INVALID for: ${remotePath} (different connection)`);
+            this.sshDirectoryCache.cache.delete(remotePath);
+            return null;
+        }
+
+        logger.debug('sshFileExplorer', `Cache HIT for: ${remotePath} (age: ${age}ms, entries: ${cached.entries.length})`);
+        return cached.entries;
+    }
+
+    /**
+     * Cache SSH directory listing
+     * @param {string} remotePath - Remote directory path
+     * @param {Array} entries - Directory entries
+     */
+    setCachedSSHDirectory(remotePath, entries) {
+        if (!this.sshDirectoryCache.enabled) return;
+
+        this.sshDirectoryCache.cache.set(remotePath, {
+            entries: entries,
+            timestamp: Date.now(),
+            connectionId: this.sshContext.connectionId
+        });
+
+        logger.debug('sshFileExplorer', `Cached directory: ${remotePath} (${entries.length} entries)`);
+    }
+
+    /**
+     * Invalidate SSH cache for a specific path or all paths
+     * @param {string|null} remotePath - Remote path to invalidate, or null for all
+     */
+    invalidateSSHCache(remotePath = null) {
+        if (remotePath) {
+            this.sshDirectoryCache.cache.delete(remotePath);
+            logger.debug('sshFileExplorer', `Invalidated cache for: ${remotePath}`);
+        } else {
+            this.sshDirectoryCache.cache.clear();
+            logger.debug('sshFileExplorer', 'Cleared entire SSH cache');
+        }
+    }
+
+    /**
      * Cleanup
      */
     destroy() {
@@ -1651,6 +1773,9 @@ class FileExplorer {
 
         // Stop change polling
         this.stopChangePolling();
+
+        // Clear SSH cache
+        this.invalidateSSHCache();
 
         eventBus.off('explorer:open-folder');
         eventBus.off('explorer:refresh');

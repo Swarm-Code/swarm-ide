@@ -197,6 +197,9 @@ class Modal {
         this.overlay.appendChild(this.container);
         document.body.appendChild(this.overlay);
 
+        // Emit event for browser hiding
+        eventBus.emit('overlay:shown', { type: 'modal' });
+
         // Setup event listeners
         const submitBtn = this.container.querySelector('#modal-submit');
         const cancelBtn = this.container.querySelector('#modal-cancel');
@@ -259,6 +262,9 @@ class Modal {
         this.overlay = null;
         this.isVisible = false;
         this.currentResolve = null;
+
+        // Emit event for browser showing
+        eventBus.emit('overlay:hidden', { type: 'modal' });
     }
 
     /**

@@ -41,6 +41,7 @@ class PaneManager {
         this.resizing = null; // Track current resize operation
         this.dragOverlay = null; // Drag overlay element
         this.isDragging = false; // Track drag state
+        this.currentTabDrag = null; // Track current tab drag (sourcePaneId, tabId)
 
         // Drag performance tracking
         this.dragMetrics = {
@@ -209,10 +210,11 @@ class PaneManager {
                 }
             }
 
+            const isTabDrag = e.dataTransfer.types.includes('application/x-tab-drag');
             const hasTextData = e.dataTransfer.types.includes('text/plain') || e.dataTransfer.types.includes('application/x-file-path');
             const hasExternalFiles = e.dataTransfer.types.includes('Files');
 
-            if (hasTextData && !hasExternalFiles) {
+            if ((isTabDrag || hasTextData) && !hasExternalFiles) {
                 e.preventDefault();
                 e.stopPropagation();
             }
@@ -242,18 +244,21 @@ class PaneManager {
                     }
                 }
 
-                // Only handle internal drags (from file explorer), not external file drops
+                // Check if this is a tab drag
+                const isTabDrag = e.dataTransfer.types.includes('application/x-tab-drag');
+
+                // Only handle internal drags (from file explorer OR tabs), not external file drops
                 const hasTextData = e.dataTransfer.types.includes('text/plain') || e.dataTransfer.types.includes('application/x-file-path');
                 const hasExternalFiles = e.dataTransfer.types.includes('Files');
 
-                if (!hasTextData || hasExternalFiles) {
+                if (!isTabDrag && (!hasTextData || hasExternalFiles)) {
                     // This is an external file drop, let it bubble to the editor
                     return;
                 }
 
                 e.preventDefault();
                 e.stopPropagation();
-                e.dataTransfer.dropEffect = 'copy';
+                e.dataTransfer.dropEffect = isTabDrag ? 'move' : 'copy';
 
                 // Show overlay on first dragover if we're in a drag operation
                 if (this.isDragging && this.dragOverlay && this.dragOverlay.style.display === 'none') {
@@ -268,6 +273,13 @@ class PaneManager {
                 // If this is a split container pane (not a leaf), ignore drops
                 if (currentPane.split) {
                     this.clearDropZones();
+                    return;
+                }
+
+                // If dragging a tab over its source pane, don't allow drop
+                if (isTabDrag && this.currentTabDrag && currentPane.id === this.currentTabDrag.sourcePaneId) {
+                    this.clearDropZones();
+                    logger.trace('dragDrop', 'Cannot drop tab on source pane');
                     return;
                 }
 
@@ -339,6 +351,68 @@ class PaneManager {
         paneElement.addEventListener('drop', (e) => {
             try {
                 logger.trace('dragDrop', 'DROP event on pane:', paneId);
+
+                // Check if this is a tab drag
+                const isTabDrag = e.dataTransfer.types.includes('application/x-tab-drag');
+
+                if (isTabDrag) {
+                    // Handle tab drop
+                    const tabDataStr = e.dataTransfer.getData('application/x-tab-data');
+                    if (!tabDataStr) {
+                        logger.error('paneCreate', 'No tab data in drop event');
+                        this.clearDropZones();
+                        return;
+                    }
+
+                    const tabData = JSON.parse(tabDataStr);
+                    logger.trace('dragDrop', 'Tab drop detected:', { tabData, zone: currentDropZone, isOverTabBar });
+
+                    e.preventDefault();
+                    e.stopPropagation();
+                    paneElement.classList.remove('drag-over-tab');
+
+                    // Get current pane state
+                    const currentPane = this.panes.get(paneId);
+                    if (!currentPane || currentPane.split) {
+                        this.clearDropZones();
+                        return;
+                    }
+
+                    // Check if dropped on tab bar or center zone
+                    if (isOverTabBar || currentDropZone === 'center' || !currentDropZone) {
+                        // Move tab directly to this pane
+                        logger.trace('dragDrop', 'Moving tab to existing pane:', paneId);
+                        this.moveTab(tabData.sourcePaneId, tabData.tabId, paneId);
+                    } else {
+                        // Split pane first, then move tab to appropriate child
+                        logger.trace('dragDrop', 'Splitting pane for tab:', paneId, currentDropZone);
+
+                        // Determine split direction based on zone
+                        const direction = (currentDropZone === 'left' || currentDropZone === 'right') ? 'horizontal' : 'vertical';
+
+                        // Split the pane
+                        this.splitPane(paneId, direction);
+
+                        // Get the newly created child panes
+                        const splitPane = this.panes.get(paneId);
+                        if (splitPane && splitPane.children.length === 2) {
+                            // Determine which child to move the tab to
+                            const targetChild = (currentDropZone === 'left' || currentDropZone === 'top')
+                                ? splitPane.children[0]
+                                : splitPane.children[1];
+
+                            // Move tab to the target child
+                            setTimeout(() => {
+                                this.moveTab(tabData.sourcePaneId, tabData.tabId, targetChild.id);
+                            }, 100);
+                        }
+                    }
+
+                    this.clearDropZones();
+                    currentDropZone = null;
+                    isOverTabBar = false;
+                    return;
+                }
 
                 // Check if this is an internal drag (from file explorer)
                 const filePath = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('application/x-file-path');
@@ -838,6 +912,58 @@ class PaneManager {
     }
 
     /**
+     * Setup drag handlers for tabs
+     */
+    setupTabDragHandlers(tabElement, paneId, tab) {
+        tabElement.addEventListener('dragstart', (e) => {
+            e.stopPropagation(); // Don't trigger pane drag
+
+            // Track current tab drag
+            this.currentTabDrag = {
+                sourcePaneId: paneId,
+                tabId: tab.id
+            };
+
+            // Set drag data
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('application/x-tab-drag', 'true'); // Mark as tab drag
+            e.dataTransfer.setData('application/x-tab-data', JSON.stringify({
+                sourcePaneId: paneId,
+                tabId: tab.id,
+                title: tab.title,
+                contentType: tab.contentType,
+                filePath: tab.filePath
+            }));
+
+            // Add visual feedback
+            tabElement.classList.add('dragging-tab');
+
+            // CRITICAL: Disable editor interaction during tab drag (same as file drag)
+            document.body.classList.add('dragging-tab');
+            logger.trace('dragDrop', 'Added dragging-tab class to body');
+
+            logger.trace('dragDrop', 'Tab drag start:', { paneId, tabId: tab.id, title: tab.title });
+        });
+
+        tabElement.addEventListener('dragend', (e) => {
+            // Remove dragging class
+            tabElement.classList.remove('dragging-tab');
+
+            // CRITICAL: Re-enable editor interaction
+            document.body.classList.remove('dragging-tab');
+            logger.trace('dragDrop', 'Removed dragging-tab class from body');
+
+            // Clear drop zones
+            this.clearDropZones();
+
+            // Clear tab drag tracking
+            this.currentTabDrag = null;
+
+            logger.trace('dragDrop', 'Tab drag end');
+        });
+    }
+
+    /**
      * Show drop zone indicator
      */
     showDropZone(paneElement, zone) {
@@ -1333,6 +1459,9 @@ class PaneManager {
             tabElement.className = 'pane-tab' + (tab.id === pane.activeTabId ? ' active' : '');
             tabElement.dataset.tabId = tab.id;
 
+            // Make tab draggable
+            tabElement.draggable = true;
+
             const tabTitle = document.createElement('span');
             tabTitle.className = 'pane-tab-title';
             tabTitle.textContent = tab.title;
@@ -1351,6 +1480,9 @@ class PaneManager {
             tabElement.onclick = () => {
                 this.switchTab(pane.id, tab.id);
             };
+
+            // Setup drag handlers for tab
+            this.setupTabDragHandlers(tabElement, pane.id, tab);
 
             pane.tabBarContainer.appendChild(tabElement);
         });
@@ -1552,7 +1684,109 @@ class PaneManager {
         }
 
         logger.debug('paneCreate', 'Tab closed:', { paneId, tabId });
-        eventBus.emit('tab:closed', { paneId, tabId, filePath: tab.filePath });
+        eventBus.emit('tab:closed', { paneId, tabId, filePath: tab.filePath, content: tab.content, contentType: tab.contentType });
+    }
+
+    /**
+     * Move a tab from one pane to another
+     */
+    moveTab(sourcePaneId, tabId, targetPaneId) {
+        logger.debug('paneCreate', 'moveTab called:', { sourcePaneId, tabId, targetPaneId });
+
+        const sourcePane = this.panes.get(sourcePaneId);
+        const targetPane = this.panes.get(targetPaneId);
+
+        if (!sourcePane || !targetPane) {
+            logger.error('paneCreate', 'Source or target pane not found:', { sourcePaneId, targetPaneId });
+            return false;
+        }
+
+        // Find tab in source pane
+        const tabIndex = sourcePane.tabs.findIndex(t => t.id === tabId);
+        if (tabIndex === -1) {
+            logger.error('paneCreate', 'Tab not found in source pane:', tabId);
+            return false;
+        }
+
+        // Remove tab from source pane
+        const tab = sourcePane.tabs.splice(tabIndex, 1)[0];
+
+        // Remove content from source pane's DOM (but don't destroy it)
+        if (tab.content && tab.content.parentElement === sourcePane.contentContainer) {
+            tab.content.remove();
+        }
+
+        // Add tab to target pane
+        targetPane.tabs.push(tab);
+
+        // Add content to target pane's DOM (hidden initially)
+        if (tab.content) {
+            tab.content.style.display = 'none';
+            targetPane.contentContainer.appendChild(tab.content);
+        }
+
+        // Update source pane
+        if (sourcePane.tabs.length === 0) {
+            // No more tabs in source pane - auto-close it if possible
+            if (sourcePane.parent) {
+                // Source pane has a parent, so we can close it
+                logger.debug('paneCreate', 'Auto-closing empty source pane:', sourcePaneId);
+
+                // Close the pane (this will promote its sibling)
+                setTimeout(() => {
+                    this.closePane(sourcePaneId);
+                }, 50);
+            } else {
+                // This is the root pane and the only one - just show empty state
+                sourcePane.contentContainer.innerHTML = '';
+                sourcePane.content = null;
+                sourcePane.contentType = null;
+                sourcePane.filePath = null;
+                sourcePane.activeTabId = null;
+
+                // Remove tab bar
+                if (sourcePane.tabBarContainer) {
+                    sourcePane.tabBarContainer.remove();
+                    sourcePane.tabBarContainer = null;
+                }
+
+                // Show empty state
+                const emptyState = document.createElement('div');
+                emptyState.style.cssText = 'display: flex; align-items: center; justify-content: center; height: 100%; width: 100%; color: #888;';
+                emptyState.textContent = 'No files open';
+                sourcePane.contentContainer.appendChild(emptyState);
+
+                // Update title
+                const titleElement = sourcePane.element.querySelector('.pane-title');
+                if (titleElement) {
+                    titleElement.textContent = 'Empty Pane';
+                }
+            }
+        } else {
+            // Switch to another tab if the moved tab was active
+            if (sourcePane.activeTabId === tabId) {
+                const newActiveIndex = tabIndex > 0 ? tabIndex - 1 : 0;
+                this.switchTab(sourcePaneId, sourcePane.tabs[newActiveIndex].id);
+            } else {
+                // Just re-render tab bar
+                this.renderTabBar(sourcePane);
+            }
+        }
+
+        // Update target pane
+        // Ensure tab bar exists
+        this.ensureTabBar(targetPane);
+
+        // Render tab bar
+        this.renderTabBar(targetPane);
+
+        // Switch to the moved tab
+        this.switchTab(targetPaneId, tabId);
+
+        logger.debug('paneCreate', '✓ Tab moved successfully:', { sourcePaneId, tabId, targetPaneId });
+        eventBus.emit('tab:moved', { sourcePaneId, targetPaneId, tabId });
+
+        return true;
     }
 
     /**

@@ -44,16 +44,41 @@ class FileWatcherService extends EventEmitter {
             this.watchCallbacks.set(dirPath, callback);
             this.pendingChanges.set(dirPath, new Set());
 
-            // Create watcher with recursive option
-            const watcher = fs.watch(dirPath, { recursive: true }, (eventType, filename) => {
-                if (!filename) return;
+            // Try to create watcher with recursive option first
+            // Note: Recursive watching is not supported on all platforms (e.g., some Linux kernels)
+            let watcher;
+            let isRecursive = true;
 
-                const fullPath = path.join(dirPath, filename);
-                console.log('[FileWatcher] Event:', eventType, 'for', fullPath);
+            try {
+                watcher = fs.watch(dirPath, { recursive: true }, (eventType, filename) => {
+                    if (!filename) return;
 
-                // Determine what kind of change occurred
-                this.handleFileChange(dirPath, fullPath, eventType);
-            });
+                    const fullPath = path.join(dirPath, filename);
+                    console.log('[FileWatcher] Event:', eventType, 'for', fullPath);
+
+                    // Determine what kind of change occurred
+                    this.handleFileChange(dirPath, fullPath, eventType);
+                });
+            } catch (recursiveError) {
+                // Recursive watching not supported on this platform
+                if (recursiveError.code === 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM') {
+                    console.warn('[FileWatcher] Recursive watching not supported, using non-recursive mode');
+                    isRecursive = false;
+
+                    // Fallback to non-recursive watching (only watches the top-level directory)
+                    watcher = fs.watch(dirPath, { recursive: false }, (eventType, filename) => {
+                        if (!filename) return;
+
+                        const fullPath = path.join(dirPath, filename);
+                        console.log('[FileWatcher] Event:', eventType, 'for', fullPath);
+
+                        // Determine what kind of change occurred
+                        this.handleFileChange(dirPath, fullPath, eventType);
+                    });
+                } else {
+                    throw recursiveError;
+                }
+            }
 
             watcher.on('error', (error) => {
                 console.error('[FileWatcher] Error watching', dirPath, ':', error);
@@ -61,7 +86,7 @@ class FileWatcherService extends EventEmitter {
             });
 
             this.watchers.set(dirPath, watcher);
-            console.log('[FileWatcher] Successfully watching:', dirPath);
+            console.log(`[FileWatcher] Successfully watching (${isRecursive ? 'recursive' : 'non-recursive'}):`, dirPath);
             return true;
         } catch (error) {
             console.error('[FileWatcher] Failed to watch directory:', error);

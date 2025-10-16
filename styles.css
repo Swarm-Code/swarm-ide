@@ -3304,6 +3304,17 @@ body {
     cursor: default !important;
 }
 
+/* Disable editor interaction during tab drag */
+.dragging-tab .CodeMirror {
+    pointer-events: none !important;
+    cursor: default !important;
+}
+
+.dragging-tab .CodeMirror * {
+    pointer-events: none !important;
+    cursor: default !important;
+}
+
 /* Drop zone indicators */
 .pane-drop-zone {
     position: absolute;
@@ -3490,6 +3501,20 @@ body {
 
 .pane-tab-close:hover {
     background-color: #c74e4e;
+    color: #ffffff;
+}
+
+/* Tab drag visual feedback */
+.pane-tab.dragging-tab {
+    opacity: 0.5;
+    cursor: move;
+    background-color: #0e639c;
+    border-top-color: #0e639c;
+    transform: rotate(2deg);
+    transition: none;
+}
+
+.pane-tab.dragging-tab .pane-tab-title {
     color: #ffffff;
 }
 

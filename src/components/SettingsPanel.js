@@ -313,6 +313,9 @@ class SettingsPanel {
         document.body.appendChild(this.panel);
         this.isOpen = true;
 
+        // Emit event for browser hiding
+        eventBus.emit('overlay:shown', { type: 'settings' });
+
         this.setupEventListeners();
         this.restoreLoggingCheckboxes();
     }
@@ -326,6 +329,9 @@ class SettingsPanel {
         this.panel.remove();
         this.panel = null;
         this.isOpen = false;
+
+        // Emit event for browser showing
+        eventBus.emit('overlay:hidden', { type: 'settings' });
     }
 
     /**

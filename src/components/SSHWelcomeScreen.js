@@ -796,7 +796,8 @@ class SSHWelcomeScreen {
             }
 
             // Treat SSH connection like opening a folder - transition to main IDE
-            eventBus.emit('explorer:directory-opened', {
+            // Use explorer:open-folder to trigger the opening (not explorer:directory-opened to avoid empty handler)
+            eventBus.emit('explorer:open-folder', {
                 path: `ssh://${connectionConfig.host}`,
                 type: 'ssh',
                 connectionId: connectionId,

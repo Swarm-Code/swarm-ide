@@ -126,8 +126,6 @@ const modal = require('./components/Modal');
 class Application {
     constructor() {
         this.initialized = false;
-        this.browserInstance = null;
-        this.browserContainer = null;
         this.paneManager = null;
         this.workspaceManager = workspaceManager;
         this.browserProfileManager = browserProfileManager;
@@ -467,10 +465,10 @@ class Application {
             });
             logger.debug('appInit', '✓ shortcut:refresh handler set');
 
-            // Handle browser toggle
+            // Handle browser toggle - now opens in pane
             logger.debug('appInit', 'Setting up browser:toggle handler...');
-            eventBus.on('browser:toggle', () => {
-                this.toggleBrowser();
+            eventBus.on('browser:toggle', async () => {
+                await this.openBrowserInPane();
             });
             logger.debug('appInit', '✓ browser:toggle handler set');
 
@@ -500,7 +498,17 @@ class Application {
                 this.saveWorkspaceLayout();
             });
 
-            eventBus.on('tab:closed', () => {
+            eventBus.on('tab:closed', (data) => {
+                // Cleanup browser instance if browser tab was closed
+                if (data && data.contentType === 'browser') {
+                    logger.debug('appInit', 'Browser tab closed, cleaning up browser instance');
+                    // The browser instance should be stored in the content element
+                    const browserInstance = data.content?._browserInstance;
+                    if (browserInstance && typeof browserInstance.destroy === 'function') {
+                        logger.debug('appInit', 'Destroying browser instance');
+                        browserInstance.destroy();
+                    }
+                }
                 this.saveWorkspaceLayout();
             });
 
@@ -708,40 +716,56 @@ class Application {
     }
 
     /**
-     * Toggle browser panel
+     * Open browser in a pane as a tab
      */
-    toggleBrowser() {
-        logger.debug('appInit', 'Toggle browser called');
+    async openBrowserInPane(url = 'https://google.com') {
+        logger.debug('appInit', '========== OPENING BROWSER IN PANE ==========');
+        logger.debug('appInit', 'URL:', url);
 
-        if (!this.browserInstance) {
-            logger.debug('appInit', 'Creating browser...');
-
-            // Create container (positioned after sidebar: 48px icon + 280px sidebar = 328px)
-            this.browserContainer = document.createElement('div');
-            this.browserContainer.id = 'browser-panel';
-            this.browserContainer.style.cssText = 'position: fixed; top: 32px; left: 328px; right: 0; bottom: 0; z-index: 100; background-color: #1e1e1e;';
-            document.body.appendChild(this.browserContainer);
-
-            // Create browser instance
-            this.browserInstance = new Browser(this.browserContainer);
-            logger.info('appInit', '✓ Browser created');
-        } else {
-            logger.debug('appInit', 'Destroying browser...');
-
-            // Destroy browser instance
-            if (this.browserInstance) {
-                this.browserInstance.destroy();
-                this.browserInstance = null;
-            }
-
-            // Remove container
-            if (this.browserContainer) {
-                this.browserContainer.remove();
-                this.browserContainer = null;
-            }
-
-            logger.info('appInit', '✓ Browser destroyed');
+        // Get active pane or use root pane
+        let activePane = this.paneManager?.getActivePane();
+        if (!activePane) {
+            logger.warn('appInit', 'No active pane, using root pane');
+            activePane = this.paneManager?.rootPane;
         }
+
+        if (!activePane) {
+            logger.error('appInit', 'No pane available for browser');
+            return;
+        }
+
+        logger.debug('appInit', 'Opening browser in pane:', activePane.id);
+
+        // Create browser container
+        const browserContainer = document.createElement('div');
+        browserContainer.className = 'browser-pane-container';
+        browserContainer.dataset.browserUrl = url;
+        browserContainer.style.cssText = 'position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; width: 100%; height: 100%;';
+
+        // Browser title
+        const browserTitle = 'Browser';
+
+        logger.debug('appInit', 'Adding browser tab to pane');
+
+        // Add as a tab to the pane using browser:// protocol (returns tabId)
+        const tabId = this.paneManager.addTab(
+            activePane.id,
+            `browser://${Date.now()}`, // Unique ID for browser instance
+            browserTitle,
+            browserContainer,
+            'browser',
+            null
+        );
+
+        // Create Browser instance NOW with paneId and tabId
+        logger.debug('appInit', 'Creating Browser instance with tabId:', tabId);
+        const browser = new Browser(browserContainer, activePane.id, tabId);
+
+        // Store reference for cleanup
+        browserContainer._browserInstance = browser;
+
+        logger.debug('appInit', '✓ Browser opened in pane successfully');
+        logger.debug('appInit', '========================================');
     }
 
     /**
@@ -914,11 +938,6 @@ class Application {
                 if (iconSSH) iconSSH.classList.remove('active');
                 if (iconBrowser) iconBrowser.classList.remove('active');
 
-                // Close browser if open
-                if (this.browserInstance) {
-                    this.toggleBrowser();
-                }
-
                 // Hide Git panel if visible
                 eventBus.emit('git:hide-panel');
 
@@ -936,11 +955,6 @@ class Application {
                 iconGit.classList.add('active');
                 if (iconSSH) iconSSH.classList.remove('active');
                 if (iconBrowser) iconBrowser.classList.remove('active');
-
-                // Close browser if open
-                if (this.browserInstance) {
-                    this.toggleBrowser();
-                }
 
                 // Hide SSH panel if visible
                 eventBus.emit('ssh:hide-panel');
@@ -960,11 +974,6 @@ class Application {
                 iconSSH.classList.add('active');
                 if (iconBrowser) iconBrowser.classList.remove('active');
 
-                // Close browser if open
-                if (this.browserInstance) {
-                    this.toggleBrowser();
-                }
-
                 // Hide Git panel if visible
                 eventBus.emit('git:hide-panel');
 
@@ -974,7 +983,7 @@ class Application {
         }
 
         if (iconBrowser) {
-            iconBrowser.addEventListener('click', () => {
+            iconBrowser.addEventListener('click', async () => {
                 logger.debug('appInit', 'Browser icon clicked');
 
                 // Toggle active state
@@ -983,10 +992,8 @@ class Application {
                 if (iconSSH) iconSSH.classList.remove('active');
                 iconBrowser.classList.add('active');
 
-                // Toggle browser
-                if (!this.browserInstance) {
-                    this.toggleBrowser();
-                }
+                // Open browser in pane
+                await this.openBrowserInPane();
 
                 // Hide Git panel if visible
                 eventBus.emit('git:hide-panel');
@@ -1141,7 +1148,8 @@ class Application {
             logger.info('ssh', 'SSH connection established successfully');
 
             // Treat SSH connection like opening a folder - transition to main IDE
-            eventBus.emit('explorer:directory-opened', {
+            // Use explorer:open-folder to trigger the opening (not explorer:directory-opened)
+            eventBus.emit('explorer:open-folder', {
                 path: `ssh://${connectionConfig.host}`,
                 type: 'ssh',
                 connectionId: connectionId,
