@@ -221,6 +221,16 @@ class TerminalPanel {
             logger.debug('terminalPanel', 'Terminal exited:', terminalId);
             this.closeTerminal(terminalId);
         });
+
+        // Listen for SSH terminal open requests
+        eventBus.on('ssh:openTerminal', ({ connectionId }) => {
+            logger.info('terminalPanel', 'SSH terminal open requested for connection:', connectionId);
+            this.createNewTerminal({
+                type: 'ssh',
+                sshConnectionId: connectionId,
+                title: `SSH: ${connectionId}`
+            });
+        });
     }
 
     /**

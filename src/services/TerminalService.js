@@ -55,13 +55,30 @@ class TerminalService {
         env.SWARM_IDE_TERM = 'true';
         env.TERM_PROGRAM = 'swarm-ide';
 
-        // Locale fallback
-        if (!env.LANG) {
-            env.LANG = 'en_US.UTF-8';
+        // Force UTF-8 locale for proper emoji and Unicode support
+        // xterm.js requires UTF-8 encoding
+        const utf8Locale = 'en_US.UTF-8';
+
+        // Override LANG if it's not UTF-8
+        if (!env.LANG || !env.LANG.includes('UTF-8') && !env.LANG.includes('utf8')) {
+            env.LANG = utf8Locale;
         }
 
-        // Merge custom environment
-        Object.assign(env, customEnv);
+        // Set LC_ALL to ensure all locale categories use UTF-8
+        env.LC_ALL = utf8Locale;
+
+        // Set LC_CTYPE specifically for character classification (emoji support)
+        env.LC_CTYPE = utf8Locale;
+
+        // Ensure UTF-8 is used for terminal encoding
+        env.LESSCHARSET = 'utf-8';
+
+        // Merge custom environment (but don't allow overriding UTF-8 settings)
+        const safeCustomEnv = { ...customEnv };
+        delete safeCustomEnv.LANG;
+        delete safeCustomEnv.LC_ALL;
+        delete safeCustomEnv.LC_CTYPE;
+        Object.assign(env, safeCustomEnv);
 
         return env;
     }

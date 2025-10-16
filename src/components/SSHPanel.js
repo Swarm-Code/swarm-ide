@@ -414,9 +414,23 @@ class SSHPanel {
      * Open SSH terminal
      */
     openTerminal(connectionId) {
-        // TODO: Implement terminal integration
-        eventBus.emit('ssh:openTerminal', { connectionId });
-        this.showStatus('Terminal functionality coming soon', 'info');
+        try {
+            logger.info('sshPanel', 'Opening SSH terminal for connection:', connectionId);
+
+            // Emit event to open SSH terminal
+            eventBus.emit('ssh:openTerminal', { connectionId });
+
+            // Get connection info for display
+            const connection = this.connections.get(connectionId);
+            const connectionName = connection ? (connection.name || connection.host) : connectionId;
+
+            this.showStatus(`Opening terminal for ${connectionName}...`, 'info');
+            setTimeout(() => this.clearStatus(), 2000);
+
+        } catch (error) {
+            logger.error('sshPanel', 'Error opening SSH terminal:', error);
+            this.showStatus('Failed to open terminal: ' + error.message, 'error');
+        }
     }
 
     /**

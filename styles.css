@@ -6588,6 +6588,7 @@ body {
 .terminal-container .xterm {
     height: 100%;
     padding: 8px;
+    /* DO NOT add font-smoothing or text-rendering here - interferes with canvas! */
 }
 
 /* xterm.js viewport */
@@ -6598,6 +6599,13 @@ body {
 /* xterm.js screen */
 .terminal-container .xterm-screen {
     background-color: #1e1e1e !important;
+}
+
+/* Canvas must be left alone - xterm.js customGlyphs handles everything */
+/* DO NOT override font-family, image-rendering, or font-smoothing on canvas! */
+.terminal-container canvas {
+    /* Let xterm.js customGlyphs render pixel-perfect box characters */
+    /* NO CSS overrides here - they break customGlyphs rendering */
 }
 
 /* Scrollbar for terminal */

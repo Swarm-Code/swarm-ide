@@ -1,21 +1,80 @@
 {
   "name": "swarm-ide",
   "version": "1.0.0",
-  "description": "A simple Electron-based IDE for viewing files",
+  "description": "A powerful Electron-based IDE with terminal, SSH, and file management",
   "main": "main.js",
   "scripts": {
     "bundle": "browserify src/renderer.js -o dist/bundle.js --exclude keytar --exclude ssh2 --exclude electron --exclude @electron/remote",
     "start": "npm run bundle && electron .",
     "dev": "npm run bundle && electron .",
-    "build": "electron-builder"
+    "build": "npm run bundle && electron-builder",
+    "build:linux": "npm run bundle && electron-builder --linux",
+    "build:dir": "npm run bundle && electron-builder --dir"
   },
   "keywords": [
     "electron",
     "ide",
-    "file-viewer"
+    "file-viewer",
+    "terminal",
+    "ssh",
+    "code-editor"
   ],
-  "author": "",
+  "author": "Swarm IDE",
   "license": "MIT",
+  "build": {
+    "appId": "com.swarmide.app",
+    "productName": "Swarm IDE",
+    "copyright": "Copyright © 2025 Swarm IDE",
+    "npmRebuild": false,
+    "directories": {
+      "buildResources": "build",
+      "output": "dist-electron"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "styles.css",
+      "dist/**/*",
+      "src/**/*",
+      "assets/**/*",
+      "node_modules/**/*",
+      "!node_modules/**/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!node_modules/**/test",
+      "!node_modules/**/{test,__tests__,tests}",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "tar.gz"
+      ],
+      "category": "Development",
+      "icon": "build/icons/icon.svg",
+      "executableName": "swarm-ide",
+      "synopsis": "A powerful Electron-based IDE",
+      "description": "A powerful Electron-based IDE with integrated terminal, SSH support, and advanced file management capabilities",
+      "desktop": {
+        "entry": {
+          "Name": "Swarm IDE",
+          "GenericName": "Code Editor",
+          "Comment": "Edit code and manage projects",
+          "Keywords": "editor;development;ide;terminal;ssh;",
+          "Categories": "Development;IDE;TextEditor;",
+          "MimeType": "text/plain;text/x-chdr;text/x-csrc;text/x-c++hdr;text/x-c++src;text/x-java;text/x-makefile;text/x-python;application/x-shellscript;text/x-javascript;application/json;",
+          "StartupNotify": "true",
+          "Terminal": "false"
+        }
+      }
+    }
+  },
   "dependencies": {
     "@types/fluent-ffmpeg": "^2.1.27",
     "codemirror": "^6.0.2",
@@ -46,6 +105,7 @@
     "@electron/rebuild": "^4.0.1",
     "browserify": "^17.0.0",
     "electron": "^28.3.3",
+    "electron-builder": "^26.0.12",
     "react-devtools": "^7.0.0"
   }
 }
