@@ -75,12 +75,30 @@ class EventBus {
     emit(event, data) {
         logger.debug('eventBus', `Emitting '${event}'`, data);
 
-        if (!this.events.has(event)) return;
+        // Extra console logging for SSH events
+        if (event.startsWith('ssh:')) {
+            console.log('🔔 EventBus EMIT:', event, 'data:', data);
+            console.log('   Handlers registered:', this.events.has(event) ? this.events.get(event).size : 0);
+        }
+
+        if (!this.events.has(event)) {
+            if (event.startsWith('ssh:')) {
+                console.warn('⚠️ No handlers registered for event:', event);
+            }
+            return;
+        }
 
         this.events.get(event).forEach(handler => {
             try {
+                if (event.startsWith('ssh:')) {
+                    console.log('   ➡️ Calling handler for', event);
+                }
                 handler(data);
+                if (event.startsWith('ssh:')) {
+                    console.log('   ✅ Handler completed for', event);
+                }
             } catch (error) {
+                console.error('   ❌ Error in handler for', event, ':', error);
                 logger.error('eventBus', `Error in handler for '${event}':`, error);
             }
         });

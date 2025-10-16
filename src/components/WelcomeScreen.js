@@ -96,64 +96,103 @@ class WelcomeScreen {
      * Setup event listeners
      */
     setupEventListeners() {
+        console.log('======================================');
+        console.log('WelcomeScreen: setupEventListeners() CALLED');
+        console.log('Container:', this.container);
+        console.log('======================================');
+
         // Open folder button
         const openFolderBtn = this.container.querySelector('#welcome-open-folder');
+        console.log('Open folder button element:', openFolderBtn);
         if (openFolderBtn) {
+            console.log('✅ Open folder button FOUND, adding click listener');
             logger.debug('appInit', 'Open folder button found, adding click listener');
             openFolderBtn.addEventListener('click', async () => {
+                console.log('🎯🎯🎯 OPEN FOLDER BUTTON CLICKED! 🎯🎯🎯');
                 logger.debug('appInit', 'Open folder button clicked!');
                 const result = await this.fs.selectFolder();
+                console.log('selectFolder result:', result);
                 logger.debug('appInit', 'selectFolder result:', result);
                 if (!result.canceled && result.path) {
+                    console.log('Emitting explorer:open-folder with path:', result.path);
                     logger.debug('appInit', 'Emitting explorer:open-folder with path:', result.path);
                     eventBus.emit('explorer:open-folder', { path: result.path });
                 } else {
+                    console.log('Folder selection cancelled');
                     logger.debug('appInit', 'Folder selection cancelled or no path');
                 }
             });
+            console.log('✅ Open folder button click listener ADDED');
         } else {
+            console.error('❌ Open folder button NOT found!');
             logger.error('appInit', 'Open folder button NOT found!');
         }
 
         // SSH Connect button
         const sshConnectBtn = this.container.querySelector('#welcome-ssh-connect');
+        console.log('SSH Connect button element:', sshConnectBtn);
         if (sshConnectBtn) {
+            console.log('✅ SSH Connect button FOUND, adding click listener');
             logger.debug('appInit', 'SSH Connect button found, adding click listener');
             sshConnectBtn.addEventListener('click', () => {
+                console.log('🔗🔗🔗 SSH CONNECT BUTTON CLICKED! 🔗🔗🔗');
+                console.log('About to emit ssh:quick-connect event');
                 logger.debug('appInit', 'SSH Connect button clicked!');
                 eventBus.emit('ssh:quick-connect');
+                console.log('ssh:quick-connect event emitted');
             });
+            console.log('✅ SSH Connect button click listener ADDED');
         } else {
+            console.error('❌ SSH Connect button NOT found!');
             logger.error('appInit', 'SSH Connect button NOT found!');
         }
 
-        // SSH Panel button
+        // SSH Panel button (SSH Manager)
         const sshPanelBtn = this.container.querySelector('#welcome-ssh-panel');
+        console.log('SSH Panel button element:', sshPanelBtn);
         if (sshPanelBtn) {
+            console.log('✅ SSH Panel button FOUND, adding click listener');
             logger.info('appInit', 'SSH Panel button found, adding click listener');
             sshPanelBtn.addEventListener('click', () => {
-                logger.info('appInit', '🔗 SSH PANEL BUTTON CLICKED!');
-                logger.info('appInit', 'Emitting ssh:toggle-panel event...');
-                eventBus.emit('ssh:toggle-panel');
-                logger.info('appInit', 'ssh:toggle-panel event emitted successfully');
+                console.log('⚡⚡⚡ SSH MANAGER BUTTON CLICKED! ⚡⚡⚡');
+                console.log('About to emit ssh:show-welcome-screen event');
+                logger.info('appInit', '🔗 SSH MANAGER BUTTON CLICKED!');
+                logger.info('appInit', 'Emitting ssh:show-welcome-screen event...');
+                eventBus.emit('ssh:show-welcome-screen');
+                console.log('ssh:show-welcome-screen event emitted');
+                logger.info('appInit', 'ssh:show-welcome-screen event emitted successfully');
             });
+            console.log('✅ SSH Panel button click listener ADDED');
         } else {
+            console.error('❌ SSH Panel button NOT found!');
             logger.error('appInit', 'SSH Panel button NOT found!');
             logger.error('appInit', 'Available buttons in container:');
             const allButtons = this.container.querySelectorAll('button');
+            console.log('All buttons found:', allButtons.length);
             allButtons.forEach((btn, index) => {
+                console.log(`Button ${index}:`, {
+                    id: btn.id,
+                    className: btn.className,
+                    text: btn.textContent.substring(0, 50)
+                });
                 logger.error('appInit', `Button ${index}:`, btn.id, btn.className, btn.textContent.substring(0, 50));
             });
         }
 
         // Recent folder items
         const recentItems = this.container.querySelectorAll('.welcome-recent-item');
+        console.log('Recent folder items found:', recentItems.length);
         recentItems.forEach(item => {
             item.addEventListener('click', () => {
                 const path = item.dataset.path;
+                console.log('Recent folder clicked:', path);
                 eventBus.emit('explorer:open-folder', { path });
             });
         });
+
+        console.log('======================================');
+        console.log('WelcomeScreen: setupEventListeners() COMPLETE');
+        console.log('======================================');
     }
 
     /**

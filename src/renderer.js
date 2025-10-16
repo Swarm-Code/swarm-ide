@@ -98,6 +98,7 @@ const MenuBar = require('./components/MenuBar');
 const FileExplorer = require('./components/FileExplorer');
 const FileViewer = require('./components/FileViewer');
 const WelcomeScreen = require('./components/WelcomeScreen');
+const SSHWelcomeScreen = require('./components/SSHWelcomeScreen');
 const Browser = require('./components/Browser');
 const WorkspacePanel = require('./components/WorkspacePanel');
 const quickOpen = require('./components/QuickOpen');
@@ -115,6 +116,9 @@ const GitBranchMenu = require('./components/GitBranchMenu');
 const SSHPanel = require('./components/SSHPanel');
 const GitDiffPanel = require('./components/GitDiffPanel');
 const GitBlamePanel = require('./components/GitBlamePanel');
+
+// Import Modal for replacing browser dialogs
+const modal = require('./components/Modal');
 
 /**
  * Application Bootstrap
@@ -182,7 +186,7 @@ class Application {
             logger.info('appInit', '✓ Global handlers setup');
 
             // 5. Initialize UI components
-            this.initializeComponents();
+            await this.initializeComponents();
             logger.info('appInit', '✓ Components initialized');
 
             // 6. Apply theme
@@ -249,16 +253,23 @@ class Application {
     /**
      * Initialize UI components
      */
-    initializeComponents() {
+    async initializeComponents() {
+        console.log('[RENDERER] ************************************************');
+        console.log('[RENDERER] initializeComponents() CALLED');
+        console.log('[RENDERER] ************************************************');
         logger.info('appInit', '🎯 Starting initializeComponents...');
 
         // Get DOM elements
+        console.log('[RENDERER] Getting DOM elements...');
         logger.debug('appInit', 'Getting DOM elements...');
         const welcomeContainer = document.getElementById('welcome-container');
+        const sshWelcomeContainer = document.getElementById('ssh-welcome-container');
         const appContainer = document.getElementById('app-container');
         const menuBarContainer = document.getElementById('menu-bar');
         const fileTreeContainer = document.getElementById('file-tree');
         const paneContainer = document.getElementById('pane-container');
+        console.log('[RENDERER] DOM elements retrieved');
+        console.log('[RENDERER] fileTreeContainer:', fileTreeContainer);
         logger.debug('appInit', 'DOM elements retrieved');
 
         // Create and register WelcomeScreen
@@ -267,6 +278,27 @@ class Application {
         logger.info('appInit', 'WelcomeScreen created, registering...');
         uiManager.registerComponent('welcomeScreen', welcomeScreen);
         logger.info('appInit', '✓ WelcomeScreen registered');
+
+        // Create and register SSHWelcomeScreen
+        logger.info('appInit', 'Creating SSHWelcomeScreen...');
+        const sshWelcomeScreen = new SSHWelcomeScreen(sshWelcomeContainer, config, sshService);
+        await sshWelcomeScreen.init();
+        logger.info('appInit', 'SSHWelcomeScreen created and initialized, registering...');
+        uiManager.registerComponent('sshWelcomeScreen', sshWelcomeScreen);
+        logger.info('appInit', '✓ SSHWelcomeScreen registered');
+
+        // Setup navigation between welcome screens
+        eventBus.on('ssh:show-welcome-screen', () => {
+            logger.debug('appInit', 'Showing SSH Welcome Screen');
+            welcomeScreen.hide();
+            sshWelcomeScreen.show();
+        });
+
+        eventBus.on('welcome:show-main-screen', () => {
+            logger.debug('appInit', 'Showing main Welcome Screen');
+            sshWelcomeScreen.hide();
+            welcomeScreen.show();
+        });
 
         // Create and register MenuBar
         logger.info('appInit', 'Creating MenuBar...');
@@ -283,11 +315,19 @@ class Application {
         logger.info('appInit', '✓ WorkspacePanel registered');
 
         // Create and register FileExplorer
+        console.log('[RENDERER] ========================================');
+        console.log('[RENDERER] Creating FileExplorer...');
+        console.log('[RENDERER] fileTreeContainer:', fileTreeContainer);
+        console.log('[RENDERER] fileSystemService:', fileSystemService);
+        console.log('[RENDERER] config:', config);
         logger.info('appInit', 'Creating FileExplorer...');
         const explorer = new FileExplorer(fileTreeContainer, fileSystemService, config);
+        console.log('[RENDERER] FileExplorer created:', explorer);
         logger.info('appInit', 'FileExplorer created, registering...');
         uiManager.registerComponent('fileExplorer', explorer);
+        console.log('[RENDERER] FileExplorer registered with UIManager');
         logger.info('appInit', '✓ FileExplorer registered');
+        console.log('[RENDERER] ========================================');
 
         // Create and register Git UI components
         try {
@@ -434,115 +474,115 @@ class Application {
             });
             logger.debug('appInit', '✓ browser:toggle handler set');
 
-        // Handle request to open file in specific pane
-        eventBus.on('pane:request-file-open', async (data) => {
-            await this.openFileInPane(data.paneId, data.filePath);
-        });
+            // Handle request to open file in specific pane
+            eventBus.on('pane:request-file-open', async (data) => {
+                await this.openFileInPane(data.paneId, data.filePath);
+            });
 
-        // Handle file selection - open in active pane
-        eventBus.on('file:selected', async (data) => {
-            const activePane = this.paneManager.getActivePane();
-            if (activePane) {
-                await this.openFileInPane(activePane.id, data.path, data.line, data.enableGitDiff);
-            }
-        });
+            // Handle file selection - open in active pane
+            eventBus.on('file:selected', async (data) => {
+                const activePane = this.paneManager.getActivePane();
+                if (activePane) {
+                    await this.openFileInPane(activePane.id, data.path, data.line, data.enableGitDiff);
+                }
+            });
 
-        // Save workspace layout when panes or tabs change
-        eventBus.on('pane:split', () => {
-            this.saveWorkspaceLayout();
-        });
+            // Save workspace layout when panes or tabs change
+            eventBus.on('pane:split', () => {
+                this.saveWorkspaceLayout();
+            });
 
-        eventBus.on('pane:closed', () => {
-            this.saveWorkspaceLayout();
-        });
+            eventBus.on('pane:closed', () => {
+                this.saveWorkspaceLayout();
+            });
 
-        eventBus.on('tab:switched', () => {
-            this.saveWorkspaceLayout();
-        });
+            eventBus.on('tab:switched', () => {
+                this.saveWorkspaceLayout();
+            });
 
-        eventBus.on('tab:closed', () => {
-            this.saveWorkspaceLayout();
-        });
+            eventBus.on('tab:closed', () => {
+                this.saveWorkspaceLayout();
+            });
 
-        // Handle workspace activation - restore layout
-        eventBus.on('workspace:activated', async (data) => {
-            logger.debug('appInit', 'Workspace activated:', data.workspaceId);
-            await this.restoreWorkspaceLayout(data.workspace);
-        });
+            // Handle workspace activation - restore layout
+            eventBus.on('workspace:activated', async (data) => {
+                logger.debug('appInit', 'Workspace activated:', data.workspaceId);
+                await this.restoreWorkspaceLayout(data.workspace);
+            });
 
-        // Git-related event handlers
-        eventBus.on('file:saved', async (data) => {
-            try {
-                const gitStore = require('./modules/GitStore').getInstance();
-                await gitStore.refreshStatus();
-            } catch (error) {
-                logger.warn('appInit', 'Git status refresh failed:', error.message);
-            }
-        });
+            // Git-related event handlers
+            eventBus.on('file:saved', async (data) => {
+                try {
+                    const gitStore = require('./modules/GitStore').getInstance();
+                    await gitStore.refreshStatus();
+                } catch (error) {
+                    logger.warn('appInit', 'Git status refresh failed:', error.message);
+                }
+            });
 
-        eventBus.on('explorer:directory-opened', async (data) => {
-            try {
-                const gitService = require('./services/GitService').getInstance();
-                const gitStore = require('./modules/GitStore').getInstance();
+            eventBus.on('explorer:directory-opened', async (data) => {
+                try {
+                    const gitService = require('./services/GitService').getInstance();
+                    const gitStore = require('./modules/GitStore').getInstance();
 
-                // Initialize Git for the opened directory
-                await gitService.initialize(data.path);
-                logger.info('appInit', 'Git initialized for directory:', data.path);
-            } catch (error) {
-                logger.warn('appInit', 'Git initialization failed:', error.message);
-            }
-        });
+                    // Initialize Git for the opened directory
+                    await gitService.initialize(data.path);
+                    logger.info('appInit', 'Git initialized for directory:', data.path);
+                } catch (error) {
+                    logger.warn('appInit', 'Git initialization failed:', error.message);
+                }
+            });
 
-        eventBus.on('git:toggle-blame', () => {
-            // Get active file viewer and toggle blame
-            const activePane = this.paneManager?.getActivePane();
-            if (activePane && activePane.currentFile) {
-                const editorElement = activePane.contentContainer.querySelector('[data-file-viewer-id]');
-                if (editorElement && editorElement._fileViewerInstance) {
-                    const textEditor = editorElement._fileViewerInstance.editor;
-                    if (textEditor && typeof textEditor.toggleBlame === 'function') {
-                        textEditor.toggleBlame();
+            eventBus.on('git:toggle-blame', () => {
+                // Get active file viewer and toggle blame
+                const activePane = this.paneManager?.getActivePane();
+                if (activePane && activePane.currentFile) {
+                    const editorElement = activePane.contentContainer.querySelector('[data-file-viewer-id]');
+                    if (editorElement && editorElement._fileViewerInstance) {
+                        const textEditor = editorElement._fileViewerInstance.editor;
+                        if (textEditor && typeof textEditor.toggleBlame === 'function') {
+                            textEditor.toggleBlame();
+                        }
                     }
                 }
+            });
+
+            eventBus.on('git:view-commit', (data) => {
+                // Open commit view in a new tab
+                logger.debug('appInit', 'Opening commit view for:', data.commit.hash);
+                this.openCommitView(data.commit, data.repositoryPath);
+            });
+
+            // Global keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+                const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
+
+                // Ctrl+P / Cmd+P - Quick Open
+                if (ctrlOrCmd && e.key === 'p' && !e.shiftKey) {
+                    e.preventDefault();
+                    quickOpen.show();
+                }
+
+                // Ctrl+Shift+F / Cmd+Shift+F - Global Search
+                if (ctrlOrCmd && e.shiftKey && e.key === 'F') {
+                    e.preventDefault();
+                    globalSearch.toggle();
+                }
+
+                // Ctrl+Shift+H / Cmd+Shift+H - Find & Replace
+                if (ctrlOrCmd && e.shiftKey && e.key === 'H') {
+                    e.preventDefault();
+                    findReplacePanel.toggle();
+                }
+            });
+
+            // Log all events in debug mode
+            if (config.get('debug', false)) {
+                eventBus.setDebug(true);
             }
-        });
 
-        eventBus.on('git:view-commit', (data) => {
-            // Open commit view in a new tab
-            logger.debug('appInit', 'Opening commit view for:', data.commit.hash);
-            this.openCommitView(data.commit, data.repositoryPath);
-        });
-
-        // Global keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-            const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
-
-            // Ctrl+P / Cmd+P - Quick Open
-            if (ctrlOrCmd && e.key === 'p' && !e.shiftKey) {
-                e.preventDefault();
-                quickOpen.show();
-            }
-
-            // Ctrl+Shift+F / Cmd+Shift+F - Global Search
-            if (ctrlOrCmd && e.shiftKey && e.key === 'F') {
-                e.preventDefault();
-                globalSearch.toggle();
-            }
-
-            // Ctrl+Shift+H / Cmd+Shift+H - Find & Replace
-            if (ctrlOrCmd && e.shiftKey && e.key === 'H') {
-                e.preventDefault();
-                findReplacePanel.toggle();
-            }
-        });
-
-        // Log all events in debug mode
-        if (config.get('debug', false)) {
-            eventBus.setDebug(true);
-        }
-
-        logger.info('appInit', '✅ setupGlobalHandlers completed successfully');
+            logger.info('appInit', '✅ setupGlobalHandlers completed successfully');
         } catch (error) {
             logger.error('appInit', '❌ Error in setupGlobalHandlers:', error);
             logger.error('appInit', 'setupGlobalHandlers error stack:', error.stack);
@@ -633,7 +673,7 @@ class Application {
                 if (explorer.currentPath) {
                     await explorer.createNewFile(explorer.currentPath);
                 } else {
-                    alert('Please open a folder first');
+                    await modal.alert('No Folder Open', 'Please open a folder first');
                 }
             });
         }
@@ -645,7 +685,7 @@ class Application {
                 if (explorer.currentPath) {
                     await explorer.createNewFolder(explorer.currentPath);
                 } else {
-                    alert('Please open a folder first');
+                    await modal.alert('No Folder Open', 'Please open a folder first');
                 }
             });
         }
@@ -983,11 +1023,14 @@ class Application {
                     const connectedConnections = connections.filter(conn => conn.state === 'connected');
 
                     if (connectedConnections.length === 0) {
-                        alert('No active SSH connections to disconnect.');
+                        await modal.alert('No Connections', 'No active SSH connections to disconnect.');
                         return;
                     }
 
-                    const confirmed = confirm(`Are you sure you want to disconnect ${connectedConnections.length} SSH connection(s)?`);
+                    const confirmed = await modal.confirm(
+                        'Disconnect All',
+                        `Are you sure you want to disconnect ${connectedConnections.length} SSH connection(s)?`
+                    );
                     if (confirmed) {
                         for (const conn of connectedConnections) {
                             await window.sshService.disconnect(conn.id);
@@ -995,11 +1038,11 @@ class Application {
                         logger.info('ssh', `Disconnected ${connectedConnections.length} SSH connections`);
                     }
                 } else {
-                    alert('SSH service not available.');
+                    await modal.alert('Service Unavailable', 'SSH service not available.');
                 }
             } catch (error) {
                 logger.error('ssh', 'Failed to disconnect all SSH connections:', error);
-                alert('Failed to disconnect SSH connections: ' + error.message);
+                await modal.alert('Disconnect Error', 'Failed to disconnect SSH connections: ' + error.message);
             }
         });
 
@@ -1009,21 +1052,21 @@ class Application {
             try {
                 if (window.sshService && window.sshService.isInitialized()) {
                     const status = await window.sshService.getHealthStatus();
-                    const message = `SSH Health Status:\n\nTotal connections: ${status.total}\nHealthy: ${status.healthy}\nUnhealthy: ${status.unhealthy}`;
-                    alert(message);
+                    const message = `Total connections: ${status.total}\nHealthy: ${status.healthy}\nUnhealthy: ${status.unhealthy}`;
+                    await modal.alert('SSH Health Status', message);
                 } else {
-                    alert('SSH service not available.');
+                    await modal.alert('Service Unavailable', 'SSH service not available.');
                 }
             } catch (error) {
                 logger.error('ssh', 'Failed to get SSH health status:', error);
-                alert('Failed to get SSH health status: ' + error.message);
+                await modal.alert('Health Check Error', 'Failed to get SSH health status: ' + error.message);
             }
         });
 
         // Handle SSH settings action
-        eventBus.on('ssh:settings', () => {
+        eventBus.on('ssh:settings', async () => {
             logger.debug('ssh', 'SSH settings menu action triggered');
-            alert('SSH Settings functionality coming soon!');
+            await modal.alert('Coming Soon', 'SSH Settings functionality coming soon!');
         });
 
         logger.debug('ssh', 'SSH menu handlers setup complete');
@@ -1032,35 +1075,50 @@ class Application {
     /**
      * Show quick connect dialog
      */
-    showQuickConnectDialog() {
-        const host = prompt('Enter SSH host (e.g., user@hostname):');
-        if (!host || !host.trim()) return;
+    async showQuickConnectDialog() {
+        try {
+            // Get host
+            const host = await modal.prompt('SSH Quick Connect', 'Enter SSH host (e.g., user@hostname):');
+            if (!host || !host.trim()) return;
 
-        const parts = host.includes('@') ? host.split('@') : ['', host];
-        const username = parts[0] || prompt('Enter username:');
-        const hostname = parts[1] || host;
+            const parts = host.includes('@') ? host.split('@') : ['', host];
+            let username = parts[0];
+            const hostname = parts[1] || host;
 
-        if (!username || !hostname) {
-            alert('Invalid host format. Please use user@hostname or provide username separately.');
-            return;
+            // Get username if not provided in host
+            if (!username) {
+                username = await modal.prompt('SSH Quick Connect', 'Enter username:');
+            }
+
+            if (!username || !hostname) {
+                await modal.alert('Invalid Input', 'Invalid host format. Please use user@hostname or provide username separately.');
+                return;
+            }
+
+            // Get port
+            const portStr = await modal.prompt('SSH Quick Connect', 'Enter port (default: 22):', '22');
+            const port = parseInt(portStr) || 22;
+
+            // Get password
+            const password = await modal.prompt('SSH Quick Connect', 'Enter password (leave empty for key authentication):');
+
+            const connectionConfig = {
+                name: `Quick Connect - ${hostname}`,
+                host: hostname,
+                username: username,
+                port: port
+            };
+
+            if (password && password.trim()) {
+                connectionConfig.password = password;
+            }
+
+            // Create and connect
+            await this.createAndConnectSSH(connectionConfig);
+        } catch (error) {
+            logger.error('ssh', 'Error in quick connect dialog:', error);
+            await modal.alert('Connection Error', 'Failed to process quick connect: ' + error.message);
         }
-
-        const port = prompt('Enter port (default: 22):', '22');
-        const password = prompt('Enter password (leave empty for key authentication):');
-
-        const connectionConfig = {
-            name: `Quick Connect - ${hostname}`,
-            host: hostname,
-            username: username,
-            port: parseInt(port) || 22
-        };
-
-        if (password) {
-            connectionConfig.password = password;
-        }
-
-        // Create and connect
-        this.createAndConnectSSH(connectionConfig);
     }
 
     /**
@@ -1070,7 +1128,7 @@ class Application {
     async createAndConnectSSH(connectionConfig) {
         try {
             if (!window.sshService || !window.sshService.isInitialized()) {
-                alert('SSH service not available.');
+                await modal.alert('Service Unavailable', 'SSH service not available.');
                 return;
             }
 
@@ -1093,7 +1151,7 @@ class Application {
             logger.info('ssh', `SSH workspace opened for ${connectionConfig.host}`);
         } catch (error) {
             logger.error('ssh', 'Failed to create/connect SSH:', error);
-            alert('Failed to connect to SSH server: ' + error.message);
+            await modal.alert('Connection Failed', 'Failed to connect to SSH server: ' + error.message);
         }
     }
 }

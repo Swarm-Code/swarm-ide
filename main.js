@@ -1174,17 +1174,44 @@ ipcMain.handle('ssh-exec-command', async (event, connectionId, command, options 
 
 // SSH SFTP operations - List directory
 ipcMain.handle('ssh-list-directory', async (event, connectionId, remotePath) => {
+  console.log('[Main][SSH] ========================================');
+  console.log('[Main][SSH] ssh-list-directory IPC handler called');
+  console.log('[Main][SSH] connectionId:', connectionId);
+  console.log('[Main][SSH] remotePath:', remotePath);
+  console.log('[Main][SSH] ========================================');
+
   try {
+    console.log('[Main][SSH] Getting connection from manager...');
     const connection = sshConnectionManager.getConnection(connectionId);
-    if (!connection || !connection.sftp) {
+
+    if (!connection) {
+      console.error('[Main][SSH] ❌ Connection not found!');
+      throw new Error('SSH connection not found');
+    }
+
+    console.log('[Main][SSH] ✅ Connection found');
+    console.log('[Main][SSH] Connection status:', connection.status);
+    console.log('[Main][SSH] Has SFTP?', !!connection.sftp);
+
+    if (!connection.sftp) {
+      console.error('[Main][SSH] ❌ SFTP not available for this connection!');
       throw new Error('SFTP not available for this connection');
     }
+
+    console.log('[Main][SSH] ✅ SFTP available, calling readdir...');
 
     return new Promise((resolve) => {
       connection.sftp.readdir(remotePath, (err, list) => {
         if (err) {
+          console.error('[Main][SSH] ❌ SFTP readdir error:', err);
+          console.error('[Main][SSH] Error code:', err.code);
+          console.error('[Main][SSH] Error message:', err.message);
           resolve({ success: false, error: err.message });
         } else {
+          console.log('[Main][SSH] ✅ SFTP readdir succeeded');
+          console.log('[Main][SSH] Raw entries count:', list.length);
+          console.log('[Main][SSH] First 5 entries:', list.slice(0, 5).map(item => item.filename));
+
           const entries = list.map(item => ({
             name: item.filename,
             isDirectory: item.attrs.isDirectory(),
@@ -1194,12 +1221,17 @@ ipcMain.handle('ssh-list-directory', async (event, connectionId, remotePath) => 
             mtime: new Date(item.attrs.mtime * 1000),
             path: remotePath.endsWith('/') ? remotePath + item.filename : remotePath + '/' + item.filename
           }));
+
+          console.log('[Main][SSH] ✅ Mapped entries:', entries.length);
+          console.log('[Main][SSH] Returning success with', entries.length, 'entries');
+
           resolve({ success: true, entries });
         }
       });
     });
   } catch (error) {
-    console.error('[Main] Error listing SSH directory:', error);
+    console.error('[Main][SSH] ❌ Exception in ssh-list-directory:', error);
+    console.error('[Main][SSH] Error stack:', error.stack);
     return { success: false, error: error.message };
   }
 });
@@ -1419,4 +1451,40 @@ app.on('window-all-closed', () => {
 app.on('quit', async () => {
   await languageServerManager.shutdownAll();
   await sshConnectionManager.shutdown();
+});
+
+// Dialog IPC handlers for SSH Import/Export
+ipcMain.handle('show-open-dialog', async (event, options) => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, options);
+    return result;
+  } catch (error) {
+    console.error('[Main] Error showing open dialog:', error);
+    return { canceled: true, error: error.message };
+  }
+});
+
+ipcMain.handle('show-save-dialog', async (event, options) => {
+  try {
+    const result = await dialog.showSaveDialog(mainWindow, options);
+    return result;
+  } catch (error) {
+    console.error('[Main] Error showing save dialog:', error);
+    return { canceled: true, error: error.message };
+  }
+});
+
+// Browse for file dialog - used for SSH key selection
+ipcMain.handle('browse-for-file', async (event, options) => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: options.title || 'Select File',
+      filters: options.filters || [{ name: 'All Files', extensions: ['*'] }],
+      properties: ['openFile']
+    });
+    return result;
+  } catch (error) {
+    console.error('[Main] Error showing file browser:', error);
+    return { canceled: true, error: error.message };
+  }
 });

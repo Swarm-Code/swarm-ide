@@ -126,7 +126,10 @@ module.exports = {
             'sshPanel': 'SSH panel UI operations',
             'sshService': 'SSH service operations',
             'sshConnection': 'SSH connection management',
-            'sshDialog': 'SSH connection dialog'
+            'sshDialog': 'SSH connection dialog',
+            'sshFileExplorer': 'SSH file explorer operations',
+            'sshListDir': 'SSH remote directory listing',
+            'sshProgress': 'SSH connection progress UI'
         }
     },
 

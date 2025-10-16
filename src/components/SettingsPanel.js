@@ -284,6 +284,18 @@ class SettingsPanel {
                                 <label><input type="checkbox" class="log-functionality" data-func="eventBus"> eventBus</label>
                             </div>
 
+                            <h5>SSH Operations</h5>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 10px;">
+                                <label><input type="checkbox" class="log-functionality" data-func="ssh"> ssh</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="sshPanel"> sshPanel</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="sshService"> sshService</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="sshConnection"> sshConnection</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="sshDialog"> sshDialog</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="sshFileExplorer"> sshFileExplorer</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="sshListDir"> sshListDir</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="sshProgress"> sshProgress</label>
+                            </div>
+
                             <div class="setting-item">
                                 <button class="settings-btn" id="apply-logging" style="background: #4CAF50;">Apply Logging Settings</button>
                                 <p class="setting-description">Click to apply logging changes immediately (without closing settings)</p>
@@ -302,6 +314,7 @@ class SettingsPanel {
         this.isOpen = true;
 
         this.setupEventListeners();
+        this.restoreLoggingCheckboxes();
     }
 
     /**
@@ -313,6 +326,23 @@ class SettingsPanel {
         this.panel.remove();
         this.panel = null;
         this.isOpen = false;
+    }
+
+    /**
+     * Restore logging checkbox states from saved settings
+     */
+    restoreLoggingCheckboxes() {
+        if (!this.settings.loggingFunctionalities || this.settings.loggingFunctionalities.length === 0) {
+            return;
+        }
+
+        // Check the saved functionalities
+        this.settings.loggingFunctionalities.forEach(func => {
+            const checkbox = this.panel.querySelector(`.log-functionality[data-func="${func}"]`);
+            if (checkbox) {
+                checkbox.checked = true;
+            }
+        });
     }
 
     /**
@@ -440,7 +470,7 @@ class SettingsPanel {
     }
 
     /**
-     * Apply current logging settings from form (without saving)
+     * Apply current logging settings from form and save them
      */
     applyCurrentLoggingSettings() {
         const loggingEnabled = this.panel.querySelector('#logging-enabled').checked;
@@ -453,18 +483,21 @@ class SettingsPanel {
             checkedFunctionalities.push(cb.dataset.func);
         });
 
-        const tempSettings = {
-            loggingEnabled,
-            loggingLevel,
-            loggingPreset,
-            loggingMode: checkedFunctionalities.length > 0 ? 'whitelist' : 'blacklist',
-            loggingFunctionalities: checkedFunctionalities
-        };
+        // Update settings object
+        this.settings.loggingEnabled = loggingEnabled;
+        this.settings.loggingLevel = loggingLevel;
+        this.settings.loggingPreset = loggingPreset;
+        this.settings.loggingMode = checkedFunctionalities.length > 0 ? 'whitelist' : 'blacklist';
+        this.settings.loggingFunctionalities = checkedFunctionalities;
 
-        this.applyLoggingSettings(tempSettings);
+        // Save to localStorage
+        this.saveSettings();
+
+        // Apply to logger
+        this.applyLoggingSettings(this.settings);
 
         // Show notification
-        this.showNotification('✓ Logging settings applied!');
+        this.showNotification('✓ Logging settings applied and saved!');
     }
 
     /**
