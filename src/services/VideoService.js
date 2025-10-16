@@ -22,6 +22,10 @@ class VideoService {
         this.metadataCache = new Map();
         this.tempDir = path.join(os.tmpdir(), 'swarm-ide-video-thumbnails');
 
+        // Memory optimization: Limit cache sizes with LRU eviction
+        this.MAX_THUMBNAIL_CACHE = 50;
+        this.MAX_METADATA_CACHE = 100;
+
         // Create temp directory for thumbnails
         this.ensureTempDir();
     }
@@ -40,6 +44,20 @@ class VideoService {
     }
 
     /**
+     * Evict LRU entry from cache if size limit exceeded
+     * @param {Map} cache - Cache to evict from
+     * @param {number} maxSize - Maximum cache size
+     */
+    evictLRUIfNeeded(cache, maxSize) {
+        if (cache.size >= maxSize) {
+            // Get first (oldest) key and delete it
+            const firstKey = cache.keys().next().value;
+            cache.delete(firstKey);
+            console.log('[VideoService] Evicted LRU entry from cache');
+        }
+    }
+
+    /**
      * Get video metadata
      * @param {string} videoPath - Path to video file
      * @returns {Promise<Object>} Video metadata
@@ -49,6 +67,9 @@ class VideoService {
         if (this.metadataCache.has(videoPath)) {
             return this.metadataCache.get(videoPath);
         }
+
+        // Evict LRU if cache is full
+        this.evictLRUIfNeeded(this.metadataCache, this.MAX_METADATA_CACHE);
 
         return new Promise((resolve, reject) => {
             ffmpeg.ffprobe(videoPath, (err, metadata) => {
@@ -125,6 +146,9 @@ class VideoService {
                 return thumbnailPath;
             }
         }
+
+        // Evict LRU if cache is full
+        this.evictLRUIfNeeded(this.thumbnailCache, this.MAX_THUMBNAIL_CACHE);
 
         return new Promise((resolve, reject) => {
             const fileName = `thumb_${path.basename(videoPath, path.extname(videoPath))}_${timestamp}.png`;

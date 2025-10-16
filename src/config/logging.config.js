@@ -7,7 +7,7 @@
 
 module.exports = {
     // Master enable/disable (overrides everything except alwaysShowErrors)
-    enabled: true,
+    enabled: true,  // Enabled in development
 
     // Minimum log level: 'ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE'
     logLevel: 'DEBUG',
@@ -130,6 +130,21 @@ module.exports = {
             'sshFileExplorer': 'SSH file explorer operations',
             'sshListDir': 'SSH remote directory listing',
             'sshProgress': 'SSH connection progress UI'
+        },
+
+        // Terminal Operations
+        terminal: {
+            'terminal': 'Terminal component operations',
+            'terminalPanel': 'Terminal panel UI operations',
+            'terminalService': 'Terminal service backend operations',
+            'terminalPTY': 'PTY process management'
+        },
+
+        // System & Debug
+        system: {
+            'eventBus': 'EventBus message passing',
+            'ipc': 'IPC communication',
+            'debug': 'General debugging output'
         }
     },
 

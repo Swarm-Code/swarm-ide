@@ -276,17 +276,17 @@ class PaneManager {
                     return;
                 }
 
-                // If dragging a tab over its source pane, don't allow drop
-                if (isTabDrag && this.currentTabDrag && currentPane.id === this.currentTabDrag.sourcePaneId) {
-                    this.clearDropZones();
-                    logger.trace('dragDrop', 'Cannot drop tab on source pane');
-                    return;
-                }
-
                 // Check if dragging over tab bar
                 const tabBar = e.target.closest('.pane-tab-bar');
                 if (tabBar) {
                     // Dragging over tab bar - will open as tab
+                    // Block this if dragging tab over its own pane
+                    if (isTabDrag && this.currentTabDrag && currentPane.id === this.currentTabDrag.sourcePaneId) {
+                        this.clearDropZones();
+                        logger.trace('dragDrop', 'Cannot drop tab on source pane tab bar');
+                        return;
+                    }
+
                     if (!isOverTabBar) {
                         isOverTabBar = true;
                         this.clearDropZones();
@@ -324,6 +324,19 @@ class PaneManager {
                         zone = 'top';
                     } else if (y > height * (1 - edgeThreshold)) {
                         zone = 'bottom';
+                    }
+
+                    // CRITICAL: If dragging a tab over its source pane, only block CENTER zone drops
+                    // Allow edge zone drops (left/right/top/bottom) because they create NEW panes
+                    if (isTabDrag && this.currentTabDrag && currentPane.id === this.currentTabDrag.sourcePaneId) {
+                        if (zone === 'center') {
+                            // Block center drops on source pane
+                            this.clearDropZones();
+                            logger.trace('dragDrop', 'Cannot drop tab in center of source pane');
+                            return;
+                        }
+                        // Allow edge drops - they will split the pane
+                        logger.trace('dragDrop', 'Allowing edge drop on source pane to split it:', zone);
                     }
 
                     // Show appropriate drop zone only if changed

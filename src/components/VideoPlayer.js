@@ -6,23 +6,28 @@
  * - Custom controls (play/pause, seek, volume, speed, fullscreen)
  * - Metadata display
  * - Keyboard shortcuts
+ * - SSH file support with caching
  *
  * Usage:
- *   const player = new VideoPlayer(container, videoPath, electronAPI);
+ *   const player = new VideoPlayer(container, videoPath, electronAPI, sshContext);
  */
 
 const eventBus = require('../modules/EventBus');
+const sshMediaCache = require('../services/SSHMediaCache');
 
 class VideoPlayer {
-    constructor(container, videoPath, electronAPI) {
+    constructor(container, videoPath, electronAPI, sshContext = null) {
         this.container = container;
         this.videoPath = videoPath;
         this.api = electronAPI;
+        this.sshContext = sshContext;
         this.metadata = null;
         this.videoElement = null;
         this.isPlaying = false;
         this.currentVolume = 1;
         this.currentSpeed = 1;
+        this.localVideoPath = null;
+        this.isSSH = false;
 
         this.init();
     }
@@ -37,8 +42,20 @@ class VideoPlayer {
             // Show loading state
             this.renderLoading();
 
-            // Get file path for video element
-            const pathResult = await this.api.videoGetFilePath(this.videoPath);
+            // Check if this is an SSH file
+            this.isSSH = this.videoPath.startsWith('ssh://') || (this.sshContext && this.sshContext.isSSH);
+
+            if (this.isSSH) {
+                // Download SSH file to cache
+                await this.downloadSSHVideo();
+                this.localVideoPath = await this.localVideoPath; // Already set by downloadSSHVideo
+            } else {
+                // Local file - use directly
+                this.localVideoPath = this.videoPath;
+            }
+
+            // Get file path for video element (now using local cached path if SSH)
+            const pathResult = await this.api.videoGetFilePath(this.localVideoPath);
             if (!pathResult.success) {
                 throw new Error('Failed to get video file path');
             }
@@ -69,15 +86,110 @@ class VideoPlayer {
     }
 
     /**
+     * Download SSH video to cache
+     */
+    async downloadSSHVideo() {
+        try {
+            if (!this.sshContext) {
+                throw new Error('SSH context required for SSH file');
+            }
+
+            const { connectionId, remotePath } = this.parseSSHPath();
+
+            console.log('[VideoPlayer] Downloading SSH video:', { connectionId, remotePath });
+
+            // Initialize cache if needed
+            if (!sshMediaCache.isInitialized()) {
+                await sshMediaCache.initialize(window.electronAPI);
+            }
+
+            // Update loading message for download
+            this.updateLoadingMessage('Downloading video from SSH server...');
+
+            // Download file to cache
+            this.localVideoPath = await sshMediaCache.getCachedFile(
+                connectionId,
+                remotePath,
+                (progress) => {
+                    // Update progress
+                    this.updateLoadingProgress(progress);
+                }
+            );
+
+            console.log('[VideoPlayer] Video cached at:', this.localVideoPath);
+
+        } catch (error) {
+            console.error('[VideoPlayer] Error downloading SSH video:', error);
+            throw new Error(`Failed to download video: ${error.message}`);
+        }
+    }
+
+    /**
+     * Parse SSH path to get connection ID and remote path
+     */
+    parseSSHPath() {
+        let connectionId, remotePath;
+
+        if (this.sshContext) {
+            connectionId = this.sshContext.connectionId;
+            // Remove ssh:// prefix and host from path if present
+            if (this.videoPath.startsWith('ssh://')) {
+                const host = this.sshContext.connectionConfig?.host;
+                const sshPrefix = `ssh://${host}`;
+                remotePath = this.videoPath.startsWith(sshPrefix)
+                    ? this.videoPath.substring(sshPrefix.length)
+                    : this.videoPath.substring(6); // Remove 'ssh://'
+            } else {
+                remotePath = this.videoPath;
+            }
+        } else {
+            throw new Error('Cannot parse SSH path without SSH context');
+        }
+
+        return { connectionId, remotePath };
+    }
+
+    /**
      * Render loading state
      */
     renderLoading() {
         this.container.innerHTML = `
             <div class="video-loading">
                 <div class="video-loading-spinner"></div>
-                <p>Loading video...</p>
+                <p class="video-loading-message">Loading video...</p>
+                <div class="video-loading-progress" style="display: none;">
+                    <div class="video-loading-progress-bar" style="width: 0%"></div>
+                </div>
             </div>
         `;
+    }
+
+    /**
+     * Update loading message
+     * @param {string} message - Loading message
+     */
+    updateLoadingMessage(message) {
+        const loadingMessage = this.container.querySelector('.video-loading-message');
+        if (loadingMessage) {
+            loadingMessage.textContent = message;
+        }
+
+        // Show progress bar when downloading
+        const progressContainer = this.container.querySelector('.video-loading-progress');
+        if (progressContainer) {
+            progressContainer.style.display = 'block';
+        }
+    }
+
+    /**
+     * Update loading progress
+     * @param {Object} progress - Progress info
+     */
+    updateLoadingProgress(progress) {
+        const progressBar = this.container.querySelector('.video-loading-progress-bar');
+        if (progressBar && progress.percent) {
+            progressBar.style.width = `${progress.percent}%`;
+        }
     }
 
     /**

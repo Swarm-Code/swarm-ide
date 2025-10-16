@@ -95,6 +95,22 @@ class StatusBar {
         this.rightSection = document.createElement('div');
         this.rightSection.className = 'status-bar-right';
 
+        // Terminal button
+        const terminalBtn = document.createElement('button');
+        terminalBtn.className = 'status-bar-btn';
+        terminalBtn.title = 'Toggle Terminal (Ctrl+`)';
+        const terminalIcon = document.createElement('img');
+        terminalIcon.src = 'assets/icons/console.svg';
+        terminalIcon.alt = 'Terminal';
+        terminalIcon.className = 'status-bar-icon';
+        const terminalText = document.createElement('span');
+        terminalText.textContent = 'Terminal';
+        terminalBtn.appendChild(terminalIcon);
+        terminalBtn.appendChild(terminalText);
+        terminalBtn.addEventListener('click', () => {
+            eventBus.emit('terminal:toggle-panel');
+        });
+
         // Quick Open button
         const quickOpenBtn = document.createElement('button');
         quickOpenBtn.className = 'status-bar-btn';
@@ -143,6 +159,7 @@ class StatusBar {
             eventBus.emit('findreplace:show');
         });
 
+        this.rightSection.appendChild(terminalBtn);
         this.rightSection.appendChild(quickOpenBtn);
         this.rightSection.appendChild(searchBtn);
         this.rightSection.appendChild(replaceBtn);

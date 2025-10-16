@@ -53,9 +53,22 @@ class FileTypes {
             md: { icon: 'markdown', category: 'document', language: 'markdown' },
             markdown: { icon: 'markdown', category: 'document', language: 'markdown' },
             txt: { icon: 'document', category: 'document', language: 'plaintext' },
-            pdf: { icon: 'pdf', category: 'document', language: 'pdf' },
-            doc: { icon: 'word', category: 'document', language: 'document' },
-            docx: { icon: 'word', category: 'document', language: 'document' },
+            pdf: { icon: 'pdf', category: 'pdf', language: 'pdf' },
+
+            // Word
+            doc: { icon: 'word', category: 'office', language: 'document' },
+            docx: { icon: 'word', category: 'office', language: 'document' },
+            odt: { icon: 'document', category: 'office', language: 'document' },
+
+            // Excel
+            xls: { icon: 'excel', category: 'office', language: 'spreadsheet' },
+            xlsx: { icon: 'excel', category: 'office', language: 'spreadsheet' },
+            ods: { icon: 'document', category: 'office', language: 'spreadsheet' },
+
+            // PowerPoint
+            ppt: { icon: 'powerpoint', category: 'office', language: 'presentation' },
+            pptx: { icon: 'powerpoint', category: 'office', language: 'presentation' },
+            odp: { icon: 'document', category: 'office', language: 'presentation' },
 
             // Logs
             log: { icon: 'log', category: 'log', language: 'log' },
@@ -91,6 +104,17 @@ class FileTypes {
             mpeg: { icon: 'video', category: 'video', language: 'video' },
             '3gp': { icon: 'video', category: 'video', language: 'video' },
             ogv: { icon: 'video', category: 'video', language: 'video' },
+
+            // Audio
+            mp3: { icon: 'audio', category: 'audio', language: 'audio' },
+            wav: { icon: 'audio', category: 'audio', language: 'audio' },
+            ogg: { icon: 'audio', category: 'audio', language: 'audio' },
+            flac: { icon: 'audio', category: 'audio', language: 'audio' },
+            aac: { icon: 'audio', category: 'audio', language: 'audio' },
+            m4a: { icon: 'audio', category: 'audio', language: 'audio' },
+            wma: { icon: 'audio', category: 'audio', language: 'audio' },
+            opus: { icon: 'audio', category: 'audio', language: 'audio' },
+            oga: { icon: 'audio', category: 'audio', language: 'audio' },
 
             // Config
             gitignore: { icon: 'git', category: 'config', language: 'plaintext' },
@@ -230,6 +254,34 @@ class FileTypes {
      */
     isVideo(filename) {
         return this.getCategory(filename) === 'video';
+    }
+
+    /**
+     * Check if file is an audio file
+     * @param {string} filename - File name
+     * @returns {boolean}
+     */
+    isAudio(filename) {
+        return this.getCategory(filename) === 'audio';
+    }
+
+    /**
+     * Check if file is a PDF
+     * @param {string} filename - File name
+     * @returns {boolean}
+     */
+    isPDF(filename) {
+        const ext = this.getExtension(filename);
+        return ext === 'pdf';
+    }
+
+    /**
+     * Check if file is an Office document (Word, Excel, PowerPoint, etc.)
+     * @param {string} filename - File name
+     * @returns {boolean}
+     */
+    isOfficeDocument(filename) {
+        return this.getCategory(filename) === 'office';
     }
 
     /**

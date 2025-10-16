@@ -4,7 +4,7 @@
   "description": "A simple Electron-based IDE for viewing files",
   "main": "main.js",
   "scripts": {
-    "bundle": "browserify src/renderer.js -o dist/bundle.js --exclude keytar --exclude ssh2 --exclude electron",
+    "bundle": "browserify src/renderer.js -o dist/bundle.js --exclude keytar --exclude ssh2 --exclude electron --exclude @electron/remote",
     "start": "npm run bundle && electron .",
     "dev": "npm run bundle && electron .",
     "build": "electron-builder"
@@ -27,6 +27,7 @@
     "mammoth": "^1.11.0",
     "marked": "^16.4.0",
     "mermaid": "^11.12.0",
+    "node-pty": "^1.1.0-beta37",
     "node-ssh": "^13.2.1",
     "pdfjs-dist": "^5.4.296",
     "sqlite3": "^5.1.7",
@@ -42,6 +43,7 @@
     "xterm-addon-web-links": "^0.9.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.1",
     "browserify": "^17.0.0",
     "electron": "^28.3.3",
     "react-devtools": "^7.0.0"

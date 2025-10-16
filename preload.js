@@ -619,6 +619,18 @@ const electronAPI = {
      */
     sshGetHealthStatus: () => {
         return ipcRenderer.invoke('ssh-get-health-status');
+    },
+
+    // ========================================
+    // SSH Media Cache API (for viewing media files over SSH)
+    // ========================================
+
+    /**
+     * Initialize SSH Media Cache
+     * @returns {Promise<Object>} Result with cache directory path
+     */
+    invoke: (channel, ...args) => {
+        return ipcRenderer.invoke(channel, ...args);
     }
 };
 

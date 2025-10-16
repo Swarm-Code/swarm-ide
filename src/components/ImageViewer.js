@@ -6,17 +6,20 @@
  * - Pan/drag functionality
  * - Fit to screen / actual size modes
  * - Image metadata display
+ * - SSH file support with caching
  *
  * Usage:
- *   const viewer = new ImageViewer(container, imagePath);
+ *   const viewer = new ImageViewer(container, imagePath, sshContext);
  */
 
 const eventBus = require('../modules/EventBus');
+const sshMediaCache = require('../services/SSHMediaCache');
 
 class ImageViewer {
-    constructor(container, imagePath) {
+    constructor(container, imagePath, sshContext = null) {
         this.container = container;
         this.imagePath = imagePath;
+        this.sshContext = sshContext;
         this.scale = 1;
         this.minScale = 0.1;
         this.maxScale = 10;
@@ -28,6 +31,8 @@ class ImageViewer {
         this.imageElement = null;
         this.naturalWidth = 0;
         this.naturalHeight = 0;
+        this.localImagePath = null;
+        this.isSSH = false;
 
         this.init();
     }
@@ -38,6 +43,18 @@ class ImageViewer {
     async init() {
         try {
             console.log('[ImageViewer] Initializing for:', this.imagePath);
+
+            // Check if this is an SSH file
+            this.isSSH = this.imagePath.startsWith('ssh://') || (this.sshContext && this.sshContext.isSSH);
+
+            if (this.isSSH) {
+                // Download SSH file to cache
+                await this.downloadSSHImage();
+            } else {
+                // Local file - use directly
+                this.localImagePath = this.imagePath;
+            }
+
             this.render();
             this.setupEventListeners();
         } catch (error) {
@@ -47,11 +64,102 @@ class ImageViewer {
     }
 
     /**
+     * Download SSH image to cache
+     */
+    async downloadSSHImage() {
+        try {
+            // Show loading state
+            this.renderLoading();
+
+            if (!this.sshContext) {
+                throw new Error('SSH context required for SSH file');
+            }
+
+            const { connectionId, remotePath } = this.parseSSHPath();
+
+            console.log('[ImageViewer] Downloading SSH image:', { connectionId, remotePath });
+
+            // Initialize cache if needed
+            if (!sshMediaCache.isInitialized()) {
+                await sshMediaCache.initialize(window.electronAPI);
+            }
+
+            // Download file to cache
+            this.localImagePath = await sshMediaCache.getCachedFile(
+                connectionId,
+                remotePath,
+                (progress) => {
+                    // Update progress
+                    this.updateLoadingProgress(progress);
+                }
+            );
+
+            console.log('[ImageViewer] Image cached at:', this.localImagePath);
+
+        } catch (error) {
+            console.error('[ImageViewer] Error downloading SSH image:', error);
+            throw new Error(`Failed to download image: ${error.message}`);
+        }
+    }
+
+    /**
+     * Parse SSH path to get connection ID and remote path
+     */
+    parseSSHPath() {
+        let connectionId, remotePath;
+
+        if (this.sshContext) {
+            connectionId = this.sshContext.connectionId;
+            // Remove ssh:// prefix and host from path if present
+            if (this.imagePath.startsWith('ssh://')) {
+                const host = this.sshContext.connectionConfig?.host;
+                const sshPrefix = `ssh://${host}`;
+                remotePath = this.imagePath.startsWith(sshPrefix)
+                    ? this.imagePath.substring(sshPrefix.length)
+                    : this.imagePath.substring(6); // Remove 'ssh://'
+            } else {
+                remotePath = this.imagePath;
+            }
+        } else {
+            throw new Error('Cannot parse SSH path without SSH context');
+        }
+
+        return { connectionId, remotePath };
+    }
+
+    /**
+     * Render loading state
+     */
+    renderLoading() {
+        this.container.innerHTML = `
+            <div class="image-loading">
+                <div class="image-loading-spinner"></div>
+                <h3>Loading Image...</h3>
+                <p>Downloading from SSH server</p>
+                <div class="image-loading-progress">
+                    <div class="image-loading-progress-bar" style="width: 0%"></div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Update loading progress
+     * @param {Object} progress - Progress info
+     */
+    updateLoadingProgress(progress) {
+        const progressBar = this.container.querySelector('.image-loading-progress-bar');
+        if (progressBar && progress.percent) {
+            progressBar.style.width = `${progress.percent}%`;
+        }
+    }
+
+    /**
      * Render the image viewer
      */
     render() {
-        // Use file:// protocol for local files
-        const imageSrc = `file://${this.imagePath}`;
+        // Use file:// protocol for local files (including cached SSH files)
+        const imageSrc = `file://${this.localImagePath}`;
 
         this.container.innerHTML = `
             <div class="image-viewer">

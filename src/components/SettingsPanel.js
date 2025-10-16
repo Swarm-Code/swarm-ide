@@ -19,6 +19,9 @@ class SettingsPanel {
      * Load settings from localStorage
      */
     loadSettings() {
+        // Load logging config defaults
+        const loggingConfig = require('../config/logging.config.js');
+
         const defaults = {
             lspEnabled: true,
             inlineCompletionEnabled: true,
@@ -27,12 +30,12 @@ class SettingsPanel {
             hoverDelay: 200,
             markdownPreviewEnabled: true,
             breadcrumbEnabled: true,
-            // Logging settings
-            loggingEnabled: false,  // Disabled by default
-            loggingLevel: 'DEBUG',
-            loggingMode: 'blacklist', // 'whitelist' or 'blacklist'
-            loggingPreset: 'default', // 'default', 'quiet', 'verbose', 'gitOnly', etc.
-            loggingFunctionalities: [] // Whitelist/blacklist array
+            // Logging settings - read from config file
+            loggingEnabled: loggingConfig.enabled,
+            loggingLevel: loggingConfig.logLevel,
+            loggingMode: loggingConfig.mode,
+            loggingPreset: 'default',
+            loggingFunctionalities: loggingConfig.disabledFunctionalities || []
         };
 
         try {
@@ -294,6 +297,14 @@ class SettingsPanel {
                                 <label><input type="checkbox" class="log-functionality" data-func="sshFileExplorer"> sshFileExplorer</label>
                                 <label><input type="checkbox" class="log-functionality" data-func="sshListDir"> sshListDir</label>
                                 <label><input type="checkbox" class="log-functionality" data-func="sshProgress"> sshProgress</label>
+                            </div>
+
+                            <h5>Terminal Operations</h5>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 10px;">
+                                <label><input type="checkbox" class="log-functionality" data-func="terminal"> terminal</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="terminalPanel"> terminalPanel</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="terminalService"> terminalService</label>
+                                <label><input type="checkbox" class="log-functionality" data-func="terminalPTY"> terminalPTY</label>
                             </div>
 
                             <div class="setting-item">

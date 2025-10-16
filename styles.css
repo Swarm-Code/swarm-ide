@@ -6566,3 +6566,111 @@ body {
         padding: 16px 20px;
     }
 }
+
+/* ========================================
+   Terminal Styles
+   ======================================== */
+
+/* Terminal container - wraps xterm.js instance */
+.terminal-container {
+    width: 100%;
+    height: 100%;
+    background-color: #1e1e1e;
+    overflow: hidden;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* xterm.js container */
+.terminal-container .xterm {
+    height: 100%;
+    padding: 8px;
+}
+
+/* xterm.js viewport */
+.terminal-container .xterm-viewport {
+    background-color: #1e1e1e !important;
+}
+
+/* xterm.js screen */
+.terminal-container .xterm-screen {
+    background-color: #1e1e1e !important;
+}
+
+/* Scrollbar for terminal */
+.terminal-container .xterm-viewport::-webkit-scrollbar {
+    width: 14px;
+}
+
+.terminal-container .xterm-viewport::-webkit-scrollbar-track {
+    background-color: #1e1e1e;
+}
+
+.terminal-container .xterm-viewport::-webkit-scrollbar-thumb {
+    background-color: #424242;
+    border-radius: 7px;
+    border: 3px solid #1e1e1e;
+}
+
+.terminal-container .xterm-viewport::-webkit-scrollbar-thumb:hover {
+    background-color: #4e4e4e;
+}
+
+/* Terminal selection */
+.terminal-container .xterm-selection div {
+    background-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Terminal cursor */
+.terminal-container .xterm-cursor-layer .xterm-cursor {
+    background-color: #ffffff;
+}
+
+/* Terminal links */
+.terminal-container .xterm-link {
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.terminal-container .xterm-link:hover {
+    text-decoration: underline;
+    color: #3794ff;
+}
+
+/* Ensure terminal fits properly in pane */
+.pane-content .terminal-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+
+/* FIX: Hide xterm's character measurement element without breaking measurements
+   Using visibility:hidden instead of display:none so xterm.js can still measure it */
+.xterm-char-measure-element {
+    visibility: hidden !important;
+    position: absolute !important;
+    left: -9999px !important;
+    top: -9999px !important;
+    z-index: -9999 !important;
+    pointer-events: none !important;
+    opacity: 0 !important;
+}
+
+/* Hide xterm's helper textarea (used for input handling and accessibility)
+   Position it far off-screen and make it invisible while keeping it functional */
+.xterm-helper-textarea {
+    position: absolute !important;
+    left: -9999px !important;
+    top: -9999px !important;
+    width: 0 !important;
+    height: 0 !important;
+    opacity: 0 !important;
+    z-index: -9999 !important;
+    pointer-events: none !important;
+}

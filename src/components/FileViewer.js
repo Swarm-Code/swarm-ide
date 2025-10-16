@@ -16,6 +16,9 @@ const pathUtils = require('../utils/PathUtils');
 const SQLiteViewer = require('./SQLiteViewer');
 const VideoPlayer = require('./VideoPlayer');
 const ImageViewer = require('./ImageViewer');
+const AudioPlayer = require('./AudioPlayer');
+const PDFViewer = require('./PDFViewer');
+const DocumentViewer = require('./DocumentViewer');
 const TextEditor = require('./TextEditor');
 const MarkdownViewer = require('./MarkdownViewer');
 const settingsPanel = require('./SettingsPanel');
@@ -33,6 +36,9 @@ class FileViewer {
         this.sqliteViewer = null; // To track current SQLite viewer instance
         this.videoPlayer = null; // To track current video player instance
         this.imageViewer = null; // To track current image viewer instance
+        this.audioPlayer = null; // To track current audio player instance
+        this.pdfViewer = null; // To track current PDF viewer instance
+        this.documentViewer = null; // To track current document viewer instance
         this.textEditor = null; // To track current text editor instance
         this.markdownViewer = null; // To track current markdown viewer instance
         this.breadcrumb = null; // Breadcrumb navigation
@@ -226,6 +232,24 @@ class FileViewer {
             // Check if file is a video
             if (fileTypes.isVideo(fileName)) {
                 this.renderVideo(fileName, filePath);
+                return;
+            }
+
+            // Check if file is audio
+            if (fileTypes.isAudio(fileName)) {
+                this.renderAudio(fileName, filePath);
+                return;
+            }
+
+            // Check if file is a PDF
+            if (fileTypes.isPDF(fileName)) {
+                this.renderPDF(fileName, filePath);
+                return;
+            }
+
+            // Check if file is an Office document
+            if (fileTypes.isOfficeDocument(fileName)) {
+                this.renderDocument(fileName, filePath);
                 return;
             }
 
@@ -504,8 +528,18 @@ class FileViewer {
         stateManager.set('openFile', filePath);
         this.updateHeader(filePath);
 
-        // Create new image viewer
-        this.imageViewer = new ImageViewer(this.viewerElement, filePath);
+        // Get SSH context if file is from SSH
+        let sshContext = null;
+        if (filePath.startsWith('ssh://')) {
+            const explorer = require('../modules/UIManager').getComponent('fileExplorer');
+            if (explorer && explorer.sshContext) {
+                sshContext = explorer.sshContext;
+                logger.debug('fileOpen', 'Using SSH context for image:', sshContext);
+            }
+        }
+
+        // Create new image viewer with SSH context
+        this.imageViewer = new ImageViewer(this.viewerElement, filePath, sshContext);
 
         eventBus.emit('file:opened', { path: filePath, type: 'image' });
     }
@@ -522,10 +556,104 @@ class FileViewer {
         stateManager.set('openFile', filePath);
         this.updateHeader(filePath);
 
-        // Create new video player
-        this.videoPlayer = new VideoPlayer(this.viewerElement, filePath, window.electronAPI);
+        // Get SSH context if file is from SSH
+        let sshContext = null;
+        if (filePath.startsWith('ssh://')) {
+            const explorer = require('../modules/UIManager').getComponent('fileExplorer');
+            if (explorer && explorer.sshContext) {
+                sshContext = explorer.sshContext;
+                logger.debug('fileOpen', 'Using SSH context for video:', sshContext);
+            }
+        }
+
+        // Create new video player with SSH context
+        this.videoPlayer = new VideoPlayer(this.viewerElement, filePath, window.electronAPI, sshContext);
 
         eventBus.emit('file:opened', { path: filePath, type: 'video' });
+    }
+
+    /**
+     * Render audio player
+     * @param {string} fileName - File name
+     * @param {string} filePath - Full file path
+     */
+    renderAudio(fileName, filePath) {
+        logger.debug('fileOpen', 'Rendering audio:', filePath);
+
+        this.currentFile = filePath;
+        stateManager.set('openFile', filePath);
+        this.updateHeader(filePath);
+
+        // Get SSH context if file is from SSH
+        let sshContext = null;
+        if (filePath.startsWith('ssh://')) {
+            const explorer = require('../modules/UIManager').getComponent('fileExplorer');
+            if (explorer && explorer.sshContext) {
+                sshContext = explorer.sshContext;
+                logger.debug('fileOpen', 'Using SSH context for audio:', sshContext);
+            }
+        }
+
+        // Create new audio player with SSH context
+        this.audioPlayer = new AudioPlayer(this.viewerElement, filePath, sshContext);
+
+        eventBus.emit('file:opened', { path: filePath, type: 'audio' });
+    }
+
+    /**
+     * Render PDF viewer
+     * @param {string} fileName - File name
+     * @param {string} filePath - Full file path
+     */
+    renderPDF(fileName, filePath) {
+        logger.debug('fileOpen', 'Rendering PDF:', filePath);
+
+        this.currentFile = filePath;
+        stateManager.set('openFile', filePath);
+        this.updateHeader(filePath);
+
+        // Get SSH context if file is from SSH
+        let sshContext = null;
+        if (filePath.startsWith('ssh://')) {
+            const explorer = require('../modules/UIManager').getComponent('fileExplorer');
+            if (explorer && explorer.sshContext) {
+                sshContext = explorer.sshContext;
+                logger.debug('fileOpen', 'Using SSH context for PDF:', sshContext);
+            }
+        }
+
+        // Create new PDF viewer with SSH context
+        this.pdfViewer = new PDFViewer(this.viewerElement, filePath, sshContext);
+
+        eventBus.emit('file:opened', { path: filePath, type: 'pdf' });
+    }
+
+    /**
+     * Render document viewer
+     * @param {string} fileName - File name
+     * @param {string} filePath - Full file path
+     */
+    renderDocument(fileName, filePath) {
+        logger.debug('fileOpen', 'Rendering document:', filePath);
+
+        this.currentFile = filePath;
+        stateManager.set('openFile', filePath);
+        this.updateHeader(filePath);
+
+        // Get SSH context if file is from SSH
+        let sshContext = null;
+        if (filePath.startsWith('ssh://')) {
+            const explorer = require('../modules/UIManager').getComponent('fileExplorer');
+            if (explorer && explorer.sshContext) {
+                sshContext = explorer.sshContext;
+                logger.debug('fileOpen', 'Using SSH context for document:', sshContext);
+            }
+        }
+
+        // Create new document viewer with SSH context
+        this.documentViewer = new DocumentViewer(this.viewerElement, filePath, sshContext);
+
+        eventBus.emit('file:opened', { path: filePath, type: 'document' });
     }
 
     /**
@@ -581,6 +709,21 @@ class FileViewer {
         if (this.imageViewer) {
             this.imageViewer.destroy();
             this.imageViewer = null;
+        }
+
+        if (this.audioPlayer) {
+            this.audioPlayer.destroy();
+            this.audioPlayer = null;
+        }
+
+        if (this.pdfViewer) {
+            this.pdfViewer.destroy();
+            this.pdfViewer = null;
+        }
+
+        if (this.documentViewer) {
+            this.documentViewer.destroy();
+            this.documentViewer = null;
         }
 
         if (this.textEditor) {

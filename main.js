@@ -7,6 +7,14 @@ const languageServerManager = require('./src/services/LanguageServerManager');
 const crashLogger = require('./src/services/CrashLogger');
 const FileWatcherService = require('./src/services/FileWatcherService');
 
+// ========================================
+// MEMORY OPTIMIZATION: Disable GPU acceleration
+// This saves ~400-500MB of memory by preventing duplicate GPU processes
+// Trade-off: Slightly slower rendering, but acceptable for an IDE
+// ========================================
+app.disableHardwareAcceleration();
+console.log('[MAIN] GPU acceleration disabled for memory optimization');
+
 let mainWindow;
 const browserViews = new Map(); // tabId -> BrowserView
 const fileWatcher = new FileWatcherService(); // Global file watcher instance
@@ -311,6 +319,31 @@ ipcMain.handle('reveal-in-explorer', async (event, itemPath) => {
   try {
     const { shell } = require('electron');
     shell.showItemInFolder(itemPath);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Open path with default system application
+ipcMain.handle('shell-open-path', async (event, filePath) => {
+  try {
+    const { shell } = require('electron');
+    const error = await shell.openPath(filePath);
+    if (error) {
+      return { success: false, error };
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Show item in folder
+ipcMain.handle('shell-show-item-in-folder', async (event, filePath) => {
+  try {
+    const { shell } = require('electron');
+    shell.showItemInFolder(filePath);
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -964,6 +997,9 @@ const { spawn } = require('child_process');
 // SSH Connection Manager
 const sshConnectionManager = require('./src/services/SSHConnectionManager');
 
+// Terminal Service
+const terminalService = require('./src/services/TerminalService');
+
 /**
  * Execute a git command in the main process
  * @param {string} gitPath - Git binary path
@@ -1428,6 +1464,232 @@ ipcMain.handle('ssh-get-health-status', async () => {
   }
 });
 
+// ========================================
+// SSH Media Cache IPC Handlers
+// ========================================
+
+// SSH Media Cache directory and metadata storage
+let sshMediaCacheDir = null;
+let sshMediaCacheMetadata = null;
+
+// Initialize SSH Media Cache
+ipcMain.handle('ssh-media-cache-init', async () => {
+  try {
+    // Get cache directory path
+    sshMediaCacheDir = path.join(app.getPath('temp'), 'swarm-ssh-cache');
+
+    // Ensure cache directory exists
+    await fs.mkdir(sshMediaCacheDir, { recursive: true });
+
+    console.log('[Main] SSH Media Cache initialized:', sshMediaCacheDir);
+    return { success: true, cacheDir: sshMediaCacheDir };
+  } catch (error) {
+    console.error('[Main] Error initializing SSH media cache:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get local path for cached file
+ipcMain.handle('ssh-media-cache-get-local-path', async (event, connectionId, fileName) => {
+  try {
+    if (!sshMediaCacheDir) {
+      throw new Error('SSH Media Cache not initialized');
+    }
+
+    // Create unique filename with connection ID prefix
+    const timestamp = Date.now();
+    const uniqueFileName = `${connectionId}_${timestamp}_${fileName}`;
+    const localPath = path.join(sshMediaCacheDir, uniqueFileName);
+
+    return { success: true, path: localPath };
+  } catch (error) {
+    console.error('[Main] Error getting local path for cache:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Check if cached file exists
+ipcMain.handle('ssh-media-cache-file-exists', async (event, filePath) => {
+  try {
+    await fs.access(filePath);
+    return { success: true, exists: true };
+  } catch (error) {
+    return { success: true, exists: false };
+  }
+});
+
+// Delete cached file
+ipcMain.handle('ssh-media-cache-delete-file', async (event, filePath) => {
+  try {
+    await fs.unlink(filePath);
+    console.log('[Main] Deleted cached file:', filePath);
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error deleting cached file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Clear all cache
+ipcMain.handle('ssh-media-cache-clear-all', async () => {
+  try {
+    if (!sshMediaCacheDir) {
+      throw new Error('SSH Media Cache not initialized');
+    }
+
+    // Remove all files in cache directory
+    const files = await fs.readdir(sshMediaCacheDir);
+    for (const file of files) {
+      const filePath = path.join(sshMediaCacheDir, file);
+      await fs.unlink(filePath);
+    }
+
+    console.log('[Main] All SSH media cache cleared');
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error clearing SSH media cache:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Load cache metadata
+ipcMain.handle('ssh-media-cache-load-metadata', async () => {
+  try {
+    if (!sshMediaCacheDir) {
+      return { success: true, metadata: null };
+    }
+
+    const metadataPath = path.join(sshMediaCacheDir, 'cache-metadata.json');
+
+    try {
+      const data = await fs.readFile(metadataPath, 'utf8');
+      sshMediaCacheMetadata = JSON.parse(data);
+      console.log('[Main] Loaded SSH media cache metadata');
+      return { success: true, metadata: sshMediaCacheMetadata };
+    } catch (error) {
+      // Metadata file doesn't exist yet, that's okay
+      return { success: true, metadata: null };
+    }
+  } catch (error) {
+    console.error('[Main] Error loading SSH media cache metadata:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Save cache metadata
+ipcMain.handle('ssh-media-cache-save-metadata', async (event, metadata) => {
+  try {
+    if (!sshMediaCacheDir) {
+      throw new Error('SSH Media Cache not initialized');
+    }
+
+    const metadataPath = path.join(sshMediaCacheDir, 'cache-metadata.json');
+    await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
+    sshMediaCacheMetadata = metadata;
+
+    console.log('[Main] Saved SSH media cache metadata');
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error saving SSH media cache metadata:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// ========================================
+// Terminal IPC Handlers
+// ========================================
+
+/**
+ * Create a new terminal
+ */
+ipcMain.handle('terminal-create', async (event, options = {}) => {
+  try {
+    console.log('[Main] Creating terminal with options:', options);
+
+    const result = terminalService.createTerminal({
+      ...options,
+      onData: (terminalId, data) => {
+        // Send terminal output to renderer
+        mainWindow.webContents.send('terminal-data', { terminalId, data });
+      },
+      onExit: (terminalId, exitCode, signal) => {
+        // Send exit event to renderer
+        mainWindow.webContents.send('terminal-exit', { terminalId, exitCode, signal });
+      }
+    });
+
+    return result;
+  } catch (error) {
+    console.error('[Main] Error creating terminal:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Write data to terminal
+ */
+ipcMain.handle('terminal-write', async (event, terminalId, data) => {
+  try {
+    const result = terminalService.writeToTerminal(terminalId, data);
+    return result;
+  } catch (error) {
+    console.error('[Main] Error writing to terminal:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Resize terminal
+ */
+ipcMain.handle('terminal-resize', async (event, terminalId, cols, rows) => {
+  try {
+    const result = terminalService.resizeTerminal(terminalId, cols, rows);
+    return result;
+  } catch (error) {
+    console.error('[Main] Error resizing terminal:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Close terminal
+ */
+ipcMain.handle('terminal-close', async (event, terminalId) => {
+  try {
+    const result = terminalService.closeTerminal(terminalId);
+    return result;
+  } catch (error) {
+    console.error('[Main] Error closing terminal:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Get terminal info
+ */
+ipcMain.handle('terminal-get-info', async (event, terminalId) => {
+  try {
+    const result = terminalService.getTerminalInfo(terminalId);
+    return result;
+  } catch (error) {
+    console.error('[Main] Error getting terminal info:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Get all terminals
+ */
+ipcMain.handle('terminal-get-all', async () => {
+  try {
+    const terminals = terminalService.getAllTerminals();
+    return { success: true, terminals };
+  } catch (error) {
+    console.error('[Main] Error getting all terminals:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 app.whenReady().then(async () => {
   // Initialize crash logger
   await crashLogger.init();
@@ -1451,6 +1713,7 @@ app.on('window-all-closed', () => {
 app.on('quit', async () => {
   await languageServerManager.shutdownAll();
   await sshConnectionManager.shutdown();
+  terminalService.shutdown();
 });
 
 // Dialog IPC handlers for SSH Import/Export

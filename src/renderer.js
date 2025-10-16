@@ -85,6 +85,7 @@ const sshService = require('./services/SSHService');
 const PaneManager = require('./services/PaneManager');
 const workspaceManager = require('./services/WorkspaceManager');
 const browserProfileManager = require('./services/BrowserProfileManager');
+const TerminalPanel = require('./components/terminal/TerminalPanel');
 
 // Import utilities
 const performanceMonitor = require('./utils/PerformanceMonitor');
@@ -127,6 +128,7 @@ class Application {
     constructor() {
         this.initialized = false;
         this.paneManager = null;
+        this.terminalPanel = null;
         this.workspaceManager = workspaceManager;
         this.browserProfileManager = browserProfileManager;
     }
@@ -379,6 +381,11 @@ class Application {
         const rootPane = this.paneManager.init();
         logger.info('appInit', '✓ PaneManager initialized with root pane:', rootPane.id);
 
+        // Initialize TerminalPanel (VS Code-style bottom panel)
+        this.terminalPanel = new TerminalPanel(appContainer);
+        this.terminalPanel.init();
+        logger.info('appInit', '✓ TerminalPanel initialized');
+
         // Show empty state in root pane
         const emptyState = document.createElement('div');
         emptyState.style.cssText = 'display: flex; align-items: center; justify-content: center; height: 100%; width: 100%; color: #888;';
@@ -471,6 +478,13 @@ class Application {
                 await this.openBrowserInPane();
             });
             logger.debug('appInit', '✓ browser:toggle handler set');
+
+            // Handle terminal panel toggle (from status bar button)
+            logger.debug('appInit', 'Setting up terminal:toggle-panel handler...');
+            eventBus.on('terminal:toggle-panel', () => {
+                this.terminalPanel.toggle();
+            });
+            logger.debug('appInit', '✓ terminal:toggle-panel handler set');
 
             // Handle request to open file in specific pane
             eventBus.on('pane:request-file-open', async (data) => {
@@ -582,6 +596,12 @@ class Application {
                 if (ctrlOrCmd && e.shiftKey && e.key === 'H') {
                     e.preventDefault();
                     findReplacePanel.toggle();
+                }
+
+                // Ctrl+` / Cmd+` - Toggle Terminal Panel
+                if (ctrlOrCmd && e.key === '`') {
+                    e.preventDefault();
+                    this.terminalPanel.toggle();
                 }
             });
 
@@ -1000,6 +1020,17 @@ class Application {
 
                 // Hide SSH panel if visible
                 eventBus.emit('ssh:hide-panel');
+            });
+        }
+
+        const iconTerminal = document.getElementById('icon-terminal');
+        if (iconTerminal) {
+            iconTerminal.addEventListener('click', () => {
+                logger.debug('appInit', 'Terminal icon clicked');
+
+                // Toggle terminal panel visibility
+                this.terminalPanel.toggle();
+                logger.debug('appInit', '✓ Terminal panel toggled');
             });
         }
     }
