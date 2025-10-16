@@ -28,6 +28,14 @@ class FileExplorer {
         this.contextMenu = null; // Context menu element
         this.clipboard = { items: [], operation: null }; // Clipboard for copy/cut/paste
 
+        // SSH connection context
+        this.sshContext = {
+            isSSH: false,
+            connectionId: null,
+            connectionConfig: null,
+            remotePath: '/' // Current remote path for SSH
+        };
+
         // File change polling for external changes (git operations, etc.)
         this.changePolling = {
             enabled: false,
@@ -43,19 +51,49 @@ class FileExplorer {
      * Initialize the component
      */
     init() {
+        console.log('[FileExplorer] ========================================');
+        console.log('[FileExplorer] INIT CALLED - FileExplorer is being initialized');
+        console.log('[FileExplorer] ========================================');
+        logger.info('sshFileExplorer', '🔧 FileExplorer init() CALLED');
         this.setupEventListeners();
         this.renderEmpty();
+        console.log('[FileExplorer] ✅ Init complete, event listeners set up');
     }
 
     /**
      * Setup event listeners
      */
     setupEventListeners() {
+        console.log('[FileExplorer] setupEventListeners() CALLED');
+        logger.info('sshFileExplorer', '🔧 FileExplorer setupEventListeners CALLED');
+
         // Listen for folder open requests
+        console.log('[FileExplorer] Registering listener for explorer:open-folder');
         eventBus.on('explorer:open-folder', async (data) => {
+            console.log('[FileExplorer] RECEIVED explorer:open-folder event!', data);
             logger.debug('fileSystem', 'Received explorer:open-folder event with path:', data.path);
-            await this.openDirectory(data.path);
+            await this.openDirectory(data.path, data);
         });
+
+        // Listen for directory opened events (including SSH connections)
+        console.log('[FileExplorer] 📡 Registering listener for explorer:directory-opened');
+        logger.info('sshFileExplorer', '📡 Registering listener for explorer:directory-opened');
+        eventBus.on('explorer:directory-opened', async (data) => {
+            console.log('[FileExplorer] 🔔 RECEIVED explorer:directory-opened event!');
+            console.log('[FileExplorer] Event data path:', data.path);
+            console.log('[FileExplorer] Event data type:', data.type);
+            console.log('[FileExplorer] Event data connectionId:', data.connectionId);
+            console.log('[FileExplorer] Event data connectionConfig:', data.connectionConfig);
+            console.log('[FileExplorer] Full event data:', JSON.stringify(data, null, 2));
+            logger.info('sshFileExplorer', '🔔 FileExplorer RECEIVED explorer:directory-opened event!');
+            logger.debug('sshFileExplorer', 'Event data:', data);
+
+            console.log('[FileExplorer] About to call openDirectory with path:', data.path);
+            await this.openDirectory(data.path, data);
+            console.log('[FileExplorer] openDirectory call completed');
+        });
+        console.log('[FileExplorer] ✅ Event listener for explorer:directory-opened registered');
+        logger.info('sshFileExplorer', '✅ Event listener for explorer:directory-opened registered');
 
         // Listen for refresh requests
         eventBus.on('explorer:refresh', () => {
@@ -135,10 +173,56 @@ class FileExplorer {
     /**
      * Open a directory
      * @param {string} dirPath - Directory path
+     * @param {Object} options - Additional options (e.g., SSH context)
      */
-    async openDirectory(dirPath) {
+    async openDirectory(dirPath, options = {}) {
         try {
-            logger.debug('fileSystem', 'Opening directory:', dirPath);
+            console.log('[FileExplorer] === openDirectory CALLED ===');
+            console.log('[FileExplorer] dirPath:', dirPath);
+            console.log('[FileExplorer] options:', options);
+            console.log('[FileExplorer] options.connectionId:', options.connectionId);
+            console.log('[FileExplorer] options.connectionConfig:', options.connectionConfig);
+            console.log('[FileExplorer] options.defaultPath:', options.defaultPath);
+            logger.debug('sshFileExplorer', '=== openDirectory CALLED ===');
+            logger.debug('sshFileExplorer', 'dirPath:', dirPath);
+            logger.debug('sshFileExplorer', 'options:', JSON.stringify(options, null, 2));
+
+            // Check if this is an SSH path
+            if (dirPath && dirPath.startsWith('ssh://')) {
+                console.log('[FileExplorer] ✅ SSH PATH DETECTED!');
+                logger.info('sshFileExplorer', '✅ SSH PATH DETECTED:', dirPath);
+                logger.debug('sshFileExplorer', 'Setting up SSH context with options:', options);
+
+                this.sshContext.isSSH = true;
+                this.sshContext.connectionId = options.connectionId;
+                this.sshContext.connectionConfig = options.connectionConfig;
+                // Get default path from connectionConfig or fallback to root
+                // Handle empty strings properly
+                const configPath = options.connectionConfig && options.connectionConfig.defaultPath;
+                const optPath = options.defaultPath;
+                this.sshContext.remotePath = (configPath && configPath !== '') ? configPath : (optPath && optPath !== '') ? optPath : '/';
+
+                console.log('[FileExplorer] SSH context after setup:');
+                console.log('[FileExplorer]   connectionId:', this.sshContext.connectionId);
+                console.log('[FileExplorer]   connectionConfig:', this.sshContext.connectionConfig);
+                console.log('[FileExplorer]   remotePath:', this.sshContext.remotePath);
+
+                logger.debug('sshFileExplorer', 'SSH context configured:', {
+                    isSSH: this.sshContext.isSSH,
+                    connectionId: this.sshContext.connectionId,
+                    host: this.sshContext.connectionConfig?.host,
+                    remotePath: this.sshContext.remotePath
+                });
+
+                // Open SSH remote directory
+                console.log('[FileExplorer] About to call openSSHDirectory with remotePath:', this.sshContext.remotePath);
+                logger.info('sshFileExplorer', 'Calling openSSHDirectory with path:', this.sshContext.remotePath);
+                return await this.openSSHDirectory(this.sshContext.remotePath);
+            }
+
+            // Regular local directory handling
+            logger.debug('sshFileExplorer', 'Local path detected, using regular file system');
+            this.sshContext.isSSH = false;
             this.currentPath = dirPath;
             stateManager.set('currentDirectory', dirPath);
 
@@ -162,13 +246,107 @@ class FileExplorer {
             this.stopChangePolling(); // Stop any existing polling
             this.startChangePolling();
 
-            // Add to recent folders
-            if (this.config) {
+            // Add to recent folders (only for local paths, not SSH)
+            if (this.config && !dirPath.startsWith('ssh://')) {
                 this.config.addRecentFolder(dirPath);
             }
         } catch (error) {
+            console.error('[FileExplorer] ERROR in openDirectory:', error);
+            console.error('[FileExplorer] Error stack:', error.stack);
             logger.error('fileSystem', 'Error opening directory:', error);
-            this.renderError('Failed to open directory');
+            logger.error('fileSystem', 'Error stack:', error.stack);
+            this.renderError(`Failed to open directory: ${error.message}`);
+        }
+    }
+
+    /**
+     * Open SSH remote directory
+     * @param {string} remotePath - Remote directory path
+     */
+    async openSSHDirectory(remotePath) {
+        try {
+            logger.info('sshListDir', '=== openSSHDirectory CALLED ===');
+            logger.debug('sshListDir', 'remotePath:', remotePath);
+            logger.debug('sshListDir', 'sshContext:', {
+                isSSH: this.sshContext.isSSH,
+                connectionId: this.sshContext.connectionId,
+                host: this.sshContext.connectionConfig?.host,
+                currentRemotePath: this.sshContext.remotePath
+            });
+
+            if (!this.sshContext.connectionId) {
+                logger.error('sshListDir', '❌ No SSH connection ID available!');
+                throw new Error('No SSH connection ID available');
+            }
+
+            logger.debug('sshListDir', '✅ Connection ID found:', this.sshContext.connectionId);
+
+            this.sshContext.remotePath = remotePath;
+            this.currentPath = `ssh://${this.sshContext.connectionConfig?.host || 'remote'}${remotePath}`;
+
+            logger.debug('sshListDir', 'Updated paths:', {
+                currentPath: this.currentPath,
+                remotePath: this.sshContext.remotePath
+            });
+
+            // Use IPC to list remote directory
+            logger.info('sshListDir', '📡 Calling IPC: ssh-list-directory');
+            logger.debug('sshListDir', 'IPC params:', {
+                connectionId: this.sshContext.connectionId,
+                remotePath: remotePath
+            });
+
+            const { ipcRenderer } = require('electron');
+            const result = await ipcRenderer.invoke('ssh-list-directory', this.sshContext.connectionId, remotePath);
+
+            logger.debug('sshListDir', '📥 IPC result received:', {
+                success: result.success,
+                error: result.error,
+                entriesCount: result.entries?.length
+            });
+
+            if (!result.success) {
+                logger.error('sshListDir', '❌ IPC returned error:', result.error);
+                throw new Error(result.error || 'Failed to list SSH directory');
+            }
+
+            logger.info('sshListDir', `✅ Successfully listed ${result.entries.length} entries from SSH`);
+            logger.trace('sshListDir', 'Raw entries:', result.entries);
+
+            // Convert SSH entries to standard format
+            const entries = result.entries.map(entry => ({
+                name: entry.name,
+                isDirectory: entry.isDirectory,
+                path: `ssh://${this.sshContext.connectionConfig?.host}${entry.path}`
+            }));
+
+            logger.debug('sshListDir', 'Converted entries to standard format:', entries.length);
+
+            // Filter based on config
+            const filtered = this.filterEntries(entries);
+            logger.debug('sshListDir', 'After filtering:', filtered.length, 'entries');
+            logger.trace('sshListDir', 'Filtered entries:', filtered);
+
+            logger.info('sshListDir', '🎨 Rendering tree with', filtered.length, 'entries');
+            this.renderTree(filtered, this.currentPath);
+
+            logger.debug('sshListDir', '📢 Emitting explorer:ssh-directory-opened event');
+            eventBus.emit('explorer:ssh-directory-opened', {
+                path: this.currentPath,
+                remotePath: remotePath,
+                entries: filtered,
+                connectionId: this.sshContext.connectionId
+            });
+
+            logger.info('sshListDir', '✅ openSSHDirectory completed successfully');
+
+        } catch (error) {
+            console.error('[FileExplorer] ❌ Error in openSSHDirectory:', error);
+            console.error('[FileExplorer] Error message:', error.message);
+            console.error('[FileExplorer] Error stack:', error.stack);
+            logger.error('sshListDir', '❌ Error in openSSHDirectory:', error);
+            logger.error('sshListDir', 'Error stack:', error.stack);
+            this.renderError(`Failed to open remote directory: ${error.message}`);
         }
     }
 
@@ -343,7 +521,37 @@ class FileExplorer {
      */
     async expandDirectory(dirPath, itemElement) {
         try {
-            const entries = await this.fs.readDirectory(dirPath);
+            let entries;
+
+            // Check if this is an SSH path
+            if (this.sshContext.isSSH && dirPath.startsWith('ssh://')) {
+                // Extract remote path from ssh:// URL
+                // Format is: ssh://host/remote/path
+                // We need to remove ssh://host to get /remote/path
+                const sshPrefix = `ssh://${this.sshContext.connectionConfig?.host}`;
+                const remotePath = dirPath.startsWith(sshPrefix) ? dirPath.substring(sshPrefix.length) : dirPath;
+
+                logger.debug('sshFileExplorer', 'Expanding SSH directory:', remotePath);
+
+                // Use IPC to list remote directory
+                const { ipcRenderer } = require('electron');
+                const result = await ipcRenderer.invoke('ssh-list-directory', this.sshContext.connectionId, remotePath);
+
+                if (!result.success) {
+                    throw new Error(result.error || 'Failed to list SSH directory');
+                }
+
+                // Convert SSH entries to standard format
+                entries = result.entries.map(entry => ({
+                    name: entry.name,
+                    isDirectory: entry.isDirectory,
+                    path: `ssh://${this.sshContext.connectionConfig?.host}${entry.path}`
+                }));
+            } else {
+                // Local filesystem
+                entries = await this.fs.readDirectory(dirPath);
+            }
+
             const filtered = this.filterEntries(entries);
 
             // Create children container
@@ -476,7 +684,15 @@ class FileExplorer {
      */
     async refreshCurrentDirectory() {
         if (!this.currentPath) return;
-        await this.openDirectory(this.currentPath);
+
+        // Check if this is an SSH path
+        if (this.sshContext.isSSH && this.currentPath.startsWith('ssh://')) {
+            // For SSH, use the stored remote path
+            await this.openSSHDirectory(this.sshContext.remotePath);
+        } else {
+            // For local paths
+            await this.openDirectory(this.currentPath);
+        }
     }
 
     /**
@@ -488,16 +704,42 @@ class FileExplorer {
             return;
         }
 
-        const parentPath = pathUtils.dirname(this.currentPath);
+        // Handle SSH paths differently
+        if (this.sshContext.isSSH) {
+            // For SSH, work with the remote path
+            const currentRemotePath = this.sshContext.remotePath;
 
-        // Prevent navigating above root (when dirname returns same path or empty)
-        if (!parentPath || parentPath === this.currentPath || parentPath === '/') {
-            logger.warn('fileSystem', 'Already at root directory');
-            return;
+            // Prevent navigating above root
+            if (currentRemotePath === '/' || !currentRemotePath) {
+                logger.warn('fileSystem', 'Already at SSH root directory');
+                return;
+            }
+
+            // Get parent path (simple string manipulation for Unix paths)
+            const parentRemotePath = currentRemotePath.substring(0, currentRemotePath.lastIndexOf('/')) || '/';
+
+            logger.debug('fileSystem', `Navigating to SSH parent directory: ${parentRemotePath}`);
+
+            // Create SSH URL for parent
+            const parentPath = `ssh://${this.sshContext.connectionConfig?.host}${parentRemotePath}`;
+
+            await this.openDirectory(parentPath, {
+                connectionId: this.sshContext.connectionId,
+                connectionConfig: this.sshContext.connectionConfig
+            });
+        } else {
+            // Local filesystem
+            const parentPath = pathUtils.dirname(this.currentPath);
+
+            // Prevent navigating above root (when dirname returns same path or empty)
+            if (!parentPath || parentPath === this.currentPath || parentPath === '/') {
+                logger.warn('fileSystem', 'Already at root directory');
+                return;
+            }
+
+            logger.debug('fileSystem', `Navigating to parent directory: ${parentPath}`);
+            await this.openDirectory(parentPath);
         }
-
-        logger.debug('fileSystem', `Navigating to parent directory: ${parentPath}`);
-        await this.openDirectory(parentPath);
     }
 
     /**
@@ -524,6 +766,12 @@ class FileExplorer {
      */
     startChangePolling() {
         if (this.changePolling.enabled || !this.currentPath) {
+            return;
+        }
+
+        // Don't poll for SSH paths
+        if (this.sshContext.isSSH) {
+            logger.debug('fileSystem', 'Skipping change polling for SSH path');
             return;
         }
 
@@ -831,7 +1079,21 @@ class FileExplorer {
 
         if (entry.isDirectory) {
             options.push({ type: 'separator' });
-            options.push({ label: 'Open this folder in Swarm', icon: '📂', action: () => this.openDirectory(entry.path) });
+            options.push({
+                label: 'Open this folder in Swarm',
+                icon: '📂',
+                action: () => {
+                    if (this.sshContext.isSSH) {
+                        // For SSH paths, pass the connection context
+                        this.openDirectory(entry.path, {
+                            connectionId: this.sshContext.connectionId,
+                            connectionConfig: this.sshContext.connectionConfig
+                        });
+                    } else {
+                        this.openDirectory(entry.path);
+                    }
+                }
+            });
             options.push({ label: 'Go to parent directory', icon: '⬆️', action: () => this.openParentDirectory() });
             options.push({ type: 'separator' });
             options.push({ label: 'Refresh', icon: '🔄', action: () => this.refreshCurrentDirectory() });
@@ -1024,8 +1286,23 @@ class FileExplorer {
         const fileName = await this.showInputDialog('New File', 'File name:', 'example.txt');
         if (!fileName) return;
 
-        const filePath = pathUtils.join(dirPath, fileName);
-        const result = await this.fs.createFile(filePath);
+        let result;
+
+        // Check if this is an SSH path
+        if (this.sshContext.isSSH && dirPath.startsWith('ssh://')) {
+            // Extract remote path
+            const sshPrefix = `ssh://${this.sshContext.connectionConfig?.host}`;
+            const remoteDirPath = dirPath.startsWith(sshPrefix) ? dirPath.substring(sshPrefix.length) : dirPath;
+            const remoteFilePath = `${remoteDirPath}/${fileName}`;
+
+            // Use IPC to create remote file (write empty content)
+            const { ipcRenderer } = require('electron');
+            result = await ipcRenderer.invoke('ssh-write-file', this.sshContext.connectionId, remoteFilePath, '', 'utf8');
+        } else {
+            // Local file
+            const filePath = pathUtils.join(dirPath, fileName);
+            result = await this.fs.createFile(filePath);
+        }
 
         if (result.success) {
             await this.refreshCurrentDirectory();
@@ -1042,8 +1319,23 @@ class FileExplorer {
         const folderName = await this.showInputDialog('New Folder', 'Folder name:', 'new-folder');
         if (!folderName) return;
 
-        const folderPath = pathUtils.join(dirPath, folderName);
-        const result = await this.fs.createFolder(folderPath);
+        let result;
+
+        // Check if this is an SSH path
+        if (this.sshContext.isSSH && dirPath.startsWith('ssh://')) {
+            // Extract remote path
+            const sshPrefix = `ssh://${this.sshContext.connectionConfig?.host}`;
+            const remoteDirPath = dirPath.startsWith(sshPrefix) ? dirPath.substring(sshPrefix.length) : dirPath;
+            const remoteFolderPath = `${remoteDirPath}/${folderName}`;
+
+            // Use IPC to create remote directory
+            const { ipcRenderer } = require('electron');
+            result = await ipcRenderer.invoke('ssh-create-directory', this.sshContext.connectionId, remoteFolderPath);
+        } else {
+            // Local folder
+            const folderPath = pathUtils.join(dirPath, folderName);
+            result = await this.fs.createFolder(folderPath);
+        }
 
         if (result.success) {
             await this.refreshCurrentDirectory();
@@ -1061,10 +1353,27 @@ class FileExplorer {
         const newName = prompt('Enter new name:', oldName);
         if (!newName || newName === oldName) return;
 
-        const parentPath = pathUtils.dirname(oldPath);
-        const newPath = pathUtils.join(parentPath, newName);
+        let result;
 
-        const result = await this.fs.renameItem(oldPath, newPath);
+        // Check if this is an SSH path
+        if (this.sshContext.isSSH && oldPath.startsWith('ssh://')) {
+            // Extract remote paths
+            const sshPrefix = `ssh://${this.sshContext.connectionConfig?.host}`;
+            const oldRemotePath = oldPath.startsWith(sshPrefix) ? oldPath.substring(sshPrefix.length) : oldPath;
+
+            // Get parent directory and construct new path
+            const parentRemotePath = oldRemotePath.substring(0, oldRemotePath.lastIndexOf('/'));
+            const newRemotePath = `${parentRemotePath}/${newName}`;
+
+            // Use IPC to rename remote item
+            const { ipcRenderer } = require('electron');
+            result = await ipcRenderer.invoke('ssh-rename-item', this.sshContext.connectionId, oldRemotePath, newRemotePath);
+        } else {
+            // Local file/folder
+            const parentPath = pathUtils.dirname(oldPath);
+            const newPath = pathUtils.join(parentPath, newName);
+            result = await this.fs.renameItem(oldPath, newPath);
+        }
 
         if (result.success) {
             await this.refreshCurrentDirectory();
@@ -1084,7 +1393,26 @@ class FileExplorer {
         if (!confirmed) return;
 
         for (const itemPath of this.selectedPaths) {
-            const result = await this.fs.deleteItem(itemPath);
+            let result;
+
+            // Check if this is an SSH path
+            if (this.sshContext.isSSH && itemPath.startsWith('ssh://')) {
+                // Extract remote path
+                const sshPrefix = `ssh://${this.sshContext.connectionConfig?.host}`;
+                const remotePath = itemPath.startsWith(sshPrefix) ? itemPath.substring(sshPrefix.length) : itemPath;
+
+                // Determine if it's a directory
+                const itemElement = this.container.querySelector(`.tree-item[data-path="${itemPath}"]`);
+                const isDirectory = itemElement && itemElement.classList.contains('directory');
+
+                // Use IPC to delete remote item
+                const { ipcRenderer } = require('electron');
+                result = await ipcRenderer.invoke('ssh-delete-item', this.sshContext.connectionId, remotePath, isDirectory);
+            } else {
+                // Local file/folder
+                result = await this.fs.deleteItem(itemPath);
+            }
+
             if (!result.success) {
                 alert(`Failed to delete ${itemPath}: ${result.error}`);
             }

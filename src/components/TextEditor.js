@@ -1211,7 +1211,33 @@ class TextEditor {
         try {
             logger.debug('editorChange', 'Saving file:', this.filePath);
             const content = this.getContent();
-            const result = await window.electronAPI.saveFile(this.filePath, content);
+
+            let result;
+            // Check if this is an SSH path
+            if (this.filePath.startsWith('ssh://')) {
+                logger.debug('editorChange', 'SSH file detected, using SSH write');
+
+                // Get SSH context from FileExplorer
+                const uiManager = require('../modules/UIManager');
+                const explorer = uiManager.getComponent('fileExplorer');
+                if (!explorer || !explorer.sshContext || !explorer.sshContext.connectionId) {
+                    this.showErrorNotification('SSH connection not available');
+                    return;
+                }
+
+                // Extract remote path from ssh:// URL
+                // Format: ssh://host/remote/path
+                // We need to remove ssh://host to get /remote/path
+                const sshPrefix = `ssh://${explorer.sshContext.connectionConfig?.host}`;
+                const remotePath = this.filePath.startsWith(sshPrefix) ? this.filePath.substring(sshPrefix.length) : this.filePath;
+
+                const { ipcRenderer } = require('electron');
+                logger.debug('editorChange', 'Writing SSH file:', { connectionId: explorer.sshContext.connectionId, remotePath });
+                result = await ipcRenderer.invoke('ssh-write-file', explorer.sshContext.connectionId, remotePath, content, 'utf8');
+            } else {
+                // Local file
+                result = await window.electronAPI.saveFile(this.filePath, content);
+            }
 
             if (result.success) {
                 this.setDirty(false);
@@ -1223,8 +1249,10 @@ class TextEditor {
                 logger.debug('editorChange', '✓ File saved successfully');
                 eventBus.emit('file:saved', { path: this.filePath });
 
-                // Notify LSP
-                await lspClient.didSave(this.filePath);
+                // Notify LSP (only for local files)
+                if (!this.filePath.startsWith('ssh://')) {
+                    await lspClient.didSave(this.filePath);
+                }
 
                 // Show brief save confirmation
                 this.showSaveNotification();

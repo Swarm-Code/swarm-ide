@@ -4,7 +4,7 @@
   "description": "A simple Electron-based IDE for viewing files",
   "main": "main.js",
   "scripts": {
-    "bundle": "browserify src/renderer.js -o dist/bundle.js",
+    "bundle": "browserify src/renderer.js -o dist/bundle.js --exclude keytar --exclude ssh2 --exclude electron",
     "start": "npm run bundle && electron .",
     "dev": "npm run bundle && electron .",
     "build": "electron-builder"

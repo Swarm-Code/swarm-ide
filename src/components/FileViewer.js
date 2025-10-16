@@ -245,7 +245,43 @@ class FileViewer {
 
             // Track file load performance
             const fileLoadStart = performance.now();
-            const result = await this.fs.readFile(filePath);
+
+            // Check if this is an SSH path
+            let result;
+            if (filePath.startsWith('ssh://')) {
+                logger.debug('fileOpen', 'SSH file detected, using SSH read');
+
+                // Get SSH context from FileExplorer (we need the connectionId and host)
+                const explorer = require('../modules/UIManager').getComponent('fileExplorer');
+                if (!explorer || !explorer.sshContext || !explorer.sshContext.connectionId) {
+                    this.renderError('SSH connection not available');
+                    return;
+                }
+
+                // Extract remote path from ssh:// URL
+                // Format: ssh://host/remote/path
+                // We need to remove ssh://host to get /remote/path
+                const sshPrefix = `ssh://${explorer.sshContext.connectionConfig?.host}`;
+                const remotePath = filePath.startsWith(sshPrefix) ? filePath.substring(sshPrefix.length) : filePath;
+
+                const { ipcRenderer } = require('electron');
+                logger.debug('fileOpen', 'Reading SSH file:', { connectionId: explorer.sshContext.connectionId, remotePath });
+                const sshResult = await ipcRenderer.invoke('ssh-read-file', explorer.sshContext.connectionId, remotePath, 'utf8');
+
+                if (!sshResult.success) {
+                    this.renderError(sshResult.error || 'Failed to read SSH file');
+                    return;
+                }
+
+                result = {
+                    success: true,
+                    content: sshResult.content
+                };
+            } else {
+                // Local file
+                result = await this.fs.readFile(filePath);
+            }
+
             const fileLoadDuration = performance.now() - fileLoadStart;
 
             if (!result.success) {
