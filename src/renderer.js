@@ -777,9 +777,14 @@ class Application {
             null
         );
 
-        // Create Browser instance NOW with paneId and tabId
-        logger.debug('appInit', 'Creating Browser instance with tabId:', tabId);
-        const browser = new Browser(browserContainer, activePane.id, tabId);
+        // Get active profile for cookie isolation
+        const activeProfile = this.browserProfileManager.getActiveProfile();
+        const profileId = activeProfile ? activeProfile.id : null;
+        logger.debug('appInit', 'Using profile:', profileId);
+
+        // Create Browser instance NOW with paneId, tabId, and profileId
+        logger.debug('appInit', 'Creating Browser instance with tabId:', tabId, 'profileId:', profileId);
+        const browser = new Browser(browserContainer, activePane.id, tabId, profileId);
 
         // Store reference for cleanup
         browserContainer._browserInstance = browser;

@@ -463,25 +463,29 @@ class TerminalPanel {
             logger.debug('terminalPanel', 'No terminals, creating first terminal');
             this.createNewTerminal();
         } else {
+            // CRITICAL FIX #8: Use requestAnimationFrame instead of setTimeout
             // Wait for layout to complete, then resize terminals
             logger.debug('terminalPanel', `Refreshing ${this.terminals.size} terminals after show`);
 
-            // Use a longer delay to ensure layout is complete
-            setTimeout(() => {
-                for (const [id, { terminal }] of this.terminals) {
-                    try {
-                        logger.debug('terminalPanel', `Refreshing terminal ${id}...`);
-                        terminal.resize();
-                    } catch (error) {
-                        logger.error('terminalPanel', `Error resizing terminal ${id}:`, error);
+            // Use double RAF to ensure layout and paint are complete
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    for (const [id, { terminal }] of this.terminals) {
+                        try {
+                            logger.debug('terminalPanel', `Refreshing terminal ${id}...`);
+                            terminal.resize();
+                        } catch (error) {
+                            logger.error('terminalPanel', `Error resizing terminal ${id}:`, error);
+                        }
                     }
-                }
-                logger.debug('terminalPanel', '✓ All terminals refreshed');
-            }, 100);
+                    logger.debug('terminalPanel', '✓ All terminals refreshed');
+                });
+            });
         }
 
         logger.debug('terminalPanel', '✓ Panel shown');
-        eventBus.emit('terminal-panel:shown');
+        // CRITICAL FIX: Emit panel height so BrowserView can adjust its bounds
+        eventBus.emit('terminal-panel:shown', { height: this.panelHeight });
     }
 
     /**
@@ -546,6 +550,9 @@ class TerminalPanel {
         this.panel.style.height = `${height}px`;
         if (this.isVisible) {
             this.container.style.paddingBottom = `${height}px`;
+
+            // CRITICAL FIX: Notify BrowserView of height change during resize
+            eventBus.emit('terminal-panel:shown', { height: this.panelHeight });
         }
 
         // Resize active terminal

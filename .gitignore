@@ -7,6 +7,7 @@ dist/bundle.js
 # Electron build outputs
 out/
 build/
+dist-electron/
 
 # User data
 .swarm-ide/

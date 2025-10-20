@@ -119,6 +119,9 @@ class GitBlamePanel {
         const filePathEl = this.header.querySelector('.git-blame-panel-file-path');
         filePathEl.textContent = filePath;
 
+        // CRITICAL FIX: Emit panel:shown event to hide BrowserViews
+        eventBus.emit('panel:shown', { panel: 'git-blame' });
+
         // Load blame
         await this.loadBlame(filePath);
     }
@@ -131,6 +134,9 @@ class GitBlamePanel {
         this.currentFile = null;
         this.blameData = null;
         this.commits.clear();
+
+        // CRITICAL FIX: Emit panel:hidden event to restore BrowserViews
+        eventBus.emit('panel:hidden', { panel: 'git-blame' });
     }
 
     /**

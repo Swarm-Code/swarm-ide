@@ -1732,6 +1732,11 @@ class GitPanel {
         this.refreshStatus();
         this.loadBranches();
         this.loadCommitHistory();
+
+        // CRITICAL FIX: Emit panel:shown event to hide BrowserViews
+        // BrowserViews render above HTML, so we must hide them when panels open
+        eventBus.emit('panel:shown', { panel: 'git' });
+        logger.debug('gitPanel', 'Git panel shown, emitted panel:shown event');
     }
 
     /**
@@ -1749,6 +1754,10 @@ class GitPanel {
         // Hide Git panel
         this.panel.style.display = 'none';
         this.isVisible = false;
+
+        // CRITICAL FIX: Emit panel:hidden event to restore BrowserViews
+        eventBus.emit('panel:hidden', { panel: 'git' });
+        logger.debug('gitPanel', 'Git panel hidden, emitted panel:hidden event');
     }
 
     /**

@@ -10,6 +10,7 @@
 const { Terminal: XTerm } = require('xterm');
 const { FitAddon } = require('xterm-addon-fit');
 const { WebLinksAddon } = require('xterm-addon-web-links');
+const { WebglAddon } = require('xterm-addon-webgl');
 const { ipcRenderer } = require('electron');
 const eventBus = require('../../modules/EventBus');
 const logger = require('../../utils/Logger');
@@ -31,6 +32,7 @@ class Terminal {
         this.terminalId = null;
         this.xterm = null;
         this.fitAddon = null;
+        this.webglAddon = null;  // Hardware-accelerated rendering
         this.isAttached = false;
         this.resizeObserver = null;
         this.resizeInterval = null;  // High-frequency resize check
@@ -38,6 +40,17 @@ class Terminal {
         this.lastHeight = 0;
         this.terminalType = options.type || 'local'; // 'local' or 'ssh'
         this.sshConnectionId = options.sshConnectionId || null;
+
+        // PTY Host direct connection (for local terminals only)
+        this.ptyHostPort = null;  // Direct MessagePort to PTY host
+        this.ptyHostConnected = false;
+        this.unacknowledgedBytes = 0;  // Flow control
+
+        // CRITICAL FIX: Debouncing for resize to prevent race conditions
+        this.resizeDebounceTimer = null;
+        this.isResizing = false;  // Flag to prevent concurrent resizes
+        this.pendingResize = false;  // Flag to indicate a resize is pending
+        this.RESIZE_DEBOUNCE_DELAY = 16;  // ~60fps, balance between responsiveness and performance
 
         logger.debug('terminal', 'Terminal component created', { type: this.terminalType, sshConnectionId: this.sshConnectionId });
     }
@@ -120,6 +133,23 @@ class Terminal {
             // Open terminal in container
             this.xterm.open(this.container);
 
+            // Enable hardware-accelerated WebGL rendering
+            // Inspired by VS Code's terminal for ultra-smooth rendering
+            try {
+                this.webglAddon = new WebglAddon();
+                this.webglAddon.onContextLoss(() => {
+                    // Fallback to canvas if WebGL context is lost
+                    logger.warn('terminal', 'WebGL context lost, disposing WebGL addon');
+                    this.webglAddon.dispose();
+                    this.webglAddon = null;
+                });
+                this.xterm.loadAddon(this.webglAddon);
+                logger.debug('terminal', '✓ WebGL renderer enabled for hardware acceleration');
+            } catch (error) {
+                logger.warn('terminal', 'WebGL not available, using canvas renderer:', error.message);
+                this.webglAddon = null;
+            }
+
             // Enable Unicode 11 support for proper emoji rendering
             // xterm.js 5.x has built-in Unicode support, just need to ensure it's active
             if (this.xterm.unicode) {
@@ -180,6 +210,11 @@ class Terminal {
                 cwd: result.cwd
             });
 
+            // Setup direct PTY host connection for local terminals (ultra-low latency)
+            if (this.terminalType === 'local') {
+                await this.setupPTYHostConnection();
+            }
+
             // Setup event listeners
             this.setupEventListeners();
 
@@ -220,15 +255,26 @@ class Terminal {
         // Handle user input
         this.xterm.onData((data) => {
             if (this.terminalId !== null) {
+                const inputTimestamp = performance.now();
+
+                console.log(`[LATENCY] ⌨️  INPUT at ${inputTimestamp.toFixed(3)}ms: "${data.replace(/\r/g, '\\r').replace(/\n/g, '\\n')}" (${data.length} bytes)`);
+
                 logger.debug('terminal', 'Data input to terminal:', {
                     terminalId: this.terminalId,
                     dataLength: data.length,
-                    dataPreview: data.substring(0, 50)
+                    dataPreview: data.substring(0, 50),
+                    timestamp: inputTimestamp
                 });
+
+                // Store timestamp for latency measurement
+                this.lastInputTimestamp = inputTimestamp;
 
                 // Send input to backend (PTY or SSH shell)
                 const writeHandler = this.terminalType === 'ssh' ? 'ssh-terminal-write' : 'terminal-write';
-                ipcRenderer.invoke(writeHandler, this.terminalId, data).catch(err => {
+                ipcRenderer.invoke(writeHandler, this.terminalId, data).then(() => {
+                    const ipcSentTimestamp = performance.now();
+                    console.log(`[LATENCY] 📤 IPC SENT at ${ipcSentTimestamp.toFixed(3)}ms (${(ipcSentTimestamp - inputTimestamp).toFixed(3)}ms after input)`);
+                }).catch(err => {
                     logger.error('terminal', 'Error writing to terminal:', err);
                 });
             }
@@ -295,10 +341,146 @@ class Terminal {
     }
 
     /**
+     * Setup direct MessagePort connection to PTY host
+     * This bypasses the main process for ultra-low latency
+     */
+    async setupPTYHostConnection() {
+        try {
+            logger.debug('terminal', 'Setting up direct PTY host connection...');
+
+            // Request MessagePort from main process
+            await ipcRenderer.invoke('terminal-setup-direct-connection');
+
+            // Wait for MessagePort transfer
+            return new Promise((resolve) => {
+                ipcRenderer.once('pty-port-transfer', (event) => {
+                    // Get the transferred MessagePort from event.ports
+                    const port = event.ports[0];
+                    if (port) {
+                        this.ptyHostPort = port;
+
+                        // Setup message handler for direct PTY host messages
+                        this.ptyHostPort.onmessage = (event) => {
+                            this.handlePTYHostMessage(event.data);
+                        };
+
+                        this.ptyHostPort.start();
+                        this.ptyHostConnected = true;
+
+                        logger.debug('terminal', '✓ Direct PTY host connection established');
+                        resolve();
+                    } else {
+                        logger.error('terminal', 'No MessagePort received');
+                        resolve();
+                    }
+                });
+
+                // Timeout after 5 seconds
+                setTimeout(() => {
+                    if (!this.ptyHostConnected) {
+                        logger.warn('terminal', 'PTY host connection timeout, falling back to IPC');
+                        resolve();
+                    }
+                }, 5000);
+            });
+        } catch (error) {
+            logger.error('terminal', 'Failed to setup PTY host connection:', error);
+        }
+    }
+
+    /**
+     * Handle message from PTY host via direct MessagePort
+     */
+    handlePTYHostMessage(message) {
+        const { type, terminalId, data: messageData } = message;
+
+        // Only handle messages for this terminal
+        if (terminalId && terminalId !== this.terminalId) {
+            return;
+        }
+
+        switch (type) {
+            case 'terminal-data':
+                const receiveTimestamp = performance.now();
+                console.log(`[LATENCY] 📥 RECEIVED at ${receiveTimestamp.toFixed(3)}ms: ${messageData.length} bytes`);
+
+                if (this.lastInputTimestamp) {
+                    const roundTripTime = receiveTimestamp - this.lastInputTimestamp;
+                    console.log(`[LATENCY] 🔄 ROUND TRIP: ${roundTripTime.toFixed(3)}ms`);
+                }
+
+                // Data from PTY host (buffered, batched)
+                const beforeWrite = performance.now();
+                this.xterm.write(messageData, () => {
+                    const afterWrite = performance.now();
+                    console.log(`[LATENCY] ✍️  XTERM WRITE at ${afterWrite.toFixed(3)}ms (${(afterWrite - beforeWrite).toFixed(3)}ms duration)`);
+
+                    if (this.lastInputTimestamp) {
+                        const totalLatency = afterWrite - this.lastInputTimestamp;
+                        console.log(`[LATENCY] ⚡ TOTAL LATENCY: ${totalLatency.toFixed(3)}ms (input -> display)`);
+                    }
+                });
+
+                // Flow control: Acknowledge received data
+                this.acknowledgeData(messageData.length);
+                break;
+
+            case 'terminal-created':
+                logger.debug('terminal', 'PTY host confirmed terminal creation:', message);
+                break;
+
+            case 'terminal-exit':
+                logger.debug('terminal', 'Terminal exited:', message);
+                const exitMsg = `\r\n\x1b[1;31m[Process exited with code ${message.exitCode}]\x1b[0m\r\n`;
+                this.xterm.write(exitMsg);
+                eventBus.emit('terminal:exit', { terminalId: this.terminalId, exitCode: message.exitCode, signal: message.signal });
+                this.terminalId = null;
+                break;
+
+            case 'terminal-create-failed':
+                logger.error('terminal', 'PTY host failed to create terminal:', message.error);
+                break;
+
+            case 'error':
+                logger.error('terminal', 'PTY host error:', message.error);
+                break;
+
+            default:
+                logger.warn('terminal', 'Unknown PTY host message type:', type);
+        }
+    }
+
+    /**
+     * Acknowledge data received from PTY host (flow control)
+     * This prevents overwhelming the renderer with rapid data
+     */
+    acknowledgeData(byteCount) {
+        if (!this.ptyHostConnected || !this.terminalId) return;
+
+        this.unacknowledgedBytes -= byteCount;
+
+        // Send acknowledgment to PTY host (via main process for now)
+        // TODO: Could send directly via MessagePort if needed
+        ipcRenderer.invoke('terminal-acknowledge-data', this.terminalId, byteCount).catch(err => {
+            logger.error('terminal', 'Error acknowledging data:', err);
+        });
+    }
+
+    /**
      * Setup IPC listeners for terminal events from backend
+     * Handles both direct PTY host messages and SSH terminal messages
      */
     setupIPCListeners() {
-        // Listen for terminal data from backend
+        // Listen for PTY host messages (forwarded by main process as fallback)
+        this.ptyHostListener = (event, message) => {
+            if (!this.ptyHostConnected) {
+                // Use IPC messages if direct connection failed
+                this.handlePTYHostMessage(message);
+            }
+        };
+        ipcRenderer.on('pty-host-message', this.ptyHostListener);
+
+        // Listen for terminal data from backend (SSH terminals use this)
         this.dataListener = (event, { terminalId, data }) => {
             if (terminalId === this.terminalId) {
                 // Debug logging to track corruption
@@ -409,13 +591,8 @@ class Terminal {
                         return;
                     }
 
-                    this.fitAddon.fit();
-
-                    logger.debug('terminal', 'ResizeObserver fit complete:', {
-                        terminalId: this.terminalId,
-                        newCols: this.xterm.cols,
-                        newRows: this.xterm.rows
-                    });
+                    // Use debounced resize to prevent race conditions with other resize mechanisms
+                    this.debouncedResize();
                 } catch (error) {
                     logger.error('terminal', 'Error fitting terminal in ResizeObserver:', error);
                 }
@@ -462,8 +639,9 @@ class Terminal {
 
                     // Only refit if dimensions are valid
                     if (currentWidth > 0 && currentHeight > 0) {
+                        // Use debounced resize to prevent race conditions
                         // NO LOGGING HERE - runs 240 times per second!
-                        this.fitAddon.fit();
+                        this.debouncedResize();
                     }
                 }
             } catch (error) {
@@ -475,49 +653,89 @@ class Terminal {
     }
 
     /**
+     * Debounced resize - prevents multiple concurrent resize operations
+     * All resize mechanisms (ResizeObserver, 240Hz polling, manual) should call this
+     */
+    debouncedResize() {
+        // Clear any existing debounce timer
+        if (this.resizeDebounceTimer) {
+            clearTimeout(this.resizeDebounceTimer);
+        }
+
+        // If already resizing, mark that we need another resize after this one completes
+        if (this.isResizing) {
+            this.pendingResize = true;
+            return;
+        }
+
+        // Schedule the resize
+        this.resizeDebounceTimer = setTimeout(() => {
+            this.performResize();
+        }, this.RESIZE_DEBOUNCE_DELAY);
+    }
+
+    /**
+     * Perform the actual resize operation
+     * Internal method called by debouncedResize()
+     */
+    performResize() {
+        if (!this.fitAddon || !this.isAttached || !this.xterm) {
+            return;
+        }
+
+        // Check if container is visible
+        const isVisible = this.container.style.display !== 'none' &&
+                         this.container.offsetParent !== null &&
+                         this.container.clientWidth > 0 &&
+                         this.container.clientHeight > 0;
+
+        if (!isVisible) {
+            return;
+        }
+
+        // Set resizing flag to prevent concurrent operations
+        this.isResizing = true;
+
+        try {
+            const currentCols = this.xterm.cols;
+            const currentRows = this.xterm.rows;
+
+            // Perform the resize
+            this.fitAddon.fit();
+
+            const newCols = this.xterm.cols;
+            const newRows = this.xterm.rows;
+
+            // If size changed, refresh the display to prevent corruption
+            if (currentCols !== newCols || currentRows !== newRows) {
+                this.xterm.refresh(0, this.xterm.rows - 1);
+                logger.debug('terminal', 'Terminal resized:', {
+                    terminalId: this.terminalId,
+                    from: { cols: currentCols, rows: currentRows },
+                    to: { cols: newCols, rows: newRows }
+                });
+            }
+        } catch (error) {
+            logger.error('terminal', 'Error performing resize:', error);
+        } finally {
+            // Clear resizing flag
+            this.isResizing = false;
+
+            // If a resize was requested while we were resizing, perform it now
+            if (this.pendingResize) {
+                this.pendingResize = false;
+                // Use a small delay to avoid immediate re-entry
+                setTimeout(() => this.debouncedResize(), 10);
+            }
+        }
+    }
+
+    /**
      * Manually trigger terminal resize
+     * Public API - uses debounced resize internally
      */
     resize() {
-        if (this.fitAddon && this.isAttached && this.xterm) {
-            try {
-                logger.debug('terminal', 'Resizing terminal:', this.terminalId);
-                logger.debug('terminal', 'Container dimensions:', {
-                    width: this.container.clientWidth,
-                    height: this.container.clientHeight,
-                    display: this.container.style.display,
-                    visibility: this.container.style.visibility
-                });
-
-                // Clear any corruption before resize
-                const currentCols = this.xterm.cols;
-                const currentRows = this.xterm.rows;
-                logger.debug('terminal', 'Current terminal size:', { cols: currentCols, rows: currentRows });
-
-                // Perform the resize
-                this.fitAddon.fit();
-
-                const newCols = this.xterm.cols;
-                const newRows = this.xterm.rows;
-                logger.debug('terminal', 'New terminal size:', { cols: newCols, rows: newRows });
-
-                // If size changed, refresh the display
-                if (currentCols !== newCols || currentRows !== newRows) {
-                    logger.debug('terminal', 'Terminal size changed, refreshing display');
-                    this.xterm.refresh(0, this.xterm.rows - 1);
-                }
-
-                logger.debug('terminal', '✓ Terminal manually resized');
-            } catch (error) {
-                logger.error('terminal', 'Error fitting terminal:', error);
-                logger.error('terminal', 'Error stack:', error.stack);
-            }
-        } else {
-            logger.warn('terminal', 'Cannot resize terminal:', {
-                hasFitAddon: !!this.fitAddon,
-                isAttached: this.isAttached,
-                hasXterm: !!this.xterm
-            });
-        }
+        this.debouncedResize();
     }
 
     /**
@@ -599,6 +817,12 @@ class Terminal {
         if (this.resizeInterval) {
             clearInterval(this.resizeInterval);
             this.resizeInterval = null;
+        }
+
+        // Clear resize debounce timer
+        if (this.resizeDebounceTimer) {
+            clearTimeout(this.resizeDebounceTimer);
+            this.resizeDebounceTimer = null;
         }
 
         // Disconnect resize observer

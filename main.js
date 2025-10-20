@@ -804,18 +804,23 @@ ipcMain.handle('lsp-notification', async (event, languageId, method, params, roo
 // Browser IPC handlers
 // ========================================
 
-ipcMain.handle('browser-create-view', async (event, tabId, bounds) => {
+ipcMain.handle('browser-create-view', async (event, tabId, bounds, profileId = null) => {
   try {
-    console.log('[Main] Creating BrowserView for tab:', tabId, 'with bounds:', bounds);
+    console.log('[Main] Creating BrowserView for tab:', tabId, 'with bounds:', bounds, 'profileId:', profileId);
+
+    // Use profile-based partition for cookie isolation, fallback to default profile
+    const partition = profileId ? `persist:profile-${profileId}` : 'persist:profile-default';
 
     const view = new BrowserView({
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: true,
-        partition: `persist:browser-${tabId}` // Isolated session per tab
+        partition: partition // Isolated session per profile
       }
     });
+
+    console.log('[Main] Using partition:', partition);
 
     // Set bounds
     view.setBounds({
@@ -989,6 +994,108 @@ ipcMain.handle('browser-update-bounds', async (event, tabId, bounds) => {
 });
 
 // ========================================
+// Browser Profile & Cookie IPC Handlers
+// ========================================
+
+ipcMain.handle('browser-get-cookies', async (event, profileId) => {
+  try {
+    console.log('[Main] Getting cookies for profile:', profileId);
+
+    const partition = profileId ? `persist:profile-${profileId}` : 'persist:profile-default';
+    const { session } = require('electron');
+    const profileSession = session.fromPartition(partition);
+
+    const cookies = await profileSession.cookies.get({});
+    console.log('[Main] Retrieved', cookies.length, 'cookies');
+
+    return { success: true, cookies };
+  } catch (error) {
+    console.error('[Main] Get cookies error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('browser-set-cookie', async (event, profileId, cookie) => {
+  try {
+    console.log('[Main] Setting cookie for profile:', profileId, 'cookie:', cookie);
+
+    const partition = profileId ? `persist:profile-${profileId}` : 'persist:profile-default';
+    const { session } = require('electron');
+    const profileSession = session.fromPartition(partition);
+
+    await profileSession.cookies.set(cookie);
+    console.log('[Main] Cookie set successfully');
+
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Set cookie error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('browser-clear-cookies', async (event, profileId) => {
+  try {
+    console.log('[Main] Clearing cookies for profile:', profileId);
+
+    const partition = profileId ? `persist:profile-${profileId}` : 'persist:profile-default';
+    const { session } = require('electron');
+    const profileSession = session.fromPartition(partition);
+
+    await profileSession.clearStorageData({
+      storages: ['cookies']
+    });
+    console.log('[Main] Cookies cleared successfully');
+
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Clear cookies error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('browser-export-cookies', async (event, profileId) => {
+  try {
+    console.log('[Main] Exporting cookies for profile:', profileId);
+
+    const partition = profileId ? `persist:profile-${profileId}` : 'persist:profile-default';
+    const { session } = require('electron');
+    const profileSession = session.fromPartition(partition);
+
+    const cookies = await profileSession.cookies.get({});
+    console.log('[Main] Exported', cookies.length, 'cookies');
+
+    return { success: true, cookies };
+  } catch (error) {
+    console.error('[Main] Export cookies error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('browser-import-cookies', async (event, profileId, cookies) => {
+  try {
+    console.log('[Main] Importing', cookies.length, 'cookies for profile:', profileId);
+
+    const partition = profileId ? `persist:profile-${profileId}` : 'persist:profile-default';
+    const { session } = require('electron');
+    const profileSession = session.fromPartition(partition);
+
+    // Import each cookie
+    for (const cookie of cookies) {
+      // Remove properties that can't be set
+      const { hostOnly, session: isSession, ...cookieToSet } = cookie;
+      await profileSession.cookies.set(cookieToSet);
+    }
+
+    console.log('[Main] Cookies imported successfully');
+
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Import cookies error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// ========================================
 // Git IPC Handlers
 // ========================================
 
@@ -997,8 +1104,126 @@ const { spawn } = require('child_process');
 // SSH Connection Manager
 const sshConnectionManager = require('./src/services/SSHConnectionManager');
 
-// Terminal Service
-const terminalService = require('./src/services/TerminalService');
+// Terminal Service - PTY Host Process Architecture
+// Inspired by VS Code's multi-process terminal for ultra-low latency
+const { fork } = require('child_process');
+const { MessageChannel } = require('worker_threads');
+
+let ptyHostProcess = null;
+let ptyHostReady = false;
+let ptyHostMessagePort = null; // For direct renderer communication
+
+/**
+ * PTY Host Manager - Spawns and manages dedicated PTY host process
+ *
+ * Architecture:
+ * - PTY host runs as separate utility process (isolated from main/renderer)
+ * - Direct MessagePort connection: renderer <-> PTY host (bypasses main process)
+ * - Main process only handles lifecycle management
+ * - Ultra-low latency through dedicated process and direct IPC
+ */
+function startPTYHost() {
+    if (ptyHostProcess) {
+        console.log('[Main] PTY Host already running, PID:', ptyHostProcess.pid);
+        return;
+    }
+
+    console.log('[Main] Starting PTY Host process...');
+
+    const ptyHostPath = path.join(__dirname, 'src/services/ptyHost.js');
+
+    // Spawn PTY host as separate process
+    ptyHostProcess = fork(ptyHostPath, [], {
+        stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+        env: {
+            ...process.env,
+            PTY_HOST_DEBUG: process.env.PTY_HOST_DEBUG || 'false'
+        }
+    });
+
+    console.log('[Main] PTY Host spawned, PID:', ptyHostProcess.pid);
+
+    // Handle messages from PTY host
+    ptyHostProcess.on('message', (message) => {
+        const mainReceiveTime = Date.now();
+        if (message.type === 'terminal-data') {
+            console.log(`[MAIN LATENCY] 📨 PTY HOST DATA at ${mainReceiveTime}: ${message.data.length} bytes`);
+        }
+
+        // Forward messages to renderer
+        if (mainWindow && mainWindow.webContents) {
+            const beforeSend = Date.now();
+            mainWindow.webContents.send('pty-host-message', message);
+            const afterSend = Date.now();
+            if (message.type === 'terminal-data') {
+                console.log(`[MAIN LATENCY] 📤 FORWARDED TO RENDERER at ${afterSend} (${afterSend - beforeSend}ms duration)`);
+            }
+        }
+    });
+
+    // Handle PTY host exit (restart on crash)
+    ptyHostProcess.on('exit', (code, signal) => {
+        console.log('[Main] PTY Host exited:', { code, signal });
+        ptyHostProcess = null;
+        ptyHostReady = false;
+        ptyHostMessagePort = null;
+
+        // Auto-restart after 1 second
+        setTimeout(() => {
+            console.log('[Main] Restarting PTY Host...');
+            startPTYHost();
+        }, 1000);
+    });
+
+    // Handle PTY host errors
+    ptyHostProcess.on('error', (error) => {
+        console.error('[Main] PTY Host error:', error);
+    });
+
+    ptyHostReady = true;
+}
+
+/**
+ * Setup direct MessagePort connection between renderer and PTY host
+ * This bypasses the main process for lowest latency data transfer
+ */
+function setupDirectPTYConnection(event) {
+    if (!ptyHostProcess || !ptyHostReady) {
+        console.error('[Main] PTY Host not ready for direct connection');
+        return { success: false, error: 'PTY Host not ready' };
+    }
+
+    console.log('[Main] Setting up direct MessagePort connection: renderer <-> PTY host');
+
+    // Create MessageChannel with two ports
+    const { port1, port2 } = new MessageChannel();
+
+    // port1 goes to PTY host
+    ptyHostProcess.send({ type: 'setup-port', port: port1 }, [port1]);
+
+    // port2 goes to renderer (via return)
+    ptyHostMessagePort = port2;
+
+    console.log('[Main] ✓ Direct MessagePort established (ultra-low latency path)');
+
+    return {
+        success: true,
+        port: port2
+    };
+}
+
+/**
+ * Send message to PTY host
+ */
+function sendToPTYHost(message) {
+    if (!ptyHostProcess || !ptyHostReady) {
+        console.error('[Main] PTY Host not available');
+        return false;
+    }
+
+    ptyHostProcess.send(message);
+    return true;
+}
 
 /**
  * Execute a git command in the main process
@@ -1769,29 +1994,49 @@ ipcMain.handle('ssh-terminal-close', async (event, terminalId) => {
 });
 
 // ========================================
-// Terminal IPC Handlers
+// Terminal IPC Handlers - PTY Host Architecture
 // ========================================
 
 /**
- * Create a new terminal
+ * Setup direct MessagePort connection to PTY host
+ * This enables lowest-latency communication by bypassing main process
+ */
+ipcMain.handle('terminal-setup-direct-connection', async (event) => {
+  try {
+    const result = setupDirectPTYConnection(event);
+
+    if (result.success && result.port) {
+      // Transfer MessagePort to renderer
+      event.sender.postMessage('pty-port-transfer', null, [result.port]);
+      return { success: true };
+    }
+
+    return result;
+  } catch (error) {
+    console.error('[Main] Error setting up direct PTY connection:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Create a new terminal (via PTY host)
  */
 ipcMain.handle('terminal-create', async (event, options = {}) => {
   try {
-    console.log('[Main] Creating terminal with options:', options);
+    console.log('[Main] Forwarding terminal-create to PTY host:', options);
 
-    const result = terminalService.createTerminal({
-      ...options,
-      onData: (terminalId, data) => {
-        // Send terminal output to renderer
-        mainWindow.webContents.send('terminal-data', { terminalId, data });
-      },
-      onExit: (terminalId, exitCode, signal) => {
-        // Send exit event to renderer
-        mainWindow.webContents.send('terminal-exit', { terminalId, exitCode, signal });
-      }
+    // Forward to PTY host
+    const success = sendToPTYHost({
+      type: 'create-terminal',
+      data: options
     });
 
-    return result;
+    if (!success) {
+      return { success: false, error: 'PTY Host not available' };
+    }
+
+    // PTY host will send response directly to renderer via MessagePort
+    return { success: true, pending: true };
   } catch (error) {
     console.error('[Main] Error creating terminal:', error);
     return { success: false, error: error.message };
@@ -1799,12 +2044,23 @@ ipcMain.handle('terminal-create', async (event, options = {}) => {
 });
 
 /**
- * Write data to terminal
+ * Write data to terminal (via PTY host)
  */
 ipcMain.handle('terminal-write', async (event, terminalId, data) => {
   try {
-    const result = terminalService.writeToTerminal(terminalId, data);
-    return result;
+    const mainReceiveTime = Date.now();
+    console.log(`[MAIN LATENCY] 📨 IPC RECEIVED at ${mainReceiveTime}: "${data.replace(/\r/g, '\\r').replace(/\n/g, '\\n')}" (${data.length} bytes)`);
+
+    // Forward to PTY host
+    const beforeForward = Date.now();
+    sendToPTYHost({
+      type: 'write-terminal',
+      data: { terminalId, data }
+    });
+    const afterForward = Date.now();
+    console.log(`[MAIN LATENCY] ⏩ FORWARDED TO PTY HOST at ${afterForward} (${afterForward - beforeForward}ms duration)`);
+
+    return { success: true };
   } catch (error) {
     console.error('[Main] Error writing to terminal:', error);
     return { success: false, error: error.message };
@@ -1812,12 +2068,17 @@ ipcMain.handle('terminal-write', async (event, terminalId, data) => {
 });
 
 /**
- * Resize terminal
+ * Resize terminal (via PTY host)
  */
 ipcMain.handle('terminal-resize', async (event, terminalId, cols, rows) => {
   try {
-    const result = terminalService.resizeTerminal(terminalId, cols, rows);
-    return result;
+    // Forward to PTY host (NO LOGGING - called frequently!)
+    sendToPTYHost({
+      type: 'resize-terminal',
+      data: { terminalId, cols, rows }
+    });
+
+    return { success: true };
   } catch (error) {
     console.error('[Main] Error resizing terminal:', error);
     return { success: false, error: error.message };
@@ -1825,12 +2086,18 @@ ipcMain.handle('terminal-resize', async (event, terminalId, cols, rows) => {
 });
 
 /**
- * Close terminal
+ * Close terminal (via PTY host)
  */
 ipcMain.handle('terminal-close', async (event, terminalId) => {
   try {
-    const result = terminalService.closeTerminal(terminalId);
-    return result;
+    console.log('[Main] Forwarding terminal-close to PTY host:', terminalId);
+
+    sendToPTYHost({
+      type: 'close-terminal',
+      data: { terminalId }
+    });
+
+    return { success: true };
   } catch (error) {
     console.error('[Main] Error closing terminal:', error);
     return { success: false, error: error.message };
@@ -1838,27 +2105,19 @@ ipcMain.handle('terminal-close', async (event, terminalId) => {
 });
 
 /**
- * Get terminal info
+ * Acknowledge data received (flow control)
  */
-ipcMain.handle('terminal-get-info', async (event, terminalId) => {
+ipcMain.handle('terminal-acknowledge-data', async (event, terminalId, byteCount) => {
   try {
-    const result = terminalService.getTerminalInfo(terminalId);
-    return result;
-  } catch (error) {
-    console.error('[Main] Error getting terminal info:', error);
-    return { success: false, error: error.message };
-  }
-});
+    // Forward to PTY host (NO LOGGING - called frequently!)
+    sendToPTYHost({
+      type: 'acknowledge-data',
+      data: { terminalId, byteCount }
+    });
 
-/**
- * Get all terminals
- */
-ipcMain.handle('terminal-get-all', async () => {
-  try {
-    const terminals = terminalService.getAllTerminals();
-    return { success: true, terminals };
+    return { success: true };
   } catch (error) {
-    console.error('[Main] Error getting all terminals:', error);
+    console.error('[Main] Error acknowledging terminal data:', error);
     return { success: false, error: error.message };
   }
 });
@@ -1867,6 +2126,9 @@ app.whenReady().then(async () => {
   // Initialize crash logger
   await crashLogger.init();
   console.log('[MAIN] Crash logger initialized');
+
+  // Start PTY Host process for ultra-low latency terminals
+  startPTYHost();
 
   createWindow();
 
@@ -1886,7 +2148,13 @@ app.on('window-all-closed', () => {
 app.on('quit', async () => {
   await languageServerManager.shutdownAll();
   await sshConnectionManager.shutdown();
-  terminalService.shutdown();
+
+  // Shutdown PTY host process
+  if (ptyHostProcess) {
+    console.log('[Main] Shutting down PTY Host...');
+    ptyHostProcess.kill('SIGTERM');
+    ptyHostProcess = null;
+  }
 });
 
 // Dialog IPC handlers for SSH Import/Export

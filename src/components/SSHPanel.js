@@ -1017,6 +1017,11 @@ class SSHPanel {
         this.isVisible = true;
         logger.info('sshPanel', 'Panel is now visible, loading connections...');
         this.loadConnections();
+
+        // CRITICAL FIX: Emit panel:shown event to hide BrowserViews
+        // BrowserViews render above HTML, so we must hide them when panels open
+        eventBus.emit('panel:shown', { panel: 'ssh' });
+        logger.info('sshPanel', 'SSH panel shown, emitted panel:shown event');
         logger.info('sshPanel', '✅ SSH Panel shown successfully');
     }
 
@@ -1044,6 +1049,10 @@ class SSHPanel {
         logger.info('sshPanel', 'Setting panel display to none');
         this.panel.style.display = 'none';
         this.isVisible = false;
+
+        // CRITICAL FIX: Emit panel:hidden event to restore BrowserViews
+        eventBus.emit('panel:hidden', { panel: 'ssh' });
+        logger.info('sshPanel', 'SSH panel hidden, emitted panel:hidden event');
         logger.info('sshPanel', '✅ SSH Panel hidden successfully');
     }
 

@@ -324,8 +324,11 @@ class SSHConnectionManager {
     async createConnection(connectionConfig) {
         const id = connectionConfig.id || this.generateConnectionId();
 
+        // If connection already exists, just return the existing ID
+        // This allows reusing connections for multiple terminals
         if (this.connections.has(id)) {
-            throw new Error(`Connection with ID ${id} already exists`);
+            logger.info('ssh', `Connection ${id} already exists, reusing existing connection`);
+            return id;
         }
 
         const connection = new SSHConnection(id, connectionConfig);

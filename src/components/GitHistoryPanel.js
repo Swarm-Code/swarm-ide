@@ -529,6 +529,10 @@ class GitHistoryPanel {
         if (!this.panel) return;
         this.panel.style.display = 'flex';
         this.isVisible = true;
+
+        // CRITICAL FIX: Emit panel:shown event to hide BrowserViews
+        eventBus.emit('panel:shown', { panel: 'git-history' });
+
         this.loadHistory();
     }
 
@@ -539,6 +543,9 @@ class GitHistoryPanel {
         if (!this.panel) return;
         this.panel.style.display = 'none';
         this.isVisible = false;
+
+        // CRITICAL FIX: Emit panel:hidden event to restore BrowserViews
+        eventBus.emit('panel:hidden', { panel: 'git-history' });
     }
 
     /**

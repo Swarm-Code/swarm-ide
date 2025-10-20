@@ -10,6 +10,11 @@
 const logger = require('../utils/Logger');
 const eventBus = require('../modules/EventBus');
 
+// CRITICAL FIX #9: Display property constants for consistency
+// All visible content uses 'flex' for proper layout
+const DISPLAY_VISIBLE = 'flex';
+const DISPLAY_HIDDEN = 'none';
+
 // Simple UUID generator
 function generateId() {
     return 'pane-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
@@ -42,6 +47,11 @@ class PaneManager {
         this.dragOverlay = null; // Drag overlay element
         this.isDragging = false; // Track drag state
         this.currentTabDrag = null; // Track current tab drag (sourcePaneId, tabId)
+
+        // CRITICAL FIX #2: Operation queue to prevent race conditions
+        // Serializes tab/pane operations to prevent concurrent state mutations
+        this.operationQueue = Promise.resolve();
+        this.operationInProgress = false;
 
         // Drag performance tracking
         this.dragMetrics = {
@@ -414,10 +424,13 @@ class PaneManager {
                                 ? splitPane.children[0]
                                 : splitPane.children[1];
 
-                            // Move tab to the target child
-                            setTimeout(() => {
-                                this.moveTab(tabData.sourcePaneId, tabData.tabId, targetChild.id);
-                            }, 100);
+                            // CRITICAL FIX #10: Use RAF instead of setTimeout for proper layout completion
+                            // Move tab to the target child after layout is complete
+                            requestAnimationFrame(() => {
+                                requestAnimationFrame(() => {
+                                    this.moveTab(tabData.sourcePaneId, tabData.tabId, targetChild.id);
+                                });
+                            });
                         }
                     }
 
@@ -476,13 +489,16 @@ class PaneManager {
                         ? splitPane.children[0]
                         : splitPane.children[1];
 
-                    // Open file in the target child
-                    setTimeout(() => {
-                        eventBus.emit('pane:request-file-open', {
-                            paneId: targetChild.id,
-                            filePath: filePath
+                    // CRITICAL FIX #10: Use RAF instead of setTimeout for proper layout completion
+                    // Open file in the target child after layout is complete
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            eventBus.emit('pane:request-file-open', {
+                                paneId: targetChild.id,
+                                filePath: filePath
+                            });
                         });
-                    }, 100);
+                    });
                 }
             }
 
@@ -703,7 +719,60 @@ class PaneManager {
                 child1TitleElement.textContent = existingTitle;
             }
 
-            logger.debug('paneCreate', 'Moved existing content to child1');
+            // CRITICAL FIX #4: Notify all tab content instances that their pane has changed
+            // This ensures Terminals, Browsers, and FileViewers update their internal paneId references
+            logger.debug('paneCreate', `Notifying ${child1.tabs.length} tabs of pane change from ${paneId} to ${child1.id}`);
+            child1.tabs.forEach((tab, index) => {
+                if (tab.content) {
+                    try {
+                        // Update Terminal instances - force resize to new container
+                        if (tab.content._terminalInstance) {
+                            logger.debug('paneCreate', `Tab ${index}: Resizing terminal after pane split`);
+                            // Use RAF to ensure layout is complete before resizing
+                            requestAnimationFrame(() => {
+                                requestAnimationFrame(() => {
+                                    try {
+                                        tab.content._terminalInstance.resize();
+                                    } catch (err) {
+                                        logger.error('paneCreate', 'Error resizing terminal after split:', err);
+                                    }
+                                });
+                            });
+                        }
+
+                        // Update Browser instances - critical to update paneId and recalculate bounds
+                        if (tab.content._browserInstance) {
+                            logger.debug('paneCreate', `Tab ${index}: Updating browser pane context from ${paneId} to ${child1.id}`);
+                            tab.content._browserInstance.updatePaneContext(child1.id, tab.id);
+                        }
+
+                        // Update FileViewer instances - update paneId if tracked
+                        if (tab.content._fileViewerInstance) {
+                            logger.debug('paneCreate', `Tab ${index}: Updating file viewer pane reference`);
+                            // FileViewer might track paneId for events/notifications
+                            if (tab.content._fileViewerInstance.paneId !== undefined) {
+                                tab.content._fileViewerInstance.paneId = child1.id;
+                            }
+                            // Force CodeMirror refresh after split
+                            if (tab.content._fileViewerInstance.textEditor) {
+                                requestAnimationFrame(() => {
+                                    requestAnimationFrame(() => {
+                                        try {
+                                            tab.content._fileViewerInstance.textEditor.refresh();
+                                        } catch (err) {
+                                            logger.error('paneCreate', 'Error refreshing CodeMirror after split:', err);
+                                        }
+                                    });
+                                });
+                            }
+                        }
+                    } catch (error) {
+                        logger.error('paneCreate', `Error notifying tab ${index} of pane change:`, error);
+                    }
+                }
+            });
+
+            logger.debug('paneCreate', 'Moved existing content to child1 and notified instances');
         }
 
         // DO NOT auto-duplicate the file to child2
@@ -721,8 +790,20 @@ class PaneManager {
 
     /**
      * Close a pane
+     * CRITICAL FIX #2: Now uses operation queue to prevent race conditions
      */
     closePane(paneId) {
+        // CRITICAL FIX #2: Queue this operation to prevent concurrent mutations
+        return this.queueOperation(`closePane(${paneId})`, () => {
+            return this._closePaneInternal(paneId);
+        });
+    }
+
+    /**
+     * Internal close pane implementation (called by queued operation)
+     * CRITICAL FIX #2: Extracted internal logic to separate method
+     */
+    _closePaneInternal(paneId) {
         logger.debug('paneCreate', 'Closing pane:', paneId);
 
         const pane = this.panes.get(paneId);
@@ -807,6 +888,11 @@ class PaneManager {
                 // Add to parent before content container
                 parent.element.insertBefore(sibling.tabBarContainer, parent.contentContainer);
                 parent.tabBarContainer = sibling.tabBarContainer;
+
+                // CRITICAL FIX: Re-render tab bar to update onclick handlers
+                // The moved tab bar's event handlers still reference sibling.id (about to be deleted)
+                // Re-rendering creates new handlers that reference parent.id
+                this.renderTabBar(parent);
             }
 
             // Move ALL children from sibling's content container (for tabs)
@@ -1294,12 +1380,15 @@ class PaneManager {
                     ? splitPane.children[0]
                     : splitPane.children[1];
 
-                setTimeout(() => {
-                    eventBus.emit('pane:request-file-open', {
-                        paneId: targetChild.id,
-                        filePath: filePath
+                // CRITICAL FIX #10: Use RAF instead of setTimeout for proper layout completion
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        eventBus.emit('pane:request-file-open', {
+                            paneId: targetChild.id,
+                            filePath: filePath
+                        });
                     });
-                }, 100);
+                });
             }
         }
     }
@@ -1344,15 +1433,27 @@ class PaneManager {
 
     /**
      * Set pane content
+     * CRITICAL FIX: Made async to properly await closeTab
      */
-    setPaneContent(paneId, contentElement, contentType, title = 'Untitled', filePath = null, metadata = {}) {
+    async setPaneContent(paneId, contentElement, contentType, title = 'Untitled', filePath = null, metadata = {}) {
         const pane = this.panes.get(paneId);
         if (!pane) {
             logger.error('paneCreate', 'Pane not found:', paneId);
             return;
         }
 
-        // Clear existing content
+        // CRITICAL FIX: Close all existing tabs before setting new content
+        // This prevents orphaned tab state and memory leaks
+        // Close in reverse order to avoid index issues
+        if (pane.tabs && pane.tabs.length > 0) {
+            logger.debug('paneCreate', 'Closing', pane.tabs.length, 'existing tabs before setting new content');
+            const tabIds = pane.tabs.map(t => t.id);
+            for (const tabId of tabIds) {
+                await this.closeTab(paneId, tabId);
+            }
+        }
+
+        // Clear existing content (should be empty after closing tabs, but be safe)
         pane.contentContainer.innerHTML = '';
 
         // Add new content
@@ -1408,8 +1509,13 @@ class PaneManager {
 
         const pane = this.panes.get(paneId);
         if (!pane) {
-            logger.error('paneCreate', 'Pane not found:', paneId);
-            return null;
+            const errorMsg = `Cannot add tab: Pane ${paneId} not found`;
+            logger.error('paneCreate', errorMsg);
+            eventBus.emit('notification:show', {
+                type: 'error',
+                message: errorMsg
+            });
+            throw new Error(errorMsg);
         }
 
         logger.debug('paneCreate', 'Current pane state:', {
@@ -1482,16 +1588,35 @@ class PaneManager {
             const tabClose = document.createElement('button');
             tabClose.className = 'pane-tab-close';
             tabClose.innerHTML = '✕';
-            tabClose.onclick = (e) => {
+            tabClose.onclick = async (e) => {
                 e.stopPropagation();
-                this.closeTab(pane.id, tab.id);
+                try {
+                    // CRITICAL FIX: Await closeTab to properly cleanup browser instances
+                    await this.closeTab(pane.id, tab.id);
+                } catch (error) {
+                    logger.error('paneCreate', 'Error closing tab from UI:', error);
+                    // Show user notification
+                    eventBus.emit('notification:show', {
+                        type: 'error',
+                        message: `Failed to close tab: ${error.message}`
+                    });
+                }
             };
 
             tabElement.appendChild(tabTitle);
             tabElement.appendChild(tabClose);
 
             tabElement.onclick = () => {
-                this.switchTab(pane.id, tab.id);
+                try {
+                    this.switchTab(pane.id, tab.id);
+                } catch (error) {
+                    logger.error('paneCreate', 'Error switching tab from UI:', error);
+                    // Show user notification
+                    eventBus.emit('notification:show', {
+                        type: 'error',
+                        message: `Failed to switch tab: ${error.message}`
+                    });
+                }
             };
 
             // Setup drag handlers for tab
@@ -1507,14 +1632,24 @@ class PaneManager {
     switchTab(paneId, tabId, lineNumber = null) {
         const pane = this.panes.get(paneId);
         if (!pane) {
-            logger.error('paneCreate', 'Pane not found:', paneId);
-            return;
+            const errorMsg = `Cannot switch tab: Pane ${paneId} not found`;
+            logger.error('paneCreate', errorMsg);
+            eventBus.emit('notification:show', {
+                type: 'error',
+                message: errorMsg
+            });
+            throw new Error(errorMsg);
         }
 
         const tab = pane.tabs.find(t => t.id === tabId);
         if (!tab) {
-            logger.error('paneCreate', 'Tab not found:', tabId);
-            return;
+            const errorMsg = `Cannot switch tab: Tab ${tabId} not found in pane ${paneId}`;
+            logger.error('paneCreate', errorMsg);
+            eventBus.emit('notification:show', {
+                type: 'error',
+                message: errorMsg
+            });
+            throw new Error(errorMsg);
         }
 
         logger.trace('tabSwitch', '========== SWITCHING TAB ==========');
@@ -1523,6 +1658,7 @@ class PaneManager {
         logger.trace('tabSwitch', 'Tab content dataset:', tab.content.dataset);
 
         // CRITICAL FIX: Don't destroy DOM elements - just hide/show them
+        // CRITICAL FIX #9: Use DISPLAY_HIDDEN constant for consistency
         // Hide all tab contents first and ensure they have absolute positioning
         pane.tabs.forEach(t => {
             if (t.content) {
@@ -1542,7 +1678,7 @@ class PaneManager {
                 t.content.style.bottom = '0';
 
                 if (t.content.parentElement === pane.contentContainer) {
-                    t.content.style.display = 'none';
+                    t.content.style.display = DISPLAY_HIDDEN;
                     logger.trace('tabSwitch', 'Hiding tab:', t.title, 'filePath:', t.filePath);
 
                     // Log the actual DOM content preview
@@ -1568,7 +1704,8 @@ class PaneManager {
         tab.content.style.bottom = '0';
 
         // Show the active tab content
-        tab.content.style.display = 'flex';
+        // CRITICAL FIX #9: Use DISPLAY_VISIBLE constant for consistency
+        tab.content.style.display = DISPLAY_VISIBLE;
         logger.trace('tabSwitch', 'Showing tab:', tab.title, 'filePath:', tab.filePath);
 
         // Log the actual DOM content being shown
@@ -1615,56 +1752,204 @@ class PaneManager {
         logger.trace('tabSwitch', '========================================');
         eventBus.emit('tab:switched', { paneId, tabId, filePath: tab.filePath });
 
+        // CRITICAL FIX #1: Force resize of newly visible content after tab switch
+        // This fixes the bug where terminals/browsers have wrong dimensions after being hidden
+        // Use double RAF to ensure layout is complete before resizing
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                // Handle Terminal instances - force resize to recalculate dimensions
+                if (tab.content._terminalInstance) {
+                    logger.debug('paneCreate', 'Forcing terminal resize after tab switch:', tabId);
+                    try {
+                        tab.content._terminalInstance.resize();
+                    } catch (error) {
+                        logger.error('paneCreate', 'Error resizing terminal after tab switch:', error);
+                    }
+                }
+
+                // Handle Browser instances - force bounds recalculation
+                if (tab.content._browserInstance) {
+                    logger.debug('paneCreate', 'Forcing browser bounds update after tab switch:', tabId);
+                    try {
+                        const bounds = tab.content._browserInstance.calculateBrowserBounds();
+                        // Update bounds immediately (synchronous)
+                        window.electronAPI.browserUpdateBounds(tab.content._browserInstance.activeTabId, bounds).catch(err => {
+                            logger.error('paneCreate', 'Error updating browser bounds after tab switch:', err);
+                        });
+                    } catch (error) {
+                        logger.error('paneCreate', 'Error calculating browser bounds after tab switch:', error);
+                    }
+                }
+
+                // Handle FileViewer instances - force CodeMirror refresh
+                if (tab.content._fileViewerInstance && tab.content._fileViewerInstance.textEditor) {
+                    logger.debug('paneCreate', 'Forcing CodeMirror refresh after tab switch:', tabId);
+                    try {
+                        tab.content._fileViewerInstance.textEditor.refresh();
+                    } catch (error) {
+                        logger.error('paneCreate', 'Error refreshing CodeMirror after tab switch:', error);
+                    }
+                }
+            });
+        });
+
         // Navigate to line number if specified (for search results, etc.)
         // Note: CodeMirror refresh is handled by TextEditor itself, no need to duplicate here
         if (lineNumber !== null && lineNumber !== undefined) {
-            // Small delay to ensure DOM is ready
-            setTimeout(() => {
-                logger.trace('tabSwitch', 'Navigating to line in existing tab:', lineNumber);
-                // Access the FileViewer instance through the stored property
-                const fileViewerInstance = tab.content._fileViewerInstance;
-                if (fileViewerInstance && fileViewerInstance.textEditor) {
-                    logger.trace('tabSwitch', 'Found TextEditor instance, calling goToLine');
-                    fileViewerInstance.textEditor.goToLine(lineNumber);
-                } else {
-                    logger.warn('paneCreate', 'Could not access TextEditor instance for line navigation');
-                }
-            }, 10);
+            // Use RAF to ensure DOM is ready (replaces setTimeout)
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    logger.trace('tabSwitch', 'Navigating to line in existing tab:', lineNumber);
+                    // Access the FileViewer instance through the stored property
+                    const fileViewerInstance = tab.content._fileViewerInstance;
+                    if (fileViewerInstance && fileViewerInstance.textEditor) {
+                        logger.trace('tabSwitch', 'Found TextEditor instance, calling goToLine');
+                        fileViewerInstance.textEditor.goToLine(lineNumber);
+                    } else {
+                        logger.warn('paneCreate', 'Could not access TextEditor instance for line navigation');
+                    }
+                });
+            });
         }
     }
 
     /**
-     * Close a tab
+     * Queue an operation to prevent concurrent state mutations
+     * CRITICAL FIX #2: Serializes operations like closeTab, closePane, moveTab
      */
-    closeTab(paneId, tabId) {
+    queueOperation(operationName, operation) {
+        logger.debug('paneCreate', `Queueing operation: ${operationName}`);
+
+        const operationPromise = this.operationQueue.then(async () => {
+            this.operationInProgress = true;
+            const startTime = Date.now();
+
+            try {
+                logger.debug('paneCreate', `Executing operation: ${operationName}`);
+                const result = await operation();
+                const duration = Date.now() - startTime;
+                logger.debug('paneCreate', `Completed operation: ${operationName} (${duration}ms)`);
+                return result;
+            } catch (error) {
+                logger.error('paneCreate', `Operation ${operationName} failed:`, error);
+                throw error;
+            } finally {
+                this.operationInProgress = false;
+            }
+        });
+
+        // Update the queue to point to this operation
+        this.operationQueue = operationPromise.catch(error => {
+            // Log but don't propagate - allow queue to continue
+            logger.error('paneCreate', 'Operation queue error:', error);
+        });
+
+        return operationPromise;
+    }
+
+    /**
+     * Close a tab
+     * CRITICAL FIX: Made async to properly await Browser.destroy()
+     * CRITICAL FIX #2: Now uses operation queue to prevent race conditions
+     */
+    async closeTab(paneId, tabId) {
+        // CRITICAL FIX #2: Queue this operation to prevent concurrent mutations
+        return this.queueOperation(`closeTab(${paneId}, ${tabId})`, async () => {
+            return this._closeTabInternal(paneId, tabId);
+        });
+    }
+
+    /**
+     * Internal close tab implementation (called by queued operation)
+     * CRITICAL FIX #2: Extracted internal logic to separate method
+     */
+    async _closeTabInternal(paneId, tabId) {
         const pane = this.panes.get(paneId);
         if (!pane) {
-            logger.error('paneCreate', 'Pane not found:', paneId);
-            return;
+            const errorMsg = `Cannot close tab: Pane ${paneId} not found`;
+            logger.error('paneCreate', errorMsg);
+            eventBus.emit('notification:show', {
+                type: 'error',
+                message: errorMsg
+            });
+            throw new Error(errorMsg);
         }
 
         const tabIndex = pane.tabs.findIndex(t => t.id === tabId);
         if (tabIndex === -1) {
-            logger.error('paneCreate', 'Tab not found:', tabId);
-            return;
+            const errorMsg = `Cannot close tab: Tab ${tabId} not found in pane ${paneId}`;
+            logger.error('paneCreate', errorMsg);
+            eventBus.emit('notification:show', {
+                type: 'error',
+                message: errorMsg
+            });
+            throw new Error(errorMsg);
         }
 
         // Remove tab
         const tab = pane.tabs[tabIndex];
 
-        // Remove tab content from DOM before removing from array
-        if (tab.content && tab.content.parentElement) {
-            tab.content.remove();
+        // CRITICAL FIX: Capture the tab to switch to BEFORE removing current tab
+        // This prevents using a stale index after the array is modified
+        let nextActiveTab = null;
+        if (pane.activeTabId === tabId && pane.tabs.length > 1) {
+            // Determine which tab to activate after removal
+            // If removing last tab, go to previous; otherwise go to next (which becomes current position after splice)
+            const nextIndex = tabIndex === pane.tabs.length - 1 ? tabIndex - 1 : tabIndex + 1;
+            nextActiveTab = pane.tabs[nextIndex];
+        }
+
+        // CRITICAL FIX: Cleanup tab content before removing from DOM
+        // This prevents memory leaks from event listeners, observers, etc.
+        if (tab.content) {
+            try {
+                // Check for cleanup methods on the content or its instances
+                // Pattern 1: FileViewer instance (has destroy/cleanup method)
+                if (tab.content._fileViewerInstance && typeof tab.content._fileViewerInstance.destroy === 'function') {
+                    logger.debug('paneCreate', 'Calling destroy() on FileViewer instance');
+                    tab.content._fileViewerInstance.destroy();
+                }
+
+                // Pattern 2: Terminal instance (has destroy method)
+                if (tab.content._terminalInstance && typeof tab.content._terminalInstance.destroy === 'function') {
+                    logger.debug('paneCreate', 'Calling destroy() on Terminal instance');
+                    tab.content._terminalInstance.destroy();
+                }
+
+                // Pattern 3: Browser instance (has cleanup method)
+                // CRITICAL FIX: Await browser destroy to properly cleanup BrowserView
+                if (tab.content._browserInstance && typeof tab.content._browserInstance.destroy === 'function') {
+                    logger.debug('paneCreate', 'Calling destroy() on Browser instance');
+                    await tab.content._browserInstance.destroy();
+                    logger.debug('paneCreate', 'Browser instance destroyed successfully');
+                }
+
+                // Pattern 4: General cleanup function attached to content
+                if (typeof tab.content._cleanup === 'function') {
+                    logger.debug('paneCreate', 'Calling _cleanup() on tab content');
+                    tab.content._cleanup();
+                }
+
+                // Remove from DOM after cleanup
+                if (tab.content.parentElement) {
+                    tab.content.remove();
+                }
+            } catch (error) {
+                logger.error('paneCreate', 'Error during tab content cleanup:', error);
+                // Still try to remove from DOM even if cleanup failed
+                if (tab.content.parentElement) {
+                    tab.content.remove();
+                }
+            }
         }
 
         pane.tabs.splice(tabIndex, 1);
 
         // If closing active tab, switch to another
         if (pane.activeTabId === tabId) {
-            if (pane.tabs.length > 0) {
-                // Switch to previous tab, or first tab if this was the first
-                const newActiveIndex = tabIndex > 0 ? tabIndex - 1 : 0;
-                this.switchTab(paneId, pane.tabs[newActiveIndex].id);
+            if (nextActiveTab) {
+                // Switch to the tab we captured before removal
+                this.switchTab(paneId, nextActiveTab.id);
             } else {
                 // No more tabs, clear content
                 pane.contentContainer.innerHTML = '';
@@ -1721,6 +2006,16 @@ class PaneManager {
             return false;
         }
 
+        // CRITICAL FIX: Capture the tab to switch to BEFORE removing current tab
+        // This prevents using a stale index after the array is modified
+        let nextActiveTab = null;
+        if (sourcePane.activeTabId === tabId && sourcePane.tabs.length > 1) {
+            // Determine which tab to activate after removal
+            // If removing last tab, go to previous; otherwise go to next (which becomes current position after splice)
+            const nextIndex = tabIndex === sourcePane.tabs.length - 1 ? tabIndex - 1 : tabIndex + 1;
+            nextActiveTab = sourcePane.tabs[nextIndex];
+        }
+
         // Remove tab from source pane
         const tab = sourcePane.tabs.splice(tabIndex, 1)[0];
 
@@ -1733,53 +2028,35 @@ class PaneManager {
         targetPane.tabs.push(tab);
 
         // Add content to target pane's DOM (hidden initially)
+        // CRITICAL FIX #9: Use DISPLAY_HIDDEN constant for consistency
         if (tab.content) {
-            tab.content.style.display = 'none';
+            tab.content.style.display = DISPLAY_HIDDEN;
             targetPane.contentContainer.appendChild(tab.content);
+        }
+
+        // CRITICAL FIX: Update Browser instance pane context if this is a browser tab
+        // Browser instances track their paneId/tabId for visibility management
+        if (tab.content && tab.content._browserInstance) {
+            logger.debug('paneCreate', 'Updating browser pane context after move');
+            try {
+                // Update browser's internal paneId/tabId and force bounds recalculation
+                tab.content._browserInstance.updatePaneContext(targetPaneId, tabId);
+            } catch (error) {
+                logger.error('paneCreate', 'Error updating browser pane context:', error);
+            }
         }
 
         // Update source pane
         if (sourcePane.tabs.length === 0) {
-            // No more tabs in source pane - auto-close it if possible
-            if (sourcePane.parent) {
-                // Source pane has a parent, so we can close it
-                logger.debug('paneCreate', 'Auto-closing empty source pane:', sourcePaneId);
-
-                // Close the pane (this will promote its sibling)
-                setTimeout(() => {
-                    this.closePane(sourcePaneId);
-                }, 50);
-            } else {
-                // This is the root pane and the only one - just show empty state
-                sourcePane.contentContainer.innerHTML = '';
-                sourcePane.content = null;
-                sourcePane.contentType = null;
-                sourcePane.filePath = null;
-                sourcePane.activeTabId = null;
-
-                // Remove tab bar
-                if (sourcePane.tabBarContainer) {
-                    sourcePane.tabBarContainer.remove();
-                    sourcePane.tabBarContainer = null;
-                }
-
-                // Show empty state
-                const emptyState = document.createElement('div');
-                emptyState.style.cssText = 'display: flex; align-items: center; justify-content: center; height: 100%; width: 100%; color: #888;';
-                emptyState.textContent = 'No files open';
-                sourcePane.contentContainer.appendChild(emptyState);
-
-                // Update title
-                const titleElement = sourcePane.element.querySelector('.pane-title');
-                if (titleElement) {
-                    titleElement.textContent = 'Empty Pane';
-                }
-            }
+            // CRITICAL FIX #3: Don't auto-close with setTimeout - show empty state instead
+            // This prevents race conditions where files opened within 50ms get lost
+            logger.debug('paneCreate', 'Source pane now empty, showing empty state:', sourcePaneId);
+            this.showEmptyPaneState(sourcePane);
         } else {
             // Switch to another tab if the moved tab was active
-            if (sourcePane.activeTabId === tabId) {
-                const newActiveIndex = tabIndex > 0 ? tabIndex - 1 : 0;
-                this.switchTab(sourcePaneId, sourcePane.tabs[newActiveIndex].id);
+            if (sourcePane.activeTabId === tabId && nextActiveTab) {
+                // Use the tab we captured before removal
+                this.switchTab(sourcePaneId, nextActiveTab.id);
             } else {
                 // Just re-render tab bar
                 this.renderTabBar(sourcePane);
@@ -1800,6 +2077,55 @@ class PaneManager {
         eventBus.emit('tab:moved', { sourcePaneId, targetPaneId, tabId });
 
         return true;
+    }
+
+    /**
+     * Show empty state in a pane (no tabs open)
+     * CRITICAL FIX #3: Extracted to helper method to avoid setTimeout auto-close bugs
+     */
+    showEmptyPaneState(pane) {
+        logger.debug('paneCreate', 'Showing empty pane state for:', pane.id);
+
+        // Clear all content
+        pane.contentContainer.innerHTML = '';
+        pane.content = null;
+        pane.contentType = null;
+        pane.filePath = null;
+        pane.activeTabId = null;
+
+        // Remove tab bar
+        if (pane.tabBarContainer) {
+            pane.tabBarContainer.remove();
+            pane.tabBarContainer = null;
+        }
+
+        // Show empty state message
+        const emptyState = document.createElement('div');
+        emptyState.className = 'pane-empty-state';
+        emptyState.style.cssText = 'display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; width: 100%; color: #888; gap: 12px;';
+
+        const message = document.createElement('div');
+        message.textContent = 'No files open';
+        message.style.cssText = 'font-size: 14px;';
+        emptyState.appendChild(message);
+
+        // Add hint for closing pane (if it has a parent and can be closed)
+        if (pane.parent) {
+            const hint = document.createElement('div');
+            hint.textContent = 'Click × to close this pane';
+            hint.style.cssText = 'font-size: 12px; opacity: 0.6;';
+            emptyState.appendChild(hint);
+        }
+
+        pane.contentContainer.appendChild(emptyState);
+
+        // Update pane title
+        const titleElement = pane.element.querySelector('.pane-title');
+        if (titleElement) {
+            titleElement.textContent = 'Empty Pane';
+        }
+
+        logger.debug('paneCreate', '✓ Empty state shown for pane:', pane.id);
     }
 
     /**
@@ -1968,14 +2294,16 @@ class PaneManager {
             logger.debug('paneCreate', 'Restoring pane with', data.tabs.length, 'tabs');
 
             for (const tabData of data.tabs) {
-                // Request the file to be opened in this pane
-                // We'll do this asynchronously to avoid blocking
-                setTimeout(() => {
-                    eventBus.emit('pane:request-file-open', {
-                        paneId: pane.id,
-                        filePath: tabData.filePath
+                // CRITICAL FIX #10: Use RAF instead of setTimeout for proper layout completion
+                // Request the file to be opened in this pane after layout is complete
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        eventBus.emit('pane:request-file-open', {
+                            paneId: pane.id,
+                            filePath: tabData.filePath
+                        });
                     });
-                }, 50);
+                });
             }
         }
 

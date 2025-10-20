@@ -1,0 +1,448 @@
+/**
+ * Layout Fixes for Swarm IDE
+ *
+ * CRITICAL FIXES FOR UI STABILITY:
+ * 1. Standardized z-index hierarchy (prevents overlap issues)
+ * 2. Overflow management (prevents content bleeding between panels)
+ * 3. Layout stability (ensures proper stacking and positioning)
+ *
+ * Z-INDEX HIERARCHY (from lowest to highest):
+ * - Base content: 1-10
+ * - Floating panels: 100-999
+ * - Overlays/Modals: 1000-1999
+ * - Tooltips/Dropdowns: 2000-2999
+ * - Context Menus: 10000-10099
+ * - Critical System UI: 10100+
+ */
+
+/* ========================================
+   BASE CONTENT LAYER (z-index: 1-10)
+   ======================================== */
+
+/* Pane container - base content layer */
+.pane-container {
+    z-index: 1;
+    position: relative;
+    overflow: hidden; /* CRITICAL: Prevent pane content from bleeding outside */
+}
+
+/* Pane resize handles */
+.pane-resize-handle {
+    z-index: 10 !important;
+    position: absolute;
+}
+
+/* ========================================
+   FLOATING PANELS LAYER (z-index: 100-999)
+   ======================================== */
+
+/* Terminal panel at bottom */
+.terminal-panel {
+    z-index: 100 !important;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    overflow: hidden; /* CRITICAL: Prevent terminal overflow */
+}
+
+.terminal-panel-resize-handle {
+    z-index: 101 !important;
+}
+
+/* Sidebar panels (file explorer, git, ssh, etc.) */
+.sidebar {
+    z-index: 50 !important;
+    position: relative;
+    overflow: hidden; /* CRITICAL: Prevent sidebar overflow */
+}
+
+.file-tree {
+    overflow-y: auto; /* Allow scrolling within tree */
+    overflow-x: hidden; /* Prevent horizontal scroll */
+    max-width: 100%; /* CRITICAL: Stay within sidebar bounds */
+}
+
+/* Icon sidebar */
+.icon-sidebar {
+    z-index: 60 !important;
+    position: relative;
+}
+
+/* ========================================
+   MENU LAYER (z-index: 200-299)
+   ======================================== */
+
+/* Menu bar at top */
+#menu-bar {
+    z-index: 200 !important;
+    position: relative;
+}
+
+.menu-bar {
+    z-index: 200 !important;
+}
+
+/* Menu dropdowns */
+.menu-dropdown {
+    z-index: 250 !important;
+}
+
+/* ========================================
+   OVERLAYS & MODALS LAYER (z-index: 1000-1999)
+   ======================================== */
+
+/* Generic modal backdrop */
+.modal-backdrop,
+.overlay {
+    z-index: 1000 !important;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* Modal content */
+.modal,
+.modal-container,
+.dialog {
+    z-index: 1001 !important;
+    position: fixed;
+}
+
+/* Workspace panel (slides in from right) */
+.workspace-panel {
+    z-index: 1100 !important;
+    position: fixed;
+    overflow-y: auto; /* Allow scrolling if needed */
+    overflow-x: hidden;
+}
+
+/* Git panels */
+.git-panel,
+.git-history-panel,
+.git-diff-panel,
+.git-blame-panel {
+    z-index: 1050 !important;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* SSH panel */
+.ssh-panel {
+    z-index: 1050 !important;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Welcome screens */
+.welcome-container,
+.ssh-welcome-container {
+    z-index: 1500 !important;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+}
+
+/* Search panels */
+.quick-open-container,
+.global-search-container,
+.find-replace-panel {
+    z-index: 1200 !important;
+    position: fixed;
+}
+
+/* ========================================
+   TOOLTIPS & DROPDOWNS LAYER (z-index: 2000-2999)
+   ======================================== */
+
+/* Tooltips */
+.tooltip,
+[data-tooltip]::after {
+    z-index: 2000 !important;
+}
+
+/* Dropdown menus */
+.dropdown-menu {
+    z-index: 2100 !important;
+}
+
+/* Autocomplete/hints */
+.autocomplete,
+.hint-container,
+.CodeMirror-hints {
+    z-index: 2200 !important;
+}
+
+/* ========================================
+   CONTEXT MENUS LAYER (z-index: 10000-10099)
+   ======================================== */
+
+/* Context menus (highest priority for user interactions) */
+.context-menu {
+    z-index: 10000 !important;
+    position: fixed;
+}
+
+/* ========================================
+   CRITICAL SYSTEM UI (z-index: 10100+)
+   ======================================== */
+
+/* Error messages, crash dialogs, etc. */
+.system-error,
+.crash-dialog,
+.critical-notification {
+    z-index: 10100 !important;
+    position: fixed;
+}
+
+/* ========================================
+   OVERFLOW FIXES
+   ======================================== */
+
+/* Ensure body doesn't scroll */
+body {
+    overflow: hidden !important;
+}
+
+/* Main container structure */
+.container {
+    overflow: hidden !important;
+    position: relative;
+}
+
+.app-container {
+    overflow: hidden !important;
+    position: relative;
+}
+
+/* Prevent CodeMirror from creating horizontal scroll */
+.CodeMirror {
+    overflow: hidden !important; /* Managed by CodeMirror internally */
+}
+
+.CodeMirror-scroll {
+    overflow-x: hidden !important; /* Prevent horizontal scroll */
+    overflow-y: auto !important; /* Allow vertical scroll */
+}
+
+/* Tree items should not overflow */
+.tree-item {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+.tree-item-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Pane content should be contained */
+.pane-content {
+    overflow: hidden !important;
+    position: relative;
+}
+
+/* Tab content should be contained */
+.pane-tab-content {
+    overflow: hidden !important;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* ========================================
+   LAYOUT STABILITY FIXES
+   ======================================== */
+
+/* Ensure sidebar doesn't push content */
+.sidebar {
+    flex-shrink: 0; /* Don't shrink sidebar */
+    min-width: 200px;
+    max-width: 600px;
+}
+
+/* Ensure icon sidebar doesn't push content */
+.icon-sidebar {
+    flex-shrink: 0;
+    width: 48px;
+}
+
+/* Pane container takes remaining space */
+.pane-container {
+    flex: 1;
+    min-width: 0; /* CRITICAL: Allow flex child to shrink below content size */
+    position: relative;
+}
+
+/* Tab bar should not overflow */
+.pane-tab-bar {
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-shrink: 0;
+}
+
+.pane-tab {
+    flex-shrink: 0; /* Don't shrink tabs */
+    max-width: 200px;
+}
+
+/* Menu bar should not overflow */
+#menu-bar,
+.menu-bar {
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+/* ========================================
+   BROWSER VIEW FIXES
+   ======================================== */
+
+/* Browser views are managed by Electron BrowserView, but their containers need proper handling */
+.browser-container {
+    position: relative;
+    overflow: hidden;
+}
+
+.browser-view-container {
+    position: relative;
+    overflow: hidden;
+}
+
+/* ========================================
+   TERMINAL PANEL FIXES
+   ======================================== */
+
+/* Ensure terminal doesn't overlap with content */
+.terminal-panel {
+    pointer-events: auto; /* Ensure terminal is interactive */
+}
+
+/* When terminal panel is visible, adjust pane container */
+.pane-container.terminal-visible {
+    padding-bottom: 0; /* Managed by TerminalPanel.js */
+}
+
+/* ========================================
+   STATUS BAR FIXES
+   ======================================== */
+
+.status-bar {
+    z-index: 90 !important;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+/* ========================================
+   SCROLLBAR STYLING (Optional Enhancement)
+   ======================================== */
+
+/* Custom scrollbars for better aesthetics */
+*::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+    background: #1e1e1e;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: #424242;
+    border-radius: 5px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: #4e4e4e;
+}
+
+/* ========================================
+   DRAG & DROP FIXES
+   ======================================== */
+
+/* Drag overlay should be above content but below modals */
+.drag-overlay {
+    z-index: 500 !important;
+    position: fixed;
+    pointer-events: none;
+}
+
+.drop-zone {
+    z-index: 501 !important;
+    pointer-events: auto;
+}
+
+/* ========================================
+   HIDDEN BROWSER VIEWS FIX
+   ======================================== */
+
+/* When BrowserViews need to be hidden (for modals, etc.) */
+.browser-view-hidden {
+    z-index: -9999 !important;
+    pointer-events: none !important;
+}
+
+.webview-hidden {
+    z-index: -9999 !important;
+    pointer-events: none !important;
+}
+
+/* ========================================
+   RESPONSIVE LAYOUT FIXES
+   ======================================== */
+
+/* Ensure layout adapts to window size */
+@media (max-width: 1024px) {
+    .sidebar {
+        min-width: 150px;
+        max-width: 300px;
+    }
+}
+
+@media (max-width: 768px) {
+    .sidebar {
+        min-width: 100px;
+        max-width: 200px;
+    }
+
+    .pane-tab {
+        max-width: 150px;
+    }
+}
+
+/* ========================================
+   PRINT & ACCESSIBILITY
+   ======================================== */
+
+/* Ensure proper stacking when printing */
+@media print {
+    * {
+        z-index: auto !important;
+    }
+}
+
+/* ========================================
+   DEBUG HELPERS (Comment out in production)
+   ======================================== */
+
+/* Uncomment to visualize z-index layers */
+/*
+.context-menu { outline: 3px solid red !important; }
+.modal { outline: 3px solid orange !important; }
+.terminal-panel { outline: 3px solid yellow !important; }
+.sidebar { outline: 3px solid green !important; }
+.pane-container { outline: 3px solid blue !important; }
+*/

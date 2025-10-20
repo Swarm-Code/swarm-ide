@@ -147,6 +147,9 @@ class GitDiffPanel {
         const filePathEl = this.header.querySelector('.git-diff-panel-file-path');
         filePathEl.textContent = filePath;
 
+        // CRITICAL FIX: Emit panel:shown event to hide BrowserViews
+        eventBus.emit('panel:shown', { panel: 'git-diff' });
+
         // Load diff
         await this.loadDiff(filePath);
     }
@@ -158,6 +161,9 @@ class GitDiffPanel {
         this.panel.style.display = 'none';
         this.currentFile = null;
         this.currentDiff = null;
+
+        // CRITICAL FIX: Emit panel:hidden event to restore BrowserViews
+        eventBus.emit('panel:hidden', { panel: 'git-diff' });
     }
 
     /**

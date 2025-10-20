@@ -314,10 +314,11 @@ const electronAPI = {
      * Create a new browser view
      * @param {string} tabId - Unique tab identifier
      * @param {Object} bounds - View bounds {x, y, width, height}
+     * @param {string} profileId - Browser profile ID for cookie isolation
      * @returns {Promise<Object>} Creation result
      */
-    browserCreateView: (tabId, bounds) => {
-        return ipcRenderer.invoke('browser-create-view', tabId, bounds);
+    browserCreateView: (tabId, bounds, profileId) => {
+        return ipcRenderer.invoke('browser-create-view', tabId, bounds, profileId);
     },
 
     /**
@@ -383,6 +384,57 @@ const electronAPI = {
      */
     browserUpdateBounds: (tabId, bounds) => {
         return ipcRenderer.invoke('browser-update-bounds', tabId, bounds);
+    },
+
+    // ========================================
+    // Browser Profile & Cookie API
+    // ========================================
+
+    /**
+     * Get cookies for a browser profile
+     * @param {string} profileId - Profile identifier
+     * @returns {Promise<Object>} Result with cookies array
+     */
+    browserGetCookies: (profileId) => {
+        return ipcRenderer.invoke('browser-get-cookies', profileId);
+    },
+
+    /**
+     * Set a cookie for a browser profile
+     * @param {string} profileId - Profile identifier
+     * @param {Object} cookie - Cookie object to set
+     * @returns {Promise<Object>} Result
+     */
+    browserSetCookie: (profileId, cookie) => {
+        return ipcRenderer.invoke('browser-set-cookie', profileId, cookie);
+    },
+
+    /**
+     * Clear all cookies for a browser profile
+     * @param {string} profileId - Profile identifier
+     * @returns {Promise<Object>} Result
+     */
+    browserClearCookies: (profileId) => {
+        return ipcRenderer.invoke('browser-clear-cookies', profileId);
+    },
+
+    /**
+     * Export cookies from a browser profile
+     * @param {string} profileId - Profile identifier
+     * @returns {Promise<Object>} Result with cookies array
+     */
+    browserExportCookies: (profileId) => {
+        return ipcRenderer.invoke('browser-export-cookies', profileId);
+    },
+
+    /**
+     * Import cookies to a browser profile
+     * @param {string} profileId - Profile identifier
+     * @param {Array} cookies - Array of cookie objects
+     * @returns {Promise<Object>} Result
+     */
+    browserImportCookies: (profileId, cookies) => {
+        return ipcRenderer.invoke('browser-import-cookies', profileId, cookies);
     },
 
     // ========================================
