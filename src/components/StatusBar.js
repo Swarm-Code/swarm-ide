@@ -10,6 +10,7 @@
  */
 
 const eventBus = require('../modules/EventBus');
+const workspaceManager = require('../services/WorkspaceManager');
 
 // Git integration
 let gitStore = null;
@@ -40,6 +41,7 @@ class StatusBar {
         this.gitInfo = null;
         this.currentBranch = null;
         this.branchTracking = null;
+        this.workspaceInfo = null;
 
         this.render();
         this.setupEventListeners();
@@ -90,6 +92,17 @@ class StatusBar {
         });
 
         this.leftSection.appendChild(this.gitInfo);
+
+        // Workspace info section (workspace name, project count)
+        this.workspaceInfo = document.createElement('span');
+        this.workspaceInfo.className = 'status-bar-workspace-info';
+        this.workspaceInfo.style.display = 'none'; // Hide initially
+        this.workspaceInfo.title = 'Click to switch workspaces';
+        this.workspaceInfo.addEventListener('click', () => {
+            this.showWorkspaceSwitcher();
+        });
+
+        this.leftSection.appendChild(this.workspaceInfo);
 
         // Right section - action buttons
         this.rightSection = document.createElement('div');
@@ -163,6 +176,7 @@ class StatusBar {
         eventBus.on('explorer:directory-opened', () => {
             this.show();
             this.initGitInfo();
+            this.updateWorkspaceInfo();
         });
 
         // Listen for file opened events
@@ -186,6 +200,15 @@ class StatusBar {
 
         eventBus.on('git:repository-changed', () => {
             this.initGitInfo();
+        });
+
+        // Listen for workspace changes
+        eventBus.on('workspace:activated', (data) => {
+            this.updateWorkspaceInfo(data.workspace);
+        });
+
+        eventBus.on('workspace:created', () => {
+            this.updateWorkspaceInfo();
         });
     }
 
@@ -329,6 +352,76 @@ class StatusBar {
     }
 
     /**
+     * Update workspace info display
+     * @param {Object} workspace - Optional workspace object
+     */
+    updateWorkspaceInfo(workspace) {
+        const activeWorkspace = workspace || workspaceManager.getActiveWorkspace();
+
+        if (!activeWorkspace) {
+            if (this.workspaceInfo) {
+                this.workspaceInfo.style.display = 'none';
+            }
+            return;
+        }
+
+        const workspaceCount = workspaceManager.getAllWorkspaces().length;
+        let displayText = `📁 ${activeWorkspace.name}`;
+
+        if (workspaceCount > 1) {
+            displayText += ` (${workspaceCount} workspaces)`;
+        }
+
+        if (this.workspaceInfo) {
+            this.workspaceInfo.textContent = displayText;
+            this.workspaceInfo.style.display = 'inline';
+        }
+
+        console.log('[StatusBar] Workspace info updated:', displayText);
+    }
+
+    /**
+     * Show workspace switcher menu
+     */
+    async showWorkspaceSwitcher() {
+        console.log('[StatusBar] Showing workspace switcher');
+
+        const workspaces = workspaceManager.getAllWorkspaces();
+        const activeWorkspace = workspaceManager.getActiveWorkspace();
+
+        if (workspaces.length === 0) {
+            console.log('[StatusBar] No workspaces available');
+            return;
+        }
+
+        // Create a simple modal to show workspace list
+        const modal = require('./Modal');
+
+        // Build workspace list HTML
+        const workspaceList = workspaces.map(ws => {
+            const isActive = activeWorkspace && ws.id === activeWorkspace.id;
+            const indicator = isActive ? '✓ ' : '  ';
+            const pathInfo = ws.rootPath ? ` (${ws.rootPath})` : '';
+            return `${indicator}${ws.name}${pathInfo}`;
+        }).join('\n');
+
+        const choice = await modal.prompt(
+            'Switch Workspace',
+            `Select workspace:\n\n${workspaceList}\n\nEnter workspace number (1-${workspaces.length}):`,
+            '1'
+        );
+
+        if (choice) {
+            const index = parseInt(choice) - 1;
+            if (index >= 0 && index < workspaces.length) {
+                const selectedWorkspace = workspaces[index];
+                await workspaceManager.setActiveWorkspace(selectedWorkspace.id);
+                console.log('[StatusBar] Switched to workspace:', selectedWorkspace.name);
+            }
+        }
+    }
+
+    /**
      * Show the status bar
      */
     show() {
@@ -359,6 +452,8 @@ class StatusBar {
         eventBus.off('git:branch-switched');
         eventBus.off('git:status-changed');
         eventBus.off('git:repository-changed');
+        eventBus.off('workspace:activated');
+        eventBus.off('workspace:created');
     }
 }
 

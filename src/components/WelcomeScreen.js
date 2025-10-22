@@ -13,6 +13,7 @@
 const eventBus = require('../modules/EventBus');
 const pathUtils = require('../utils/PathUtils');
 const logger = require('../utils/Logger');
+const workspaceManager = require('../services/WorkspaceManager');
 
 class WelcomeScreen {
     constructor(container, config, fileSystemService) {
@@ -29,6 +30,7 @@ class WelcomeScreen {
      */
     render() {
         const recentFolders = this.config.get('recentFolders', []);
+        const lastWorkspace = workspaceManager.getLastWorkspace();
 
         this.container.innerHTML = `
             <div class="welcome-screen">
@@ -41,6 +43,15 @@ class WelcomeScreen {
                     <div class="welcome-section">
                         <h2 class="welcome-section-title">Start</h2>
                         <div class="welcome-actions">
+                            ${lastWorkspace ? `
+                                <button class="welcome-action-btn welcome-action-btn-primary" id="welcome-restore-workspace">
+                                    <span class="welcome-action-icon">⏮️</span>
+                                    <div class="welcome-action-content">
+                                        <div class="welcome-action-title">Open Previous Workspace</div>
+                                        <div class="welcome-action-desc">${this.escapeHtml(lastWorkspace.name || 'Untitled')} - ${this.escapeHtml(lastWorkspace.rootPath || 'No path')}</div>
+                                    </div>
+                                </button>
+                            ` : ''}
                             <button class="welcome-action-btn" id="welcome-open-folder">
                                 <span class="welcome-action-icon">📁</span>
                                 <div class="welcome-action-content">
@@ -108,18 +119,34 @@ class WelcomeScreen {
             console.log('✅ Open folder button FOUND, adding click listener');
             logger.debug('appInit', 'Open folder button found, adding click listener');
             openFolderBtn.addEventListener('click', async () => {
-                console.log('🎯🎯🎯 OPEN FOLDER BUTTON CLICKED! 🎯🎯🎯');
-                logger.debug('appInit', 'Open folder button clicked!');
+                console.log('[WelcomeScreen] ╔══════════════════════════════════════════╗');
+                console.log('[WelcomeScreen] ║  🎯 OPEN FOLDER BUTTON CLICKED!        ║');
+                console.log('[WelcomeScreen] ╚══════════════════════════════════════════╝');
+                logger.info('appInit', '🎯 Open folder button clicked!');
+
+                console.log('[WelcomeScreen] Step 1: Calling this.fs.selectFolder()...');
                 const result = await this.fs.selectFolder();
-                console.log('selectFolder result:', result);
-                logger.debug('appInit', 'selectFolder result:', result);
+
+                console.log('[WelcomeScreen] Step 2: selectFolder() returned');
+                console.log('[WelcomeScreen] result:', result);
+                console.log('[WelcomeScreen] result.canceled:', result.canceled);
+                console.log('[WelcomeScreen] result.path:', result.path);
+                console.log('[WelcomeScreen] result.path type:', typeof result.path);
+                logger.info('appInit', 'selectFolder result:', result);
+
                 if (!result.canceled && result.path) {
-                    console.log('Emitting explorer:open-folder with path:', result.path);
-                    logger.debug('appInit', 'Emitting explorer:open-folder with path:', result.path);
+                    console.log('[WelcomeScreen] ✅ Folder selected successfully!');
+                    console.log('[WelcomeScreen] 📢 EMITTING explorer:open-folder EVENT');
+                    console.log('[WelcomeScreen] Event data:', { path: result.path });
+                    logger.info('appInit', '📢 Emitting explorer:open-folder with path:', result.path);
+
                     eventBus.emit('explorer:open-folder', { path: result.path });
+
+                    console.log('[WelcomeScreen] ✅ explorer:open-folder EVENT EMITTED');
                 } else {
-                    console.log('Folder selection cancelled');
-                    logger.debug('appInit', 'Folder selection cancelled or no path');
+                    console.warn('[WelcomeScreen] ⚠️ Folder selection cancelled or no path provided');
+                    console.warn('[WelcomeScreen] Reason: canceled =', result.canceled, ', path =', result.path);
+                    logger.warn('appInit', 'Folder selection cancelled or no path. canceled:', result.canceled, 'path:', result.path);
                 }
             });
             console.log('✅ Open folder button click listener ADDED');
@@ -177,6 +204,25 @@ class WelcomeScreen {
                 });
                 logger.error('appInit', `Button ${index}:`, btn.id, btn.className, btn.textContent.substring(0, 50));
             });
+        }
+
+        // Restore workspace button
+        const restoreWorkspaceBtn = this.container.querySelector('#welcome-restore-workspace');
+        console.log('Restore workspace button element:', restoreWorkspaceBtn);
+        if (restoreWorkspaceBtn) {
+            console.log('✅ Restore workspace button FOUND, adding click listener');
+            logger.info('appInit', 'Restore workspace button found, adding click listener');
+            restoreWorkspaceBtn.addEventListener('click', async () => {
+                console.log('⏮️⏮️⏮️ RESTORE WORKSPACE BUTTON CLICKED! ⏮️⏮️⏮️');
+                logger.info('appInit', '⏮️ Restoring previous workspace...');
+                const success = await workspaceManager.restoreLastWorkspace();
+                if (success) {
+                    logger.info('appInit', '✅ Workspace restored successfully');
+                } else {
+                    logger.warn('appInit', '⚠️ Failed to restore workspace');
+                }
+            });
+            console.log('✅ Restore workspace button click listener ADDED');
         }
 
         // Recent folder items

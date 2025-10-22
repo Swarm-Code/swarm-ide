@@ -42,7 +42,9 @@ class Config {
                 'build'
             ],
             recentFolders: [],
-            maxRecentFolders: 10
+            maxRecentFolders: 10,
+            // Workspace settings
+            restoreWorkspaceOnStartup: false  // Don't auto-restore workspace on startup
         };
     }
 

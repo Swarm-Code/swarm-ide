@@ -6993,8 +6993,9 @@ body {
     cursor: pointer;
 }
 
-/* CRITICAL: Hide xterm.js character measurement element */
-.terminal-panel .xterm-char-measure-element {
+/* CRITICAL: Hide xterm.js character measurement element globally */
+/* Applied globally (not scoped to .terminal-panel) to prevent layout interference in all contexts */
+.xterm-char-measure-element {
     position: absolute !important;
     visibility: hidden !important;
     pointer-events: none !important;

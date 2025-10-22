@@ -41,7 +41,7 @@ class LoggerClass {
             minLevel: this.LEVELS.INFO,       // Minimum level to log
             mode: 'blacklist',                // 'whitelist' or 'blacklist'
             enabledFunctionalities: [],       // Whitelist: only log these
-            disabledFunctionalities: [],      // Blacklist: don't log these
+            disabledFunctionalities: ['gitStatus', 'gitBranch', 'gitPush', 'gitCommit', 'gitDiff', 'gitBlame', 'gitHistory'],      // Blacklist: don't log git stuff
             alwaysShowErrors: true,           // Always show ERROR level regardless of functionality filter
             useColors: true,                  // Use colors in console output
             showTimestamps: false,            // Show timestamps

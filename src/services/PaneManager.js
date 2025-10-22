@@ -9,6 +9,7 @@
 
 const logger = require('../utils/Logger');
 const eventBus = require('../modules/EventBus');
+const workspaceManager = require('./WorkspaceManager');
 
 // CRITICAL FIX #9: Display property constants for consistency
 // All visible content uses 'flex' for proper layout
@@ -52,6 +53,9 @@ class PaneManager {
         // Serializes tab/pane operations to prevent concurrent state mutations
         this.operationQueue = Promise.resolve();
         this.operationInProgress = false;
+        this.queueDepth = 0; // Track number of queued operations
+        this.maxQueueDepth = 0; // Track maximum queue depth seen
+        this.queueWarningThreshold = 5; // Warn when queue gets this deep
 
         // Drag performance tracking
         this.dragMetrics = {
@@ -125,6 +129,9 @@ class PaneManager {
         this.panes.set(paneId, pane);
         this.container.appendChild(paneElement);
         this.activePane = pane;
+
+        // Track pane in active workspace
+        workspaceManager.trackPaneInActiveWorkspace(paneId);
 
         return pane;
     }
@@ -685,6 +692,10 @@ class PaneManager {
         this.panes.set(child1Id, child1);
         this.panes.set(child2Id, child2);
 
+        // Track child panes in active workspace
+        workspaceManager.trackPaneInActiveWorkspace(child1Id);
+        workspaceManager.trackPaneInActiveWorkspace(child2Id);
+
         // Store the file path if there was one
         const existingFilePath = pane.filePath;
 
@@ -837,6 +848,9 @@ class PaneManager {
         pane.element.remove();
         this.panes.delete(paneId);
 
+        // Untrack pane from workspace
+        workspaceManager.untrackPane(paneId);
+
         // Remove resize handle
         if (parent.handle) {
             parent.handle.remove();
@@ -904,6 +918,9 @@ class PaneManager {
         // Remove sibling
         sibling.element.remove();
         this.panes.delete(sibling.id);
+
+        // Untrack sibling from workspace
+        workspaceManager.untrackPane(sibling.id);
 
         // Update active pane
         if (this.activePane?.id === paneId) {
@@ -1757,13 +1774,15 @@ class PaneManager {
         // Use double RAF to ensure layout is complete before resizing
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-                // Handle Terminal instances - force resize to recalculate dimensions
+                // Handle Terminal instances - force resize to recalculate dimensions AND focus
                 if (tab.content._terminalInstance) {
-                    logger.debug('paneCreate', 'Forcing terminal resize after tab switch:', tabId);
+                    logger.debug('paneCreate', 'Forcing terminal resize and focus after tab switch:', tabId);
                     try {
                         tab.content._terminalInstance.resize();
+                        // CRITICAL FIX: Focus terminal to ensure keyboard input goes to correct instance
+                        tab.content._terminalInstance.focus();
                     } catch (error) {
-                        logger.error('paneCreate', 'Error resizing terminal after tab switch:', error);
+                        logger.error('paneCreate', 'Error resizing/focusing terminal after tab switch:', error);
                     }
                 }
 
@@ -1818,23 +1837,45 @@ class PaneManager {
      * CRITICAL FIX #2: Serializes operations like closeTab, closePane, moveTab
      */
     queueOperation(operationName, operation) {
-        logger.debug('paneCreate', `Queueing operation: ${operationName}`);
+        // Increment queue depth
+        this.queueDepth++;
+
+        // Track maximum queue depth
+        if (this.queueDepth > this.maxQueueDepth) {
+            this.maxQueueDepth = this.queueDepth;
+        }
+
+        // Warn if queue is getting backed up
+        if (this.queueDepth >= this.queueWarningThreshold) {
+            logger.warn('paneCreate', `⚠️ Operation queue depth: ${this.queueDepth} operations (max seen: ${this.maxQueueDepth})`);
+            logger.warn('paneCreate', `Queue may be backed up - consider reducing concurrent operations`);
+        }
+
+        logger.debug('paneCreate', `Queueing operation: ${operationName} (queue depth: ${this.queueDepth})`);
 
         const operationPromise = this.operationQueue.then(async () => {
             this.operationInProgress = true;
             const startTime = Date.now();
 
             try {
-                logger.debug('paneCreate', `Executing operation: ${operationName}`);
+                logger.debug('paneCreate', `Executing operation: ${operationName} (queue depth: ${this.queueDepth})`);
                 const result = await operation();
                 const duration = Date.now() - startTime;
-                logger.debug('paneCreate', `Completed operation: ${operationName} (${duration}ms)`);
+                logger.debug('paneCreate', `Completed operation: ${operationName} (${duration}ms, queue depth: ${this.queueDepth})`);
                 return result;
             } catch (error) {
                 logger.error('paneCreate', `Operation ${operationName} failed:`, error);
                 throw error;
             } finally {
                 this.operationInProgress = false;
+
+                // Decrement queue depth
+                this.queueDepth--;
+
+                // Log when queue is empty
+                if (this.queueDepth === 0) {
+                    logger.debug('paneCreate', `✓ Operation queue empty (max depth was: ${this.maxQueueDepth})`);
+                }
             }
         });
 
@@ -1842,6 +1883,9 @@ class PaneManager {
         this.operationQueue = operationPromise.catch(error => {
             // Log but don't propagate - allow queue to continue
             logger.error('paneCreate', 'Operation queue error:', error);
+
+            // Still decrement queue depth even on error
+            this.queueDepth--;
         });
 
         return operationPromise;
@@ -1910,10 +1954,17 @@ class PaneManager {
                     tab.content._fileViewerInstance.destroy();
                 }
 
-                // Pattern 2: Terminal instance (has destroy method)
-                if (tab.content._terminalInstance && typeof tab.content._terminalInstance.destroy === 'function') {
-                    logger.debug('paneCreate', 'Calling destroy() on Terminal instance');
-                    tab.content._terminalInstance.destroy();
+                // Pattern 2: Terminal instance (has dispose method)
+                if (tab.content._terminalInstance) {
+                    logger.debug('paneCreate', 'Disposing Terminal instance and untracking from workspace');
+                    // Untrack from workspace before destroying
+                    workspaceManager.untrackTerminal(tab.content._terminalInstance.id);
+                    // Dispose the terminal
+                    if (typeof tab.content._terminalInstance.dispose === 'function') {
+                        await tab.content._terminalInstance.dispose();
+                    } else if (typeof tab.content._terminalInstance.destroy === 'function') {
+                        tab.content._terminalInstance.destroy();
+                    }
                 }
 
                 // Pattern 3: Browser instance (has cleanup method)

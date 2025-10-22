@@ -177,9 +177,23 @@ class FileExplorer {
      * @param {Object} options - Additional options (e.g., SSH context)
      */
     async openDirectory(dirPath, options = {}) {
+        console.log('[FileExplorer] ╔════════════════════════════════════════╗');
+        console.log('[FileExplorer] ║  openDirectory CALLED                 ║');
+        console.log('[FileExplorer] ╚════════════════════════════════════════╝');
+        console.log('[FileExplorer] dirPath:', dirPath);
+        console.log('[FileExplorer] dirPath type:', typeof dirPath);
+        console.log('[FileExplorer] dirPath is null/undefined?', dirPath == null);
+
+        // Validate dirPath
+        if (!dirPath || typeof dirPath !== 'string') {
+            console.error('[FileExplorer] ❌ INVALID dirPath provided:', dirPath);
+            logger.error('fileSystem', 'Invalid dirPath provided to openDirectory:', dirPath);
+            this.renderError('Invalid directory path');
+            return;
+        }
+
         try {
-            console.log('[FileExplorer] === openDirectory CALLED ===');
-            console.log('[FileExplorer] dirPath:', dirPath);
+            console.log('[FileExplorer] ✓ dirPath validated');
             console.log('[FileExplorer] options:', options);
             console.log('[FileExplorer] options.connectionId:', options.connectionId);
             console.log('[FileExplorer] options.connectionConfig:', options.connectionConfig);
@@ -222,22 +236,43 @@ class FileExplorer {
             }
 
             // Regular local directory handling
-            logger.debug('sshFileExplorer', 'Local path detected, using regular file system');
-            this.sshContext.isSSH = false;
-            this.currentPath = dirPath;
-            stateManager.set('currentDirectory', dirPath);
+            console.log('[FileExplorer] 📁 LOCAL PATH DETECTED');
+            logger.info('fileSystem', '📁 Local path detected, using regular file system');
+            logger.info('fileSystem', 'Processing local directory:', dirPath);
 
+            console.log('[FileExplorer] Step 1: Setting SSH context to false');
+            this.sshContext.isSSH = false;
+
+            console.log('[FileExplorer] Step 2: Setting currentPath to:', dirPath);
+            this.currentPath = dirPath;
+
+            console.log('[FileExplorer] Step 3: Updating stateManager');
+            stateManager.set('currentDirectory', dirPath);
+            console.log('[FileExplorer] ✓ State updated');
+
+            console.log('[FileExplorer] Step 4: Reading directory entries...');
             const entries = await this.fs.readDirectory(dirPath);
-            logger.debug('fileSystem', 'Read', entries.length, 'entries from directory');
+            console.log('[FileExplorer] ✓ Read', entries.length, 'entries from directory');
+            logger.info('fileSystem', 'Read', entries.length, 'entries from directory');
 
             // Filter based on config
+            console.log('[FileExplorer] Step 5: Filtering entries...');
             const filtered = this.filterEntries(entries);
-            logger.debug('fileSystem', 'After filtering:', filtered.length, 'entries');
+            console.log('[FileExplorer] ✓ After filtering:', filtered.length, 'entries');
+            logger.info('fileSystem', 'After filtering:', filtered.length, 'entries');
 
+            console.log('[FileExplorer] Step 6: Rendering tree...');
             this.renderTree(filtered, dirPath);
+            console.log('[FileExplorer] ✓ Tree rendered');
 
-            logger.debug('fileSystem', 'Emitting explorer:directory-opened event');
+            console.log('[FileExplorer] 🎯🎯🎯 Step 7: EMITTING explorer:directory-opened EVENT 🎯🎯🎯');
+            console.log('[FileExplorer] Event data:', { path: dirPath, entriesCount: filtered.length });
+            logger.info('fileSystem', '🎯 EMITTING explorer:directory-opened event');
+            logger.info('fileSystem', 'Event data - path:', dirPath, 'entries:', filtered.length);
+
             eventBus.emit('explorer:directory-opened', { path: dirPath, entries: filtered });
+
+            console.log('[FileExplorer] ✅✅✅ explorer:directory-opened EVENT EMITTED ✅✅✅');
 
             // Set up file watcher for automatic refresh
             logger.debug('fileSystem', 'Setting up file watcher for:', dirPath);
@@ -252,11 +287,23 @@ class FileExplorer {
                 this.config.addRecentFolder(dirPath);
             }
         } catch (error) {
-            console.error('[FileExplorer] ERROR in openDirectory:', error);
+            console.error('[FileExplorer] ╔════════════════════════════════════════╗');
+            console.error('[FileExplorer] ║  ❌❌❌ ERROR IN openDirectory ❌❌❌  ║');
+            console.error('[FileExplorer] ╚════════════════════════════════════════╝');
+            console.error('[FileExplorer] Error:', error);
+            console.error('[FileExplorer] Error message:', error.message);
             console.error('[FileExplorer] Error stack:', error.stack);
-            logger.error('fileSystem', 'Error opening directory:', error);
+            console.error('[FileExplorer] dirPath that caused error:', dirPath);
+            logger.error('fileSystem', '❌ CRITICAL ERROR opening directory:', error);
+            logger.error('fileSystem', 'Error message:', error.message);
             logger.error('fileSystem', 'Error stack:', error.stack);
+            logger.error('fileSystem', 'dirPath:', dirPath);
+
+            // Render error to user
             this.renderError(`Failed to open directory: ${error.message}`);
+
+            console.error('[FileExplorer] ⚠️ explorer:directory-opened event was NOT emitted due to error');
+            console.error('[FileExplorer] ⚠️ Welcome screen will NOT be hidden!');
         }
     }
 

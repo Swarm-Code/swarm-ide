@@ -1,13 +1,24 @@
 /**
- * WorkspaceManager - Manages multiple workspaces with saved layouts
+ * WorkspaceManager - Manages multiple directory-based workspace contexts
  *
- * Handles workspace creation, switching, saving, and loading.
- * Each workspace contains pane layouts, open files, browser sessions, and settings.
- * Uses electron-store for persistent storage with encryption.
+ * ENHANCED to support:
+ * - Directory-based workspaces (each workspace = a project folder)
+ * - Terminal persistence across workspace switches
+ * - Pane hiding/showing instead of destruction
+ * - SSH workspace support with connection tracking
+ * - Multi-project development in same IDE instance
+ *
+ * Each workspace contains:
+ * - Root directory path (local or ssh://)
+ * - Associated panes and their layouts (hidden when not active)
+ * - Running terminals (persist across switches)
+ * - Open files and editors
+ * - Git state and LSP servers
  */
 
 const eventBus = require('../modules/EventBus');
 const logger = require('../utils/Logger');
+const config = require('../modules/Config');
 
 // Simple ID generator
 function generateId() {
@@ -20,44 +31,130 @@ class WorkspaceManager {
         this.workspaces = new Map(); // workspaceId → workspace object
         this.activeWorkspace = null;
         this.defaultWorkspace = null;
+        this.lastWorkspaceId = null; // Track last workspace for "Open Previous Workspace" feature
+
+        // Config for settings (singleton instance)
+        this.config = config;
+
+        // NEW: Reference to PaneManager for pane manipulation
+        this.paneManager = null;
+
+        // NEW: Reference to FileExplorer for directory navigation
+        this.fileExplorer = null;
+
+        // NEW: Track which panes belong to which workspace
+        this.paneToWorkspace = new Map(); // paneId → workspaceId
+
+        // NEW: Track which terminals belong to which workspace
+        this.terminalToWorkspace = new Map(); // terminalId → workspaceId
+
+        // NEW: Track which browsers belong to which workspace
+        this.browserToWorkspace = new Map(); // browserInstanceId → workspaceId
 
         logger.debug('workspaceLoad', 'Initialized');
     }
 
     /**
-     * Initialize workspace manager
+     * Set references to managers (called during app initialization)
      */
-    async init() {
-        // Load workspaces from localStorage
-        const storedData = localStorage.getItem(this.storageKey);
-        const storedWorkspaces = storedData ? JSON.parse(storedData) : [];
-        logger.debug('workspaceLoad', 'Loaded workspaces:', storedWorkspaces.length);
-
-        // If no workspaces exist, create default one
-        if (storedWorkspaces.length === 0) {
-            const defaultWorkspace = this.createWorkspace('Default', 'Default workspace');
-            this.setActiveWorkspace(defaultWorkspace.id);
-            this.defaultWorkspace = defaultWorkspace;
-        } else {
-            // Load existing workspaces
-            storedWorkspaces.forEach(ws => {
-                this.workspaces.set(ws.id, ws);
-            });
-
-            // Set first workspace as active
-            const firstWorkspace = storedWorkspaces[0];
-            this.setActiveWorkspace(firstWorkspace.id);
-            this.defaultWorkspace = firstWorkspace;
-        }
-
-        logger.debug('workspaceLoad', 'Active workspace:', this.activeWorkspace?.id);
+    setManagers(paneManager, fileExplorer) {
+        this.paneManager = paneManager;
+        this.fileExplorer = fileExplorer;
+        logger.debug('workspaceLoad', 'Managers set:', {
+            hasPaneManager: !!paneManager,
+            hasFileExplorer: !!fileExplorer
+        });
     }
 
     /**
-     * Create a new workspace
+     * Initialize workspace manager (ENHANCED: restores tracking maps)
      */
-    createWorkspace(name, description = '', template = 'empty') {
+    async init() {
+        // Load config to check restore preference
+        this.config.load();
+        const shouldRestore = this.config.get('restoreWorkspaceOnStartup', false);
+
+        // Load workspaces and tracking maps from localStorage
+        const storedData = localStorage.getItem(this.storageKey);
+        const persistedState = storedData ? JSON.parse(storedData) : null;
+
+        let storedWorkspaces = [];
+        let paneToWorkspaceMap = [];
+        let terminalToWorkspaceMap = [];
+        let activeWorkspaceId = null;
+
+        if (persistedState && persistedState.version === 2) {
+            // New format with tracking maps
+            storedWorkspaces = persistedState.workspaces || [];
+            paneToWorkspaceMap = persistedState.paneToWorkspace || [];
+            terminalToWorkspaceMap = persistedState.terminalToWorkspace || [];
+            activeWorkspaceId = persistedState.activeWorkspaceId;
+            logger.debug('workspaceLoad', 'Loaded persisted state v2:', {
+                workspaces: storedWorkspaces.length,
+                paneTracking: paneToWorkspaceMap.length,
+                terminalTracking: terminalToWorkspaceMap.length
+            });
+        } else if (persistedState && Array.isArray(persistedState)) {
+            // Legacy format (array of workspaces only)
+            storedWorkspaces = persistedState;
+            logger.debug('workspaceLoad', 'Loaded legacy workspaces:', storedWorkspaces.length);
+        }
+
+        // Store last workspace ID for "Open Previous Workspace" feature
+        this.lastWorkspaceId = activeWorkspaceId;
+
+        // Load existing workspaces into memory (but don't activate)
+        if (storedWorkspaces.length > 0) {
+            storedWorkspaces.forEach(ws => {
+                // Initialize missing arrays for legacy workspaces
+                if (!ws.paneIds) ws.paneIds = [];
+                if (!ws.terminalIds) ws.terminalIds = [];
+                if (!ws.browserIds) ws.browserIds = [];
+
+                this.workspaces.set(ws.id, ws);
+            });
+
+            // Restore tracking maps
+            paneToWorkspaceMap.forEach(([paneId, workspaceId]) => {
+                this.paneToWorkspace.set(paneId, workspaceId);
+            });
+            terminalToWorkspaceMap.forEach(([terminalId, workspaceId]) => {
+                this.terminalToWorkspace.set(terminalId, workspaceId);
+            });
+        }
+
+        // Only restore workspace if the setting is enabled
+        if (shouldRestore && this.lastWorkspaceId) {
+            const targetWorkspace = this.workspaces.get(this.lastWorkspaceId);
+            if (targetWorkspace) {
+                this.activeWorkspace = targetWorkspace;
+                this.defaultWorkspace = targetWorkspace;
+                logger.debug('workspaceLoad', 'Restored active workspace:', targetWorkspace.id);
+            }
+        } else {
+            logger.debug('workspaceLoad', 'Auto-restore disabled, starting with clean slate');
+        }
+
+        logger.debug('workspaceLoad', 'Initialization complete:', {
+            activeWorkspace: this.activeWorkspace?.id,
+            totalWorkspaces: this.workspaces.size,
+            lastWorkspaceId: this.lastWorkspaceId,
+            paneTrackingEntries: this.paneToWorkspace.size,
+            terminalTrackingEntries: this.terminalToWorkspace.size,
+            autoRestore: shouldRestore
+        });
+    }
+
+    /**
+     * Create a new workspace (ENHANCED for directory-based workspaces)
+     */
+    createWorkspace(name, description = '', template = 'empty', rootPath = null) {
         const workspaceId = generateId();
+
+        // NEW: Extract name from rootPath if not provided
+        if (!name && rootPath) {
+            name = this.extractWorkspaceName(rootPath);
+        }
 
         const workspace = {
             id: workspaceId,
@@ -66,22 +163,71 @@ class WorkspaceManager {
             template: template,
             createdAt: Date.now(),
             updatedAt: Date.now(),
+
+            // NEW: Directory context
+            rootPath: rootPath || null, // Root directory of this workspace
+            currentPath: rootPath || null, // Current directory (can navigate within workspace)
+            isSSH: rootPath ? rootPath.startsWith('ssh://') : false,
+
+            // Pane state
             paneLayout: null, // Will be set by PaneManager
+            paneIds: [], // Track pane IDs belonging to this workspace
+            isHidden: false, // Whether workspace panes are currently hidden
+
+            // File state
             openFiles: [],
+
+            // Browser state
             browserSessions: [],
             activeBrowserProfile: null,
+
+            // Terminal state
+            terminalIds: [], // Track terminal IDs in this workspace
+
+            // Browser state
+            browserIds: [], // Track browser instance IDs in this workspace
+
+            // Settings
             settings: {
                 theme: 'dark'
-            }
+            },
+
+            // NEW: SSH connection tracking
+            sshConnectionId: null
         };
 
         this.workspaces.set(workspaceId, workspace);
         this.saveWorkspaces();
 
-        logger.debug('workspaceLoad', 'Created workspace:', workspaceId, name);
+        logger.debug('workspaceLoad', 'Created workspace:', workspaceId, name, {
+            rootPath,
+            isSSH: workspace.isSSH
+        });
         eventBus.emit('workspace:created', { workspaceId, workspace });
 
         return workspace;
+    }
+
+    /**
+     * Extract a readable workspace name from a path
+     */
+    extractWorkspaceName(path) {
+        if (!path) return 'Untitled';
+
+        // Handle SSH paths
+        if (path.startsWith('ssh://')) {
+            const match = path.match(/ssh:\/\/([^/]+)(\/.*)?/);
+            if (match) {
+                const host = match[1];
+                const remotePath = match[2] || '/';
+                const dirName = remotePath.split('/').filter(Boolean).pop() || 'root';
+                return `${dirName} (${host})`;
+            }
+        }
+
+        // Handle local paths
+        const parts = path.split('/').filter(Boolean);
+        return parts[parts.length - 1] || 'root';
     }
 
     /**
@@ -106,26 +252,186 @@ class WorkspaceManager {
     }
 
     /**
-     * Set active workspace
+     * Get last workspace info (for "Open Previous Workspace" feature)
      */
-    setActiveWorkspace(workspaceId) {
+    getLastWorkspace() {
+        if (!this.lastWorkspaceId) return null;
+        return this.workspaces.get(this.lastWorkspaceId);
+    }
+
+    /**
+     * Restore the last workspace
+     */
+    async restoreLastWorkspace() {
+        if (!this.lastWorkspaceId) {
+            logger.warn('workspaceLoad', 'No last workspace to restore');
+            return false;
+        }
+
+        const workspace = this.workspaces.get(this.lastWorkspaceId);
+        if (!workspace) {
+            logger.warn('workspaceLoad', 'Last workspace not found:', this.lastWorkspaceId);
+            return false;
+        }
+
+        logger.info('workspaceLoad', 'Restoring last workspace:', workspace.name);
+        return await this.setActiveWorkspace(this.lastWorkspaceId);
+    }
+
+    /**
+     * Set active workspace (ENHANCED for pane/terminal persistence)
+     */
+    async setActiveWorkspace(workspaceId) {
         const workspace = this.workspaces.get(workspaceId);
         if (!workspace) {
             logger.error('workspaceLoad', 'Workspace not found:', workspaceId);
             return false;
         }
 
+        const previousWorkspace = this.activeWorkspace;
+
         // Save current workspace state before switching
-        if (this.activeWorkspace) {
-            this.saveWorkspaceState(this.activeWorkspace.id);
+        if (previousWorkspace && previousWorkspace.id !== workspaceId) {
+            this.saveWorkspaceState(previousWorkspace.id);
+
+            // NEW: Hide current workspace's panes (don't destroy!)
+            await this.hideWorkspacePanes(previousWorkspace.id);
         }
 
-        this.activeWorkspace = workspace;
-        logger.debug('workspaceLoad', 'Active workspace set:', workspaceId);
+        // NEW: Show target workspace's panes
+        await this.showWorkspacePanes(workspaceId);
 
-        eventBus.emit('workspace:activated', { workspaceId, workspace });
+        this.activeWorkspace = workspace;
+        workspace.updatedAt = Date.now();
+
+        // NEW: Update file explorer to workspace directory
+        if (this.fileExplorer && workspace.rootPath) {
+            await this.fileExplorer.openDirectory(workspace.rootPath);
+        }
+
+        logger.info('workspaceLoad', 'Active workspace set:', workspaceId, {
+            name: workspace.name,
+            rootPath: workspace.rootPath,
+            paneCount: workspace.paneIds.length,
+            terminalCount: workspace.terminalIds.length
+        });
+
+        eventBus.emit('workspace:activated', {
+            workspaceId,
+            workspace,
+            previousWorkspaceId: previousWorkspace?.id
+        });
 
         return true;
+    }
+
+    /**
+     * Hide workspace panes without destroying them
+     */
+    async hideWorkspacePanes(workspaceId) {
+        const workspace = this.workspaces.get(workspaceId);
+        if (!workspace || !this.paneManager) return;
+
+        logger.debug('workspaceLoad', `Hiding panes for workspace: ${workspaceId}`);
+
+        // Initialize arrays if they don't exist (for legacy workspaces)
+        if (!workspace.paneIds) {
+            workspace.paneIds = [];
+            logger.debug('workspaceLoad', `Initialized paneIds array for workspace ${workspaceId}`);
+        }
+        if (!workspace.browserIds) {
+            workspace.browserIds = [];
+            logger.debug('workspaceLoad', `Initialized browserIds array for workspace ${workspaceId}`);
+        }
+
+        // Hide all panes
+        for (const paneId of workspace.paneIds) {
+            const pane = this.paneManager.panes.get(paneId);
+            if (pane && pane.element) {
+                pane.element.style.display = 'none';
+            }
+        }
+
+        // Hide all browsers in this workspace
+        const Browser = require('../components/Browser');
+        for (const browserInstanceId of workspace.browserIds) {
+            const registryEntry = Browser.instances.get(browserInstanceId);
+            if (registryEntry && registryEntry.browser) {
+                logger.debug('workspaceLoad', `Hiding browser ${browserInstanceId}`);
+                await registryEntry.browser.hideBrowserView();
+            }
+        }
+
+        workspace.isHidden = true;
+
+        logger.debug('workspaceLoad', `✓ Hidden ${workspace.paneIds.length} panes and ${workspace.browserIds.length} browsers for workspace: ${workspaceId}`);
+    }
+
+    /**
+     * Show workspace panes
+     */
+    async showWorkspacePanes(workspaceId) {
+        const workspace = this.workspaces.get(workspaceId);
+        if (!workspace || !this.paneManager) return;
+
+        logger.debug('workspaceLoad', `Showing panes for workspace: ${workspaceId}`);
+
+        // Initialize arrays if they don't exist (for legacy workspaces)
+        if (!workspace.paneIds) {
+            workspace.paneIds = [];
+            logger.debug('workspaceLoad', `Initialized paneIds array for workspace ${workspaceId}`);
+        }
+        if (!workspace.browserIds) {
+            workspace.browserIds = [];
+            logger.debug('workspaceLoad', `Initialized browserIds array for workspace ${workspaceId}`);
+        }
+
+        // If no panes yet, workspace needs to use current pane manager root
+        if (workspace.paneIds.length === 0 && this.paneManager.rootPane) {
+            workspace.paneIds.push(this.paneManager.rootPane.id);
+            this.paneToWorkspace.set(this.paneManager.rootPane.id, workspaceId);
+        }
+
+        // Show all panes
+        for (const paneId of workspace.paneIds) {
+            const pane = this.paneManager.panes.get(paneId);
+            if (pane && pane.element) {
+                pane.element.style.display = 'flex';
+
+                // Force terminal resize if pane contains terminals
+                if (pane.tabs) {
+                    for (const tab of pane.tabs) {
+                        if (tab.contentType === 'terminal' && tab.content && tab.content._terminalInstance) {
+                            // Use RAF to ensure layout is complete
+                            requestAnimationFrame(() => {
+                                requestAnimationFrame(() => {
+                                    try {
+                                        tab.content._terminalInstance.resize();
+                                        tab.content._terminalInstance.fit();
+                                    } catch (err) {
+                                        logger.error('workspaceLoad', 'Error resizing terminal:', err);
+                                    }
+                                });
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Show all browsers in this workspace
+        const Browser = require('../components/Browser');
+        for (const browserInstanceId of workspace.browserIds) {
+            const registryEntry = Browser.instances.get(browserInstanceId);
+            if (registryEntry && registryEntry.browser) {
+                logger.debug('workspaceLoad', `Showing browser ${browserInstanceId}`);
+                await registryEntry.browser.showBrowserView();
+            }
+        }
+
+        workspace.isHidden = false;
+
+        logger.debug('workspaceLoad', `✓ Shown ${workspace.paneIds.length} panes and ${workspace.browserIds.length} browsers for workspace: ${workspaceId}`);
     }
 
     /**
@@ -281,12 +587,31 @@ class WorkspaceManager {
     }
 
     /**
-     * Save workspaces to persistent storage
+     * Save workspaces to persistent storage (ENHANCED: saves tracking maps)
      */
     saveWorkspaces() {
         const workspacesArray = Array.from(this.workspaces.values());
-        localStorage.setItem(this.storageKey, JSON.stringify(workspacesArray));
-        logger.debug('workspaceLoad', 'Saved workspaces to storage');
+
+        // Convert Maps to arrays for JSON serialization
+        const paneToWorkspaceArray = Array.from(this.paneToWorkspace.entries());
+        const terminalToWorkspaceArray = Array.from(this.terminalToWorkspace.entries());
+
+        // Create v2 persisted state with tracking maps
+        const persistedState = {
+            version: 2,
+            workspaces: workspacesArray,
+            paneToWorkspace: paneToWorkspaceArray,
+            terminalToWorkspace: terminalToWorkspaceArray,
+            activeWorkspaceId: this.activeWorkspace?.id || null,
+            savedAt: Date.now()
+        };
+
+        localStorage.setItem(this.storageKey, JSON.stringify(persistedState));
+        logger.debug('workspaceLoad', 'Saved workspaces to storage (v2):', {
+            workspaces: workspacesArray.length,
+            paneTracking: paneToWorkspaceArray.length,
+            terminalTracking: terminalToWorkspaceArray.length
+        });
     }
 
     /**
@@ -353,6 +678,138 @@ class WorkspaceManager {
                 description: 'Two browsers side by side for testing'
             }
         ];
+    }
+
+    /**
+     * Track a pane in the active workspace
+     */
+    trackPaneInActiveWorkspace(paneId) {
+        if (!this.activeWorkspace) return;
+
+        // Initialize paneIds array if it doesn't exist (for legacy workspaces)
+        if (!this.activeWorkspace.paneIds) {
+            this.activeWorkspace.paneIds = [];
+            logger.debug('workspaceLoad', `Initialized paneIds array for workspace ${this.activeWorkspace.id}`);
+        }
+
+        if (!this.activeWorkspace.paneIds.includes(paneId)) {
+            this.activeWorkspace.paneIds.push(paneId);
+            this.paneToWorkspace.set(paneId, this.activeWorkspace.id);
+            logger.debug('workspaceLoad', `Pane ${paneId} tracked in workspace ${this.activeWorkspace.id}`);
+        }
+    }
+
+    /**
+     * Track a terminal in the active workspace
+     */
+    trackTerminalInActiveWorkspace(terminalId) {
+        if (!this.activeWorkspace) return;
+
+        // Initialize terminalIds array if it doesn't exist (for legacy workspaces)
+        if (!this.activeWorkspace.terminalIds) {
+            this.activeWorkspace.terminalIds = [];
+            logger.debug('workspaceLoad', `Initialized terminalIds array for workspace ${this.activeWorkspace.id}`);
+        }
+
+        if (!this.activeWorkspace.terminalIds.includes(terminalId)) {
+            this.activeWorkspace.terminalIds.push(terminalId);
+            this.terminalToWorkspace.set(terminalId, this.activeWorkspace.id);
+            logger.debug('workspaceLoad', `Terminal ${terminalId} tracked in workspace ${this.activeWorkspace.id}`);
+        }
+    }
+
+    /**
+     * Untrack a pane from its workspace
+     */
+    untrackPane(paneId) {
+        const workspaceId = this.paneToWorkspace.get(paneId);
+        if (!workspaceId) return;
+
+        const workspace = this.workspaces.get(workspaceId);
+        if (workspace) {
+            const index = workspace.paneIds.indexOf(paneId);
+            if (index > -1) {
+                workspace.paneIds.splice(index, 1);
+            }
+        }
+
+        this.paneToWorkspace.delete(paneId);
+        logger.debug('workspaceLoad', `Pane ${paneId} untracked from workspace ${workspaceId}`);
+    }
+
+    /**
+     * Untrack a terminal from its workspace
+     */
+    untrackTerminal(terminalId) {
+        const workspaceId = this.terminalToWorkspace.get(terminalId);
+        if (!workspaceId) return;
+
+        const workspace = this.workspaces.get(workspaceId);
+        if (workspace) {
+            const index = workspace.terminalIds.indexOf(terminalId);
+            if (index > -1) {
+                workspace.terminalIds.splice(index, 1);
+            }
+        }
+
+        this.terminalToWorkspace.delete(terminalId);
+        logger.debug('workspaceLoad', `Terminal ${terminalId} untracked from workspace ${workspaceId}`);
+    }
+
+    /**
+     * Track a browser in the active workspace
+     */
+    trackBrowserInActiveWorkspace(browserInstanceId) {
+        if (!this.activeWorkspace) return;
+
+        // Initialize browserIds array if it doesn't exist (for legacy workspaces)
+        if (!this.activeWorkspace.browserIds) {
+            this.activeWorkspace.browserIds = [];
+            logger.debug('workspaceLoad', `Initialized browserIds array for workspace ${this.activeWorkspace.id}`);
+        }
+
+        if (!this.activeWorkspace.browserIds.includes(browserInstanceId)) {
+            this.activeWorkspace.browserIds.push(browserInstanceId);
+            this.browserToWorkspace.set(browserInstanceId, this.activeWorkspace.id);
+            logger.debug('workspaceLoad', `Browser ${browserInstanceId} tracked in workspace ${this.activeWorkspace.id}`);
+        }
+    }
+
+    /**
+     * Untrack a browser from its workspace
+     */
+    untrackBrowser(browserInstanceId) {
+        const workspaceId = this.browserToWorkspace.get(browserInstanceId);
+        if (!workspaceId) return;
+
+        const workspace = this.workspaces.get(workspaceId);
+        if (workspace) {
+            const index = workspace.browserIds.indexOf(browserInstanceId);
+            if (index > -1) {
+                workspace.browserIds.splice(index, 1);
+            }
+        }
+
+        this.browserToWorkspace.delete(browserInstanceId);
+        logger.debug('workspaceLoad', `Browser ${browserInstanceId} untracked from workspace ${workspaceId}`);
+    }
+
+    /**
+     * Get workspace for a given root path (or create if doesn't exist)
+     */
+    async getOrCreateWorkspaceForPath(rootPath) {
+        // Check if workspace already exists for this path
+        for (const workspace of this.workspaces.values()) {
+            if (workspace.rootPath === rootPath) {
+                return workspace;
+            }
+        }
+
+        // Create new workspace for this path
+        const workspace = this.createWorkspace(null, `Workspace for ${rootPath}`, 'empty', rootPath);
+        logger.info('workspaceLoad', `Created new workspace for path: ${rootPath}`);
+
+        return workspace;
     }
 
     /**

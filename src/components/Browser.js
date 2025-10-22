@@ -17,6 +17,10 @@ const logger = require('../utils/Logger');
 const browserProfileManager = require('../services/BrowserProfileManager');
 
 class Browser {
+    // CRITICAL: Global registry to track all Browser instances and prevent memory leaks
+    static instances = new Map(); // Maps instanceId -> { browser, createdAt, paneId, tabId, browserViewTabs: [] }
+    static instanceCounter = 0;
+
     constructor(container, paneId, tabId, profileId = null) {
         this.container = container;
         this.paneId = paneId;
@@ -31,6 +35,22 @@ class Browser {
         this.isVisible = false; // CRITICAL FIX: Start as false, will be set to true when createTab completes
         this.overlayIsVisible = false; // Track if modal/settings is open
         this.lastKnownBounds = null; // CRITICAL FIX #6: Cache for bounds when tab is hidden
+
+        // CRITICAL: Generate unique instance ID and register in global registry
+        this.instanceId = `browser-${++Browser.instanceCounter}-${Date.now()}`;
+        Browser.instances.set(this.instanceId, {
+            browser: this,
+            createdAt: new Date(),
+            paneId: this.paneId,
+            tabId: this.tabId,
+            browserViewTabs: [] // Will track BrowserView tab IDs
+        });
+        logger.info('browserNav', `✓ Browser instance registered in cleanup registry:`, {
+            instanceId: this.instanceId,
+            paneId: this.paneId,
+            tabId: this.tabId,
+            totalInstances: Browser.instances.size
+        });
 
         this.init();
         this.setupTabVisibilityHandlers();
@@ -241,6 +261,17 @@ class Browser {
                 });
 
                 this.activeTabId = tabId;
+
+                // CRITICAL: Track BrowserView tab in cleanup registry
+                const registryEntry = Browser.instances.get(this.instanceId);
+                if (registryEntry) {
+                    registryEntry.browserViewTabs.push(tabId);
+                    logger.debug('browserNav', `✓ BrowserView tab tracked in cleanup registry:`, {
+                        instanceId: this.instanceId,
+                        tabId: tabId,
+                        totalBrowserViewTabs: registryEntry.browserViewTabs.length
+                    });
+                }
 
                 // CRITICAL FIX: Mark browser as visible now that the tab is created
                 this.isVisible = true;
@@ -812,7 +843,12 @@ class Browser {
      * Destroy the browser - complete cleanup
      */
     async destroy() {
-        logger.debug('browserNav', 'Destroying browser instance');
+        logger.info('browserNav', 'Destroying browser instance:', {
+            instanceId: this.instanceId,
+            paneId: this.paneId,
+            tabId: this.tabId,
+            browserViewTabCount: this.tabs.length
+        });
 
         // Disconnect resize observer
         if (this.resizeObserver) {
@@ -825,6 +861,20 @@ class Browser {
             try {
                 logger.debug('browserNav', 'Destroying BrowserView:', tab.id);
                 await window.electronAPI.browserDestroyView(tab.id);
+
+                // CRITICAL: Remove from registry tracking
+                const registryEntry = Browser.instances.get(this.instanceId);
+                if (registryEntry) {
+                    const index = registryEntry.browserViewTabs.indexOf(tab.id);
+                    if (index > -1) {
+                        registryEntry.browserViewTabs.splice(index, 1);
+                        logger.debug('browserNav', `✓ BrowserView tab removed from cleanup registry:`, {
+                            instanceId: this.instanceId,
+                            tabId: tab.id,
+                            remainingBrowserViewTabs: registryEntry.browserViewTabs.length
+                        });
+                    }
+                }
             } catch (error) {
                 logger.error('browserNav', 'Error destroying tab:', error);
             }
@@ -836,7 +886,125 @@ class Browser {
         this.isVisible = false;
         this.container.innerHTML = '';
 
-        logger.debug('browserNav', 'Browser instance destroyed');
+        // CRITICAL: Unregister from cleanup registry
+        Browser.instances.delete(this.instanceId);
+        logger.info('browserNav', `✓ Browser instance unregistered from cleanup registry:`, {
+            instanceId: this.instanceId,
+            remainingInstances: Browser.instances.size
+        });
+
+        logger.info('browserNav', 'Browser instance destroyed successfully');
+    }
+
+    /**
+     * STATIC METHODS - Cleanup Registry Monitoring
+     */
+
+    /**
+     * Get all tracked Browser instances from the cleanup registry
+     * @returns {Map} Registry of all Browser instances
+     */
+    static getRegistry() {
+        return Browser.instances;
+    }
+
+    /**
+     * Get summary of cleanup registry status
+     * @returns {Object} Summary with instance count, total BrowserView tabs, and detailed breakdown
+     */
+    static getRegistrySummary() {
+        const summary = {
+            totalInstances: Browser.instances.size,
+            totalBrowserViewTabs: 0,
+            instances: []
+        };
+
+        for (const [instanceId, entry] of Browser.instances.entries()) {
+            summary.totalBrowserViewTabs += entry.browserViewTabs.length;
+            summary.instances.push({
+                instanceId,
+                paneId: entry.paneId,
+                tabId: entry.tabId,
+                createdAt: entry.createdAt,
+                ageMinutes: Math.round((Date.now() - entry.createdAt.getTime()) / 60000),
+                browserViewTabCount: entry.browserViewTabs.length,
+                browserViewTabs: entry.browserViewTabs
+            });
+        }
+
+        return summary;
+    }
+
+    /**
+     * Log cleanup registry status to console
+     * Useful for debugging memory leaks and orphaned instances
+     */
+    static logRegistryStatus() {
+        const summary = Browser.getRegistrySummary();
+
+        logger.info('browserNav', '📊 Browser Cleanup Registry Status:', {
+            totalInstances: summary.totalInstances,
+            totalBrowserViewTabs: summary.totalBrowserViewTabs
+        });
+
+        if (summary.instances.length > 0) {
+            logger.info('browserNav', 'Detailed breakdown:');
+            summary.instances.forEach((instance, index) => {
+                logger.info('browserNav', `  Instance ${index + 1}:`, {
+                    instanceId: instance.instanceId,
+                    paneId: instance.paneId,
+                    tabId: instance.tabId,
+                    ageMinutes: instance.ageMinutes,
+                    browserViewTabCount: instance.browserViewTabCount,
+                    browserViewTabs: instance.browserViewTabs
+                });
+            });
+        } else {
+            logger.info('browserNav', 'No Browser instances currently tracked');
+        }
+
+        return summary;
+    }
+
+    /**
+     * Detect potentially orphaned instances
+     * An instance is considered orphaned if it has been alive for > maxAgeMinutes
+     * @param {number} maxAgeMinutes - Maximum age in minutes before considering orphaned
+     * @returns {Array} List of potentially orphaned instances
+     */
+    static detectOrphanedInstances(maxAgeMinutes = 60) {
+        const summary = Browser.getRegistrySummary();
+        const orphaned = summary.instances.filter(instance => instance.ageMinutes > maxAgeMinutes);
+
+        if (orphaned.length > 0) {
+            logger.warn('browserNav', `⚠️ Detected ${orphaned.length} potentially orphaned Browser instances:`, orphaned);
+        }
+
+        return orphaned;
+    }
+
+    /**
+     * Force cleanup of a specific instance by ID
+     * DANGEROUS: Only use for debugging/recovery from memory leaks
+     * @param {string} instanceId - Instance ID to destroy
+     */
+    static async forceCleanupInstance(instanceId) {
+        const entry = Browser.instances.get(instanceId);
+        if (!entry) {
+            logger.warn('browserNav', `Cannot force cleanup - instance not found: ${instanceId}`);
+            return false;
+        }
+
+        logger.warn('browserNav', `⚠️ Force cleaning up Browser instance: ${instanceId}`);
+
+        try {
+            await entry.browser.destroy();
+            logger.info('browserNav', `✓ Force cleanup successful: ${instanceId}`);
+            return true;
+        } catch (error) {
+            logger.error('browserNav', `Force cleanup failed for ${instanceId}:`, error);
+            return false;
+        }
     }
 }
 

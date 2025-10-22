@@ -386,8 +386,7 @@ class Application {
             terminalContainer.id = 'terminal-container';
             terminalContainer.style.cssText = 'position: absolute; left: 0; right: 0; bottom: 0; z-index: 1000;';
 
-            // Get pane container
-            const paneContainer = document.getElementById('pane-container');
+            // Use existing paneContainer variable (don't redeclare)
             if (paneContainer) {
                 paneContainer.appendChild(terminalContainer);
                 logger.debug('appInit', 'Terminal container created and added to pane container');
@@ -431,24 +430,84 @@ class Application {
         }
 
         // Initialize PaneManager
-        this.paneManager = new PaneManager(paneContainer);
-        const rootPane = this.paneManager.init();
-        logger.info('appInit', '✓ PaneManager initialized with root pane:', rootPane.id);
+        console.log('[RENDERER] ═══════════════════════════════════════════════════');
+        console.log('[RENDERER] 🔥🔥🔥 REACHED PANEMANAGER INITIALIZATION 🔥🔥🔥');
+        console.log('[RENDERER] ═══════════════════════════════════════════════════');
+
+        try {
+            console.log('[RENDERER] 🔍 BEFORE creating PaneManager...');
+            logger.info('appInit', '🔍 BEFORE creating PaneManager...');
+            console.log('[RENDERER] 🔍 paneContainer:', paneContainer);
+            logger.info('appInit', '🔍 paneContainer:', paneContainer);
+            console.log('[RENDERER] 🔍 paneContainer children count:', paneContainer?.children?.length);
+            logger.info('appInit', '🔍 paneContainer children count:', paneContainer?.children?.length);
+
+            console.log('[RENDERER] 🔍 Creating new PaneManager instance...');
+            this.paneManager = new PaneManager(paneContainer);
+            console.log('[RENDERER] ✓ PaneManager instance created');
+            logger.info('appInit', '🔍 PaneManager created, calling init()...');
+
+            console.log('[RENDERER] 🔍 Calling paneManager.init()...');
+            const rootPane = this.paneManager.init();
+            console.log('[RENDERER] ✓ init() returned, rootPane:', rootPane);
+            logger.info('appInit', '🔍 init() returned, rootPane:', rootPane);
+            logger.info('appInit', '🔍 rootPane type:', typeof rootPane);
+            logger.info('appInit', '🔍 rootPane.id:', rootPane?.id);
+            logger.info('appInit', '✓ PaneManager initialized with root pane:', rootPane.id);
+        } catch (error) {
+            console.error('[RENDERER] ❌❌❌ ERROR DURING PANEMANAGER INIT:', error);
+            console.error('[RENDERER] Error stack:', error.stack);
+            logger.error('appInit', '❌❌❌ ERROR DURING PANEMANAGER INIT:', error);
+            logger.error('appInit', 'Error stack:', error.stack);
+            throw error;
+        }
+
+        // Wire up WorkspaceManager with PaneManager and FileExplorer
+        console.log('[RENDERER] 🔧 Wiring up WorkspaceManager...');
+        this.workspaceManager.setManagers(this.paneManager, explorer);
+        console.log('[RENDERER] ✓ WorkspaceManager wired up');
+        logger.info('appInit', '✓ WorkspaceManager wired up with PaneManager and FileExplorer');
 
         // Show empty state in root pane
-        const emptyState = document.createElement('div');
-        emptyState.style.cssText = 'display: flex; align-items: center; justify-content: center; height: 100%; width: 100%; color: #888;';
-        emptyState.textContent = 'Select a file from the sidebar to view its contents';
-        rootPane.contentContainer.appendChild(emptyState);
+        try {
+            console.log('[RENDERER] 📝 Creating empty state element...');
+            const emptyState = document.createElement('div');
+            emptyState.style.cssText = 'display: flex; align-items: center; justify-content: center; height: 100%; width: 100%; color: #888;';
+            emptyState.textContent = 'Select a file from the sidebar to view its contents';
+            console.log('[RENDERER] 📝 Appending empty state to rootPane.contentContainer...');
+            console.log('[RENDERER] rootPane:', rootPane);
+            console.log('[RENDERER] rootPane.contentContainer:', rootPane.contentContainer);
 
-        // Update root pane title
-        const titleElement = rootPane.element.querySelector('.pane-title');
-        if (titleElement) {
-            titleElement.textContent = 'File Viewer';
+            if (!rootPane.contentContainer) {
+                console.error('[RENDERER] ❌ rootPane.contentContainer is NULL/undefined!');
+                throw new Error('rootPane.contentContainer is null or undefined');
+            }
+
+            rootPane.contentContainer.appendChild(emptyState);
+            console.log('[RENDERER] ✓ Empty state appended');
+
+            // Update root pane title
+            console.log('[RENDERER] 📝 Updating root pane title...');
+            const titleElement = rootPane.element.querySelector('.pane-title');
+            console.log('[RENDERER] titleElement:', titleElement);
+            if (titleElement) {
+                titleElement.textContent = 'File Viewer';
+                console.log('[RENDERER] ✓ Title updated');
+            } else {
+                console.warn('[RENDERER] ⚠️ titleElement not found');
+            }
+        } catch (error) {
+            console.error('[RENDERER] ❌ ERROR setting up root pane:', error);
+            console.error('[RENDERER] Error stack:', error.stack);
+            // Continue anyway - this shouldn't block welcome screen setup
         }
 
         // Setup welcome screen show/hide logic
+        console.log('[RENDERER] >>>>>>>>>> ABOUT TO CALL setupWelcomeScreen <<<<<<<<<<<');
+        logger.info('appInit', '>>>>>>>>>> ABOUT TO CALL setupWelcomeScreen <<<<<<<<<<<');
         this.setupWelcomeScreen(welcomeContainer, appContainer);
+        console.log('[RENDERER] >>>>>>>>>> setupWelcomeScreen CALLED <<<<<<<<<<<');
+        logger.info('appInit', '>>>>>>>>>> setupWelcomeScreen RETURNED <<<<<<<<<<<');
     }
 
     /**
@@ -560,9 +619,16 @@ class Application {
                     logger.debug('appInit', 'Browser tab closed, cleaning up browser instance');
                     // The browser instance should be stored in the content element
                     const browserInstance = data.content?._browserInstance;
-                    if (browserInstance && typeof browserInstance.destroy === 'function') {
-                        logger.debug('appInit', 'Destroying browser instance');
-                        browserInstance.destroy();
+                    if (browserInstance) {
+                        // Untrack browser from workspace
+                        this.workspaceManager.untrackBrowser(browserInstance.instanceId);
+                        logger.debug('appInit', 'Browser untracked from workspace:', browserInstance.instanceId);
+
+                        // Destroy browser instance
+                        if (typeof browserInstance.destroy === 'function') {
+                            logger.debug('appInit', 'Destroying browser instance');
+                            browserInstance.destroy();
+                        }
                     }
                 }
                 this.saveWorkspaceLayout();
@@ -667,21 +733,46 @@ class Application {
         logger.debug('appInit', 'welcomeContainer:', welcomeContainer);
         logger.debug('appInit', 'appContainer:', appContainer);
 
-        // Listen for folder open events
-        eventBus.on('explorer:directory-opened', (data) => {
-            logger.debug('appInit', '===== RECEIVED explorer:directory-opened EVENT =====');
-            logger.debug('appInit', 'Event data:', data);
-            logger.debug('appInit', 'Hiding welcome screen and showing IDE');
-            logger.debug('appInit', 'welcomeContainer before:', welcomeContainer.style.display);
-            logger.debug('appInit', 'appContainer before:', appContainer.style.display);
+        if (!welcomeContainer || !appContainer) {
+            logger.error('appInit', 'welcomeContainer or appContainer is NULL! Cannot setup welcome screen');
+            return;
+        }
 
+        // Listen for folder open events
+        console.log('[RENDERER] 🎧 Registering listener for explorer:directory-opened event');
+        eventBus.on('explorer:directory-opened', (data) => {
+            console.log('[RENDERER] ╔═══════════════════════════════════════════════════╗');
+            console.log('[RENDERER] ║  🎉 RECEIVED explorer:directory-opened EVENT!  ║');
+            console.log('[RENDERER] ╚═══════════════════════════════════════════════════╝');
+            console.log('[RENDERER] Event data:', data);
+            console.log('[RENDERER] Event data.path:', data.path);
+            console.log('[RENDERER] Event data.entries:', data.entries?.length);
+
+            logger.info('appInit', '🎉 RECEIVED explorer:directory-opened EVENT');
+            logger.info('appInit', 'Event data:', data);
+            logger.info('appInit', 'Hiding welcome screen and showing IDE');
+
+            console.log('[RENDERER] welcomeContainer:', welcomeContainer);
+            console.log('[RENDERER] appContainer:', appContainer);
+            console.log('[RENDERER] welcomeContainer.style.display BEFORE:', welcomeContainer.style.display);
+            console.log('[RENDERER] appContainer.style.display BEFORE:', appContainer.style.display);
+            logger.info('appInit', 'welcomeContainer before:', welcomeContainer.style.display);
+            logger.info('appInit', 'appContainer before:', appContainer.style.display);
+
+            console.log('[RENDERER] 🔄 Setting welcomeContainer.style.display = "none"');
             welcomeContainer.style.display = 'none';
+            console.log('[RENDERER] 🔄 Setting appContainer.style.display = "block"');
             appContainer.style.display = 'block';
 
-            logger.debug('appInit', 'welcomeContainer after:', welcomeContainer.style.display);
-            logger.debug('appInit', 'appContainer after:', appContainer.style.display);
-            logger.debug('appInit', '===== FINISHED SHOWING IDE =====');
+            console.log('[RENDERER] welcomeContainer.style.display AFTER:', welcomeContainer.style.display);
+            console.log('[RENDERER] appContainer.style.display AFTER:', appContainer.style.display);
+            logger.info('appInit', 'welcomeContainer after:', welcomeContainer.style.display);
+            logger.info('appInit', 'appContainer after:', appContainer.style.display);
+            console.log('[RENDERER] ✅ IDE SHOULD NOW BE VISIBLE!');
+            logger.info('appInit', '===== FINISHED SHOWING IDE =====');
         });
+
+        logger.info('appInit', '✓ Welcome screen event listener registered successfully');
     }
 
     /**
@@ -831,6 +922,10 @@ class Application {
         // Store reference for cleanup
         browserContainer._browserInstance = browser;
 
+        // Track browser in active workspace
+        this.workspaceManager.trackBrowserInActiveWorkspace(browser.instanceId);
+        logger.debug('appInit', 'Browser tracked in workspace:', browser.instanceId);
+
         logger.debug('appInit', '✓ Browser opened in pane successfully');
         logger.debug('appInit', '========================================');
     }
@@ -886,6 +981,9 @@ class Application {
 
         // Store reference for cleanup
         terminalContainer._terminalInstance = terminal;
+
+        // Track terminal in active workspace
+        this.workspaceManager.trackTerminalInActiveWorkspace(terminal.id);
 
         logger.debug('appInit', '✓ Terminal opened in pane successfully');
         logger.debug('appInit', '========================================');
@@ -1301,10 +1399,23 @@ class Application {
             await window.sshService.connect(connectionId);
             logger.info('ssh', 'SSH connection established successfully');
 
+            // Create or get workspace for this SSH connection
+            const sshPath = `ssh://${connectionConfig.host}`;
+            const workspace = await this.workspaceManager.getOrCreateWorkspaceForPath(sshPath);
+
+            // Store SSH connection ID in workspace
+            workspace.sshConnectionId = connectionId;
+            this.workspaceManager.saveWorkspaces();
+            logger.info('ssh', `SSH connection ${connectionId} associated with workspace ${workspace.id}`);
+
+            // Switch to SSH workspace
+            await this.workspaceManager.setActiveWorkspace(workspace.id);
+            logger.info('ssh', `Switched to SSH workspace: ${workspace.name}`);
+
             // Treat SSH connection like opening a folder - transition to main IDE
             // Use explorer:open-folder to trigger the opening (not explorer:directory-opened)
             eventBus.emit('explorer:open-folder', {
-                path: `ssh://${connectionConfig.host}`,
+                path: sshPath,
                 type: 'ssh',
                 connectionId: connectionId,
                 connectionConfig: connectionConfig
