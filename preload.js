@@ -674,6 +674,87 @@ const electronAPI = {
     },
 
     // ========================================
+    // Terminal API
+    // ========================================
+
+    /**
+     * Create a new terminal (PTY)
+     * @param {number} cols - Terminal columns
+     * @param {number} rows - Terminal rows
+     * @param {string} terminalId - Terminal identifier
+     * @returns {Promise<Object>} Result with PTY ID
+     */
+    terminalCreate: (cols, rows, terminalId) => {
+        return ipcRenderer.invoke('terminal-create', cols, rows, terminalId);
+    },
+
+    /**
+     * Write data to terminal
+     * @param {string} ptyId - PTY identifier
+     * @param {string} data - Data to write
+     * @returns {Promise<Object>} Write result
+     */
+    terminalWrite: (ptyId, data) => {
+        return ipcRenderer.invoke('terminal-write', ptyId, data);
+    },
+
+    /**
+     * Resize terminal
+     * @param {string} ptyId - PTY identifier
+     * @param {number} cols - New column count
+     * @param {number} rows - New row count
+     * @returns {Promise<Object>} Resize result
+     */
+    terminalResize: (ptyId, cols, rows) => {
+        return ipcRenderer.invoke('terminal-resize', ptyId, cols, rows);
+    },
+
+    /**
+     * Close terminal
+     * @param {string} ptyId - PTY identifier
+     * @returns {Promise<Object>} Close result
+     */
+    terminalClose: (ptyId) => {
+        return ipcRenderer.invoke('terminal-close', ptyId);
+    },
+
+    /**
+     * Register callback for terminal data events
+     * @param {Function} callback - Callback function receiving terminal data
+     */
+    onTerminalData: (callback) => {
+        ipcRenderer.on('terminal:data', (event, data) => {
+            callback(data);
+        });
+    },
+
+    /**
+     * Register callback for terminal exit events
+     * @param {Function} callback - Callback function receiving terminal exit info
+     */
+    onTerminalExit: (callback) => {
+        ipcRenderer.on('terminal:exit', (event, data) => {
+            callback(data);
+        });
+    },
+
+    /**
+     * Remove terminal data event listener
+     * @param {Function} callback - Callback function to remove
+     */
+    removeTerminalDataListener: (callback) => {
+        ipcRenderer.removeListener('terminal:data', callback);
+    },
+
+    /**
+     * Remove terminal exit event listener
+     * @param {Function} callback - Callback function to remove
+     */
+    removeTerminalExitListener: (callback) => {
+        ipcRenderer.removeListener('terminal:exit', callback);
+    },
+
+    // ========================================
     // SSH Media Cache API (for viewing media files over SSH)
     // ========================================
 

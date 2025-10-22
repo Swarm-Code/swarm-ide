@@ -311,10 +311,6 @@ class SSHPanel {
                     <span class="icon">🔌</span>
                     Disconnect
                 </button>
-                <button class="ssh-action-btn ssh-terminal-btn" title="Open Terminal" ${connection.state !== 'connected' ? 'disabled' : ''}>
-                    <span class="icon">💻</span>
-                    Terminal
-                </button>
                 <button class="ssh-action-btn ssh-files-btn" title="Browse Files" ${connection.state !== 'connected' ? 'disabled' : ''}>
                     <span class="icon">📁</span>
                     Files
@@ -341,14 +337,12 @@ class SSHPanel {
     setupConnectionEventListeners(element, connection) {
         const connectBtn = element.querySelector('.ssh-connect-btn');
         const disconnectBtn = element.querySelector('.ssh-disconnect-btn');
-        const terminalBtn = element.querySelector('.ssh-terminal-btn');
         const filesBtn = element.querySelector('.ssh-files-btn');
         const editBtn = element.querySelector('.ssh-edit-btn');
         const deleteBtn = element.querySelector('.ssh-delete-btn');
 
         connectBtn.addEventListener('click', () => this.connectToSSH(connection.id));
         disconnectBtn.addEventListener('click', () => this.disconnectFromSSH(connection.id));
-        terminalBtn.addEventListener('click', () => this.openTerminal(connection.id));
         filesBtn.addEventListener('click', () => this.browseFiles(connection.id));
         editBtn.addEventListener('click', () => this.editConnection(connection.id));
         deleteBtn.addEventListener('click', () => this.deleteConnection(connection.id));
@@ -407,29 +401,6 @@ class SSHPanel {
             const disconnectBtn = element.querySelector('.ssh-disconnect-btn');
             disconnectBtn.disabled = false;
             disconnectBtn.innerHTML = '<span class="icon">🔌</span> Disconnect';
-        }
-    }
-
-    /**
-     * Open SSH terminal
-     */
-    openTerminal(connectionId) {
-        try {
-            logger.info('sshPanel', 'Opening SSH terminal for connection:', connectionId);
-
-            // Emit event to open SSH terminal
-            eventBus.emit('ssh:openTerminal', { connectionId });
-
-            // Get connection info for display
-            const connection = this.connections.get(connectionId);
-            const connectionName = connection ? (connection.name || connection.host) : connectionId;
-
-            this.showStatus(`Opening terminal for ${connectionName}...`, 'info');
-            setTimeout(() => this.clearStatus(), 2000);
-
-        } catch (error) {
-            logger.error('sshPanel', 'Error opening SSH terminal:', error);
-            this.showStatus('Failed to open terminal: ' + error.message, 'error');
         }
     }
 
@@ -545,18 +516,15 @@ class SSHPanel {
         // Update action buttons
         const connectBtn = element.querySelector('.ssh-connect-btn');
         const disconnectBtn = element.querySelector('.ssh-disconnect-btn');
-        const terminalBtn = element.querySelector('.ssh-terminal-btn');
         const filesBtn = element.querySelector('.ssh-files-btn');
 
         if (connection.state === 'connected') {
             connectBtn.style.display = 'none';
             disconnectBtn.style.display = 'inline-flex';
-            terminalBtn.disabled = false;
             filesBtn.disabled = false;
         } else {
             connectBtn.style.display = 'inline-flex';
             disconnectBtn.style.display = 'none';
-            terminalBtn.disabled = true;
             filesBtn.disabled = true;
 
             // Reset button text

@@ -304,17 +304,9 @@ class Browser {
         const rect = paneContent.getBoundingClientRect();
         let availableHeight = Math.round(rect.height);
 
-        // CRITICAL FIX: Always check for visible terminal panel and status bar
+        // CRITICAL FIX: Always check for visible status bar
         // Don't rely on events - directly query the DOM
         let bottomReservedSpace = 0;
-
-        // Check for terminal panel
-        const terminalPanel = document.querySelector('.terminal-panel');
-        if (terminalPanel && terminalPanel.style.display !== 'none') {
-            const terminalHeight = parseInt(terminalPanel.style.height, 10) || 320;
-            bottomReservedSpace += terminalHeight;
-            logger.debug('browserNav', '⚠️ TERMINAL PANEL DETECTED:', terminalHeight);
-        }
 
         // Check for status bar (always present)
         const statusBar = document.querySelector('.status-bar');
@@ -335,7 +327,7 @@ class Browser {
         };
         logger.debug('browserNav', '📐 calculateBrowserBounds() - Using PANE CONTENT:', JSON.stringify(debugData));
 
-        // CRITICAL FIX: Subtract reserved bottom space (terminal + status bar)
+        // CRITICAL FIX: Subtract reserved bottom space (status bar)
         // Calculate where the reserved area starts from the top
         if (bottomReservedSpace > 0) {
             const reservedAreaTop = window.innerHeight - bottomReservedSpace;
@@ -441,37 +433,6 @@ class Browser {
                 logger.debug('browserNav', 'Browser tab is not active, keeping BrowserView hidden');
             }
         });
-
-        // CRITICAL FIX: Listen for terminal panel shown/hidden/resized to adjust browser bounds
-        // BrowserView is a native Electron overlay that doesn't respect CSS z-index
-        // Terminal panel emits 'terminal-panel:shown' on show AND during resize
-        eventBus.on('terminal-panel:shown', (data) => {
-            logger.debug('browserNav', '📏 Terminal panel shown/resized, adjusting browser bounds. Height:', data?.height);
-
-            // Update bounds if browser is visible (directly queries DOM, so no need to store height)
-            if (this.isVisible && this.activeTabId) {
-                const bounds = this.calculateBrowserBounds();
-                logger.debug('browserNav', '🔄 Updating browser bounds for terminal resize:', JSON.stringify(bounds));
-                window.electronAPI.browserUpdateBounds(this.activeTabId, bounds)
-                    .catch(error => {
-                        logger.error('browserNav', 'Error updating bounds for terminal:', error);
-                    });
-            }
-        });
-
-        eventBus.on('terminal-panel:hidden', () => {
-            logger.debug('browserNav', '📏 Terminal panel hidden, restoring browser bounds');
-
-            // Update bounds if browser is visible (directly queries DOM, will detect absence)
-            if (this.isVisible && this.activeTabId) {
-                const bounds = this.calculateBrowserBounds();
-                logger.debug('browserNav', '🔄 Updating browser bounds after terminal hide:', JSON.stringify(bounds));
-                window.electronAPI.browserUpdateBounds(this.activeTabId, bounds)
-                    .catch(error => {
-                        logger.error('browserNav', 'Error restoring bounds after terminal:', error);
-                    });
-            }
-        });
     }
 
     /**
@@ -491,7 +452,7 @@ class Browser {
 
         this.isVisible = true;
 
-        // Calculate bounds (will directly query DOM for terminal/status bar)
+        // Calculate bounds (will directly query DOM for status bar)
         const bounds = this.calculateBrowserBounds();
 
         logger.debug('browserNav', '🔴 Showing BrowserView with bounds:', bounds);
@@ -539,10 +500,10 @@ class Browser {
     /**
      * Setup resize observer for pane changes
      * CRITICAL FIX: Observe pane-content, not browser-view-container
-     * When terminal resizes, pane-content changes size, triggering browser update
+     * When panes resize, pane-content changes size, triggering browser update
      */
     setupResizeObserver() {
-        // Watch the pane-content element (changes size when terminal/panes resize)
+        // Watch the pane-content element (changes size when panes resize)
         const paneContent = this.container.closest('.pane-content');
         if (!paneContent) {
             logger.error('browserNav', 'Could not find pane-content for ResizeObserver');

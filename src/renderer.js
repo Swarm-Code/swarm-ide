@@ -85,7 +85,6 @@ const sshService = require('./services/SSHService');
 const PaneManager = require('./services/PaneManager');
 const workspaceManager = require('./services/WorkspaceManager');
 const browserProfileManager = require('./services/BrowserProfileManager');
-const TerminalPanel = require('./components/terminal/TerminalPanel');
 
 // Import utilities
 const performanceMonitor = require('./utils/PerformanceMonitor');
@@ -118,6 +117,9 @@ const SSHPanel = require('./components/SSHPanel');
 const GitDiffPanel = require('./components/GitDiffPanel');
 const GitBlamePanel = require('./components/GitBlamePanel');
 
+// Import Terminal components
+const TerminalPanel = require('./components/terminal/TerminalPanel');
+
 // Import Modal for replacing browser dialogs
 const modal = require('./components/Modal');
 
@@ -128,7 +130,6 @@ class Application {
     constructor() {
         this.initialized = false;
         this.paneManager = null;
-        this.terminalPanel = null;
         this.workspaceManager = workspaceManager;
         this.browserProfileManager = browserProfileManager;
     }
@@ -376,15 +377,63 @@ class Application {
             logger.error('appInit', 'SSH Error stack:', error.stack);
         }
 
+        // Create and register Terminal UI components
+        try {
+            logger.info('appInit', '🔌 Initializing Terminal Panel...');
+
+            // Create terminal container in pane container (will be positioned at bottom)
+            const terminalContainer = document.createElement('div');
+            terminalContainer.id = 'terminal-container';
+            terminalContainer.style.cssText = 'position: absolute; left: 0; right: 0; bottom: 0; z-index: 1000;';
+
+            // Get pane container
+            const paneContainer = document.getElementById('pane-container');
+            if (paneContainer) {
+                paneContainer.appendChild(terminalContainer);
+                logger.debug('appInit', 'Terminal container created and added to pane container');
+            } else {
+                logger.error('appInit', 'Pane container not found for terminal');
+                throw new Error('Pane container not found');
+            }
+
+            const terminalPanel = new TerminalPanel(terminalContainer);
+            terminalPanel.init();
+            logger.info('appInit', 'Terminal Panel initialized');
+
+            uiManager.registerComponent('terminalPanel', terminalPanel);
+            logger.info('appInit', 'Terminal Panel registered with UIManager');
+
+            logger.info('appInit', '✅ Terminal UI components registered successfully');
+        } catch (error) {
+            logger.error('appInit', '❌ Failed to initialize Terminal UI components:', error.message);
+            logger.error('appInit', 'Terminal Error stack:', error.stack);
+        }
+
+        // Setup IPC→EventBus bridge for terminal events
+        if (window.electronAPI && window.electronAPI.onTerminalData) {
+            logger.info('appInit', 'Setting up terminal IPC→EventBus bridges...');
+
+            // Bridge terminal:data events
+            window.electronAPI.onTerminalData((data) => {
+                logger.debug('terminal', 'IPC→EventBus: terminal:data', data);
+                eventBus.emit('terminal:data', data);
+            });
+
+            // Bridge terminal:exit events
+            window.electronAPI.onTerminalExit((data) => {
+                logger.debug('terminal', 'IPC→EventBus: terminal:exit', data);
+                eventBus.emit('terminal:exit', data);
+            });
+
+            logger.info('appInit', '✅ Terminal IPC→EventBus bridges established');
+        } else {
+            logger.warn('appInit', 'Terminal IPC event listeners not available in electronAPI');
+        }
+
         // Initialize PaneManager
         this.paneManager = new PaneManager(paneContainer);
         const rootPane = this.paneManager.init();
         logger.info('appInit', '✓ PaneManager initialized with root pane:', rootPane.id);
-
-        // Initialize TerminalPanel (VS Code-style bottom panel)
-        this.terminalPanel = new TerminalPanel(appContainer);
-        this.terminalPanel.init();
-        logger.info('appInit', '✓ TerminalPanel initialized');
 
         // Show empty state in root pane
         const emptyState = document.createElement('div');
@@ -478,13 +527,6 @@ class Application {
                 await this.openBrowserInPane();
             });
             logger.debug('appInit', '✓ browser:toggle handler set');
-
-            // Handle terminal panel toggle (from status bar button)
-            logger.debug('appInit', 'Setting up terminal:toggle-panel handler...');
-            eventBus.on('terminal:toggle-panel', () => {
-                this.terminalPanel.toggle();
-            });
-            logger.debug('appInit', '✓ terminal:toggle-panel handler set');
 
             // Handle request to open file in specific pane
             eventBus.on('pane:request-file-open', async (data) => {
@@ -598,10 +640,10 @@ class Application {
                     findReplacePanel.toggle();
                 }
 
-                // Ctrl+` / Cmd+` - Toggle Terminal Panel
+                // Ctrl+` / Cmd+` - Toggle Terminal
                 if (ctrlOrCmd && e.key === '`') {
                     e.preventDefault();
-                    this.terminalPanel.toggle();
+                    eventBus.emit('terminal:toggle-panel');
                 }
             });
 
@@ -794,6 +836,62 @@ class Application {
     }
 
     /**
+     * Open terminal in a pane as a tab
+     */
+    async openTerminalInPane() {
+        logger.debug('appInit', '========== OPENING TERMINAL IN PANE ==========');
+
+        // Get active pane or use root pane
+        let activePane = this.paneManager?.getActivePane();
+        if (!activePane) {
+            logger.warn('appInit', 'No active pane, using root pane');
+            activePane = this.paneManager?.rootPane;
+        }
+
+        if (!activePane) {
+            logger.error('appInit', 'No pane available for terminal');
+            return;
+        }
+
+        logger.debug('appInit', 'Opening terminal in pane:', activePane.id);
+
+        // Create terminal container
+        const terminalContainer = document.createElement('div');
+        terminalContainer.className = 'terminal-pane-container';
+        terminalContainer.style.cssText = 'position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; width: 100%; height: 100%; background: #1e1e1e;';
+
+        // Terminal title
+        const terminalTitle = 'Terminal';
+
+        logger.debug('appInit', 'Adding terminal tab to pane');
+
+        // Add as a tab to the pane using terminal:// protocol (returns tabId)
+        const tabId = this.paneManager.addTab(
+            activePane.id,
+            `terminal://${Date.now()}`, // Unique ID for terminal instance
+            terminalTitle,
+            terminalContainer,
+            'terminal',
+            null
+        );
+
+        // Import Terminal component
+        const Terminal = require('./components/terminal/Terminal');
+
+        // Create Terminal instance
+        logger.debug('appInit', 'Creating Terminal instance with tabId:', tabId);
+        const terminal = new Terminal(terminalContainer);
+        await terminal.init();
+        await terminal.attach();
+
+        // Store reference for cleanup
+        terminalContainer._terminalInstance = terminal;
+
+        logger.debug('appInit', '✓ Terminal opened in pane successfully');
+        logger.debug('appInit', '========================================');
+    }
+
+    /**
      * Open a file in a specific pane
      */
     async openFileInPane(paneId, filePath, lineNumber = null, enableGitDiff = false) {
@@ -952,6 +1050,9 @@ class Application {
         const iconGit = document.getElementById('icon-git');
         const iconSSH = document.getElementById('icon-ssh');
         const iconBrowser = document.getElementById('icon-browser');
+        const iconTerminal = document.getElementById('icon-terminal');
+
+        logger.debug('appInit', 'Icon Terminal element:', iconTerminal);
 
         if (iconFiles) {
             iconFiles.addEventListener('click', () => {
@@ -1028,15 +1129,32 @@ class Application {
             });
         }
 
-        const iconTerminal = document.getElementById('icon-terminal');
         if (iconTerminal) {
-            iconTerminal.addEventListener('click', () => {
+            logger.debug('appInit', 'Attaching click handler to terminal icon...');
+            iconTerminal.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 logger.debug('appInit', 'Terminal icon clicked');
 
-                // Toggle terminal panel visibility
-                this.terminalPanel.toggle();
-                logger.debug('appInit', '✓ Terminal panel toggled');
+                // Toggle active state
+                if (iconFiles) iconFiles.classList.remove('active');
+                if (iconGit) iconGit.classList.remove('active');
+                if (iconSSH) iconSSH.classList.remove('active');
+                if (iconBrowser) iconBrowser.classList.remove('active');
+                iconTerminal.classList.add('active');
+
+                // Open terminal in pane
+                await this.openTerminalInPane();
+
+                // Hide Git panel if visible
+                eventBus.emit('git:hide-panel');
+
+                // Hide SSH panel if visible
+                eventBus.emit('ssh:hide-panel');
             });
+            logger.debug('appInit', '✓ Terminal icon click handler attached');
+        } else {
+            logger.warn('appInit', 'Terminal icon element not found!');
         }
     }
 

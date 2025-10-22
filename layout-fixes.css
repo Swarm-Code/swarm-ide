@@ -36,20 +36,6 @@
    FLOATING PANELS LAYER (z-index: 100-999)
    ======================================== */
 
-/* Terminal panel at bottom */
-.terminal-panel {
-    z-index: 100 !important;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    overflow: hidden; /* CRITICAL: Prevent terminal overflow */
-}
-
-.terminal-panel-resize-handle {
-    z-index: 101 !important;
-}
-
 /* Sidebar panels (file explorer, git, ssh, etc.) */
 .sidebar {
     z-index: 50 !important;
@@ -319,20 +305,6 @@ body {
 }
 
 /* ========================================
-   TERMINAL PANEL FIXES
-   ======================================== */
-
-/* Ensure terminal doesn't overlap with content */
-.terminal-panel {
-    pointer-events: auto; /* Ensure terminal is interactive */
-}
-
-/* When terminal panel is visible, adjust pane container */
-.pane-container.terminal-visible {
-    padding-bottom: 0; /* Managed by TerminalPanel.js */
-}
-
-/* ========================================
    STATUS BAR FIXES
    ======================================== */
 
@@ -442,7 +414,6 @@ body {
 /*
 .context-menu { outline: 3px solid red !important; }
 .modal { outline: 3px solid orange !important; }
-.terminal-panel { outline: 3px solid yellow !important; }
 .sidebar { outline: 3px solid green !important; }
 .pane-container { outline: 3px solid blue !important; }
 */

@@ -1,7 +1,7 @@
 {
   "name": "swarm-ide",
   "version": "1.0.0",
-  "description": "A powerful Electron-based IDE with terminal, SSH, and file management",
+  "description": "A powerful Electron-based IDE with SSH and file management",
   "main": "main.js",
   "scripts": {
     "bundle": "browserify src/renderer.js -o dist/bundle.js --exclude keytar --exclude ssh2 --exclude electron --exclude @electron/remote",
@@ -15,7 +15,6 @@
     "electron",
     "ide",
     "file-viewer",
-    "terminal",
     "ssh",
     "code-editor"
   ],
@@ -60,13 +59,13 @@
       "icon": "build/icons/icon.svg",
       "executableName": "swarm-ide",
       "synopsis": "A powerful Electron-based IDE",
-      "description": "A powerful Electron-based IDE with integrated terminal, SSH support, and advanced file management capabilities",
+      "description": "A powerful Electron-based IDE with SSH support and advanced file management capabilities",
       "desktop": {
         "entry": {
           "Name": "Swarm IDE",
           "GenericName": "Code Editor",
           "Comment": "Edit code and manage projects",
-          "Keywords": "editor;development;ide;terminal;ssh;",
+          "Keywords": "editor;development;ide;ssh;",
           "Categories": "Development;IDE;TextEditor;",
           "MimeType": "text/plain;text/x-chdr;text/x-csrc;text/x-c++hdr;text/x-c++src;text/x-java;text/x-makefile;text/x-python;application/x-shellscript;text/x-javascript;application/json;",
           "StartupNotify": "true",
@@ -77,6 +76,9 @@
   },
   "dependencies": {
     "@types/fluent-ffmpeg": "^2.1.27",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/addon-webgl": "^0.18.0",
     "codemirror": "^6.0.2",
     "electron-store": "^11.0.2",
     "ffmpeg-static": "^5.2.0",
@@ -97,16 +99,14 @@
     "vscode-languageserver-protocol": "^3.17.5",
     "vscode-languageserver-types": "^3.17.5",
     "xlsx": "^0.18.5",
-    "xterm": "^5.3.0",
-    "xterm-addon-fit": "^0.8.0",
-    "xterm-addon-web-links": "^0.9.0",
-    "xterm-addon-webgl": "^0.16.0"
+    "xterm": "^5.3.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
     "browserify": "^17.0.0",
     "electron": "^28.3.3",
     "electron-builder": "^26.0.12",
+    "electron-rebuild": "^3.2.9",
     "react-devtools": "^7.0.0"
   }
 }

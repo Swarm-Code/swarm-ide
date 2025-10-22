@@ -1,759 +1,413 @@
 /**
- * Terminal - xterm.js-based terminal component
+ * Terminal - xterm.js wrapper component
  *
- * Renders a terminal using xterm.js and communicates with the backend
- * TerminalService via IPC for real PTY input/output.
+ * Simplified terminal implementation inspired by VSCode's architecture.
+ * Wraps xterm.js with essential addons and provides a clean API for:
+ * - Creating and displaying terminals
+ * - Writing/reading data
+ * - Resizing terminals
+ * - Managing lifecycle
  *
- * Architecture inspired by VS Code's XtermTerminal and Zed's terminal implementation.
+ * Usage:
+ *   const terminal = new Terminal(container, { cols: 80, rows: 24 });
+ *   terminal.init();
+ *   terminal.write('Hello World\r\n');
  */
 
-const { Terminal: XTerm } = require('xterm');
-const { FitAddon } = require('xterm-addon-fit');
-const { WebLinksAddon } = require('xterm-addon-web-links');
-const { WebglAddon } = require('xterm-addon-webgl');
-const { ipcRenderer } = require('electron');
+const { Terminal: XtermTerminal } = require('xterm');
+const { FitAddon } = require('@xterm/addon-fit');
+const { WebLinksAddon } = require('@xterm/addon-web-links');
+const { WebglAddon } = require('@xterm/addon-webgl');
 const eventBus = require('../../modules/EventBus');
 const logger = require('../../utils/Logger');
 
 class Terminal {
-    /**
-     * Create a new Terminal instance
-     * @param {HTMLElement} container - Container element for the terminal
-     * @param {Object} options - Terminal options
-     * @param {string} [options.cwd] - Working directory
-     * @param {Object} [options.env] - Environment variables
-     * @param {string} [options.shell] - Shell to use
-     * @param {string} [options.type] - Terminal type: 'local' or 'ssh'
-     * @param {string} [options.sshConnectionId] - SSH connection ID (for SSH terminals)
-     */
     constructor(container, options = {}) {
         this.container = container;
-        this.options = options;
-        this.terminalId = null;
+        this.id = options.id || `terminal-${Date.now()}`;
+        this.cols = options.cols || 80;
+        this.rows = options.rows || 24;
+
+        // xterm.js instance
         this.xterm = null;
+
+        // Addons
         this.fitAddon = null;
-        this.webglAddon = null;  // Hardware-accelerated rendering
+        this.webLinksAddon = null;
+        this.webglAddon = null;
+
+        // PTY connection
+        this.ptyId = null;
+
+        // State
         this.isAttached = false;
-        this.resizeObserver = null;
-        this.resizeInterval = null;  // High-frequency resize check
-        this.lastWidth = 0;
-        this.lastHeight = 0;
-        this.terminalType = options.type || 'local'; // 'local' or 'ssh'
-        this.sshConnectionId = options.sshConnectionId || null;
+        this.isDisposed = false;
 
-        // PTY Host direct connection (for local terminals only)
-        this.ptyHostPort = null;  // Direct MessagePort to PTY host
-        this.ptyHostConnected = false;
-        this.unacknowledgedBytes = 0;  // Flow control
+        // Initial data buffering (VSCode pattern)
+        // Buffer data events during initialization to prevent race conditions
+        this._initialDataBuffer = [];
+        this._isBufferingData = true;
+        this._bufferTimeout = null;
 
-        // CRITICAL FIX: Debouncing for resize to prevent race conditions
-        this.resizeDebounceTimer = null;
-        this.isResizing = false;  // Flag to prevent concurrent resizes
-        this.pendingResize = false;  // Flag to indicate a resize is pending
-        this.RESIZE_DEBOUNCE_DELAY = 16;  // ~60fps, balance between responsiveness and performance
+        // Resize handling
+        this._resizeObserver = null;
+        this._resizeTimeout = null;
 
-        logger.debug('terminal', 'Terminal component created', { type: this.terminalType, sshConnectionId: this.sshConnectionId });
+        logger.debug('terminal', `Terminal instance created: ${this.id}`);
     }
 
     /**
-     * Initialize and attach the terminal
+     * Initialize the terminal
      */
     async init() {
-        try {
-            logger.debug('terminal', 'Initializing terminal...');
-
-            // Create xterm.js instance with optimal configuration for Unicode
-            this.xterm = new XTerm({
-                cursorBlink: true,
-                cursorStyle: 'block',
-                // Fonts optimized for both code and Unicode block characters
-                fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", "DejaVu Sans Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace, "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", "Symbola"',
-                fontSize: 14,
-                lineHeight: 1,  // CRITICAL: Must be 1 for pixel-perfect box character alignment
-                letterSpacing: 0,
-                fontWeight: 'normal',
-                fontWeightBold: 'bold',
-                minimumContrastRatio: 1,
-                drawBoldTextInBrightColors: true,
-                allowProposedApi: true,
-                // CRITICAL: customGlyphs draws pixel-perfect box drawing characters
-                // This is THE solution for proper block character rendering
-                customGlyphs: true,
-                // Canvas renderer is required for customGlyphs (doesn't work with DOM)
-                rendererType: 'canvas',
-                smoothScrollDuration: 0,
-                theme: {
-                    background: '#1e1e1e',
-                    foreground: '#d4d4d4',
-                    cursor: '#ffffff',
-                    cursorAccent: '#000000',
-                    selectionBackground: 'rgba(255, 255, 255, 0.3)',
-                    selectionForeground: undefined,
-                    black: '#000000',
-                    red: '#cd3131',
-                    green: '#0dbc79',
-                    yellow: '#e5e510',
-                    blue: '#2472c8',
-                    magenta: '#bc3fbc',
-                    cyan: '#11a8cd',
-                    white: '#e5e5e5',
-                    brightBlack: '#666666',
-                    brightRed: '#f14c4c',
-                    brightGreen: '#23d18b',
-                    brightYellow: '#f5f543',
-                    brightBlue: '#3b8eea',
-                    brightMagenta: '#d670d6',
-                    brightCyan: '#29b8db',
-                    brightWhite: '#ffffff'
-                },
-                allowTransparency: false,
-                scrollback: 10000,
-                convertEol: false,
-                fastScrollModifier: 'shift',
-                fastScrollSensitivity: 5,
-                scrollSensitivity: 1,
-                windowsMode: false,
-                macOptionIsMeta: true,
-                macOptionClickForcesSelection: false,
-                rightClickSelectsWord: true,
-                rendererType: 'canvas', // Use canvas for better performance
-                windowOptions: {
-                    setWinSizePixels: false
-                }
-            });
-
-            // Add fit addon (essential for proper sizing)
-            this.fitAddon = new FitAddon();
-            this.xterm.loadAddon(this.fitAddon);
-
-            // Add web links addon (makes URLs clickable)
-            const webLinksAddon = new WebLinksAddon();
-            this.xterm.loadAddon(webLinksAddon);
-
-            // Open terminal in container
-            this.xterm.open(this.container);
-
-            // Enable hardware-accelerated WebGL rendering
-            // Inspired by VS Code's terminal for ultra-smooth rendering
-            try {
-                this.webglAddon = new WebglAddon();
-                this.webglAddon.onContextLoss(() => {
-                    // Fallback to canvas if WebGL context is lost
-                    logger.warn('terminal', 'WebGL context lost, disposing WebGL addon');
-                    this.webglAddon.dispose();
-                    this.webglAddon = null;
-                });
-                this.xterm.loadAddon(this.webglAddon);
-                logger.debug('terminal', '✓ WebGL renderer enabled for hardware acceleration');
-            } catch (error) {
-                logger.warn('terminal', 'WebGL not available, using canvas renderer:', error.message);
-                this.webglAddon = null;
-            }
-
-            // Enable Unicode 11 support for proper emoji rendering
-            // xterm.js 5.x has built-in Unicode support, just need to ensure it's active
-            if (this.xterm.unicode) {
-                this.xterm.unicode.activeVersion = '11';
-                logger.debug('terminal', 'Unicode version set to 11 for emoji support');
-            }
-
-            // CRITICAL: Auto-focus terminal on click for keyboard input
-            this.container.addEventListener('click', () => {
-                this.xterm.focus();
-            });
-
-            // CRITICAL: Auto-focus immediately after opening
-            setTimeout(() => {
-                this.xterm.focus();
-            }, 100);
-
-            // Fit terminal to container size
-            this.fitAddon.fit();
-
-            // Get terminal dimensions
-            const cols = this.xterm.cols;
-            const rows = this.xterm.rows;
-
-            logger.debug('terminal', 'xterm.js initialized:', { cols, rows });
-
-            // Create terminal backend (local PTY or SSH shell)
-            let result;
-            if (this.terminalType === 'ssh') {
-                // Create SSH shell
-                logger.debug('terminal', 'Creating SSH terminal for connection:', this.sshConnectionId);
-                result = await ipcRenderer.invoke('ssh-terminal-create', this.sshConnectionId, {
-                    cols: cols,
-                    rows: rows
-                });
-            } else {
-                // Create local PTY
-                result = await ipcRenderer.invoke('terminal-create', {
-                    cwd: this.options.cwd,
-                    env: this.options.env,
-                    shell: this.options.shell,
-                    cols: cols,
-                    rows: rows
-                });
-            }
-
-            if (!result.success) {
-                throw new Error(result.error || 'Failed to create terminal');
-            }
-
-            this.terminalId = result.terminalId;
-
-            logger.debug('terminal', '✓ Terminal created:', {
-                type: this.terminalType,
-                terminalId: this.terminalId,
-                pid: result.pid,
-                shell: result.shell,
-                cwd: result.cwd
-            });
-
-            // Setup direct PTY host connection for local terminals (ultra-low latency)
-            if (this.terminalType === 'local') {
-                await this.setupPTYHostConnection();
-            }
-
-            // Setup event listeners
-            this.setupEventListeners();
-
-            // Setup IPC listeners
-            this.setupIPCListeners();
-
-            // Setup resize observer
-            this.setupResizeObserver();
-
-            // Setup 240Hz resize check for ultra-responsive resizing
-            this.setup240HzResizeCheck();
-
-            this.isAttached = true;
-
-            logger.debug('terminal', '✓ Terminal initialized successfully');
-
-            // Emit ready event
-            eventBus.emit('terminal:ready', { terminalId: this.terminalId });
-
-            return {
-                success: true,
-                terminalId: this.terminalId
-            };
-
-        } catch (error) {
-            logger.error('terminal', 'Failed to initialize terminal:', error);
-            return {
-                success: false,
-                error: error.message
-            };
+        if (this.xterm) {
+            logger.warn('terminal', 'Terminal already initialized');
+            return;
         }
+
+        logger.debug('terminal', `Initializing terminal: ${this.id}`);
+
+        // Create xterm.js instance (following official xterm.js initialization order)
+        this.xterm = new XtermTerminal({
+            cols: this.cols,
+            rows: this.rows,
+            cursorBlink: true,
+            cursorStyle: 'block',
+            fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+            fontSize: 14,
+            letterSpacing: 0,
+            lineHeight: 1.0,
+            scrollback: 1000,
+            tabStopWidth: 8,
+            theme: this.getTheme(),
+            allowProposedApi: true,
+            windowOptions: {
+                setWinSizePixels: false,
+            },
+        });
+
+        // Create addon instances but DON'T load them yet
+        // Per xterm.js docs: addons must be loaded AFTER terminal.open()
+        this.fitAddon = new FitAddon();
+        this.webLinksAddon = new WebLinksAddon();
+        this.webglAddon = null; // Will be created after open()
+
+        // Attach event listeners
+        this.setupEventListeners();
+
+        logger.debug('terminal', `Terminal initialized: ${this.id}`);
     }
 
     /**
-     * Setup xterm.js event listeners
+     * Setup event listeners
      */
     setupEventListeners() {
         // Handle user input
         this.xterm.onData((data) => {
-            if (this.terminalId !== null) {
-                const inputTimestamp = performance.now();
-
-                console.log(`[LATENCY] ⌨️  INPUT at ${inputTimestamp.toFixed(3)}ms: "${data.replace(/\r/g, '\\r').replace(/\n/g, '\\n')}" (${data.length} bytes)`);
-
-                logger.debug('terminal', 'Data input to terminal:', {
-                    terminalId: this.terminalId,
-                    dataLength: data.length,
-                    dataPreview: data.substring(0, 50),
-                    timestamp: inputTimestamp
-                });
-
-                // Store timestamp for latency measurement
-                this.lastInputTimestamp = inputTimestamp;
-
-                // Send input to backend (PTY or SSH shell)
-                const writeHandler = this.terminalType === 'ssh' ? 'ssh-terminal-write' : 'terminal-write';
-                ipcRenderer.invoke(writeHandler, this.terminalId, data).then(() => {
-                    const ipcSentTimestamp = performance.now();
-                    console.log(`[LATENCY] 📤 IPC SENT at ${ipcSentTimestamp.toFixed(3)}ms (${(ipcSentTimestamp - inputTimestamp).toFixed(3)}ms after input)`);
-                }).catch(err => {
-                    logger.error('terminal', 'Error writing to terminal:', err);
-                });
+            if (this.ptyId) {
+                // Send input to PTY
+                window.electronAPI.terminalWrite(this.ptyId, data);
             }
         });
 
-        // Handle resize (NO DEBUG LOGGING - fires constantly!)
+        // Handle terminal resize
         this.xterm.onResize(({ cols, rows }) => {
-            if (this.terminalId !== null) {
-                // Notify backend to resize (PTY or SSH shell) - NO LOGGING for performance
-                const resizeHandler = this.terminalType === 'ssh' ? 'ssh-terminal-resize' : 'terminal-resize';
-                ipcRenderer.invoke(resizeHandler, this.terminalId, cols, rows).catch(err => {
-                    logger.error('terminal', 'Error resizing terminal:', err);
-                });
+            logger.debug('terminal', `Terminal resized: ${cols}x${rows}`);
+            if (this.ptyId) {
+                window.electronAPI.terminalResize(this.ptyId, cols, rows);
             }
         });
 
-        // Handle title change
-        this.xterm.onTitleChange((title) => {
-            logger.debug('terminal', 'Title changed:', title);
-            eventBus.emit('terminal:titleChange', { terminalId: this.terminalId, title });
+        // Handle selection changes
+        this.xterm.onSelectionChange(() => {
+            const selection = this.xterm.getSelection();
+            if (selection) {
+                // Could emit event or copy to clipboard
+                eventBus.emit('terminal:selection-changed', { id: this.id, selection });
+            }
         });
 
-        // Setup copy/paste keyboard shortcuts
-        // IMPORTANT: Don't preventDefault on normal keys - let xterm.js handle them!
-        this.container.addEventListener('keydown', (e) => {
-            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-            const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
-
-            // Ctrl+Shift+C / Cmd+Shift+C - Copy
-            if (ctrlOrCmd && e.shiftKey && e.key === 'C') {
-                e.preventDefault();
-                e.stopPropagation();
-                const selection = this.xterm.getSelection();
-                if (selection) {
-                    logger.debug('terminal', 'Copying text:', selection.substring(0, 50));
-                    navigator.clipboard.writeText(selection).then(() => {
-                        logger.debug('terminal', '✓ Text copied to clipboard');
-                    }).catch(err => {
-                        logger.error('terminal', 'Failed to copy:', err);
-                    });
-                }
-                return;
-            }
-
-            // Ctrl+Shift+V / Cmd+Shift+V - Paste
-            if (ctrlOrCmd && e.shiftKey && e.key === 'V') {
-                e.preventDefault();
-                e.stopPropagation();
-                logger.debug('terminal', 'Paste triggered');
-                navigator.clipboard.readText().then(text => {
-                    if (text) {
-                        logger.debug('terminal', 'Pasting text:', text.substring(0, 50));
-                        this.xterm.paste(text);
-                    }
-                }).catch(err => {
-                    logger.error('terminal', 'Failed to paste:', err);
-                });
-                return;
-            }
-
-            // Let all other keys pass through to xterm.js
-            // This includes: arrow keys, Enter, Esc, Tab, function keys, etc.
-        });
+        logger.debug('terminal', 'Event listeners setup complete');
     }
 
     /**
-     * Setup direct MessagePort connection to PTY host
-     * This bypasses the main process for ultra-low latency
+     * Attach terminal to DOM and create PTY
      */
-    async setupPTYHostConnection() {
-        try {
-            logger.debug('terminal', 'Setting up direct PTY host connection...');
-
-            // Request MessagePort from main process
-            await ipcRenderer.invoke('terminal-setup-direct-connection');
-
-            // Wait for MessagePort transfer
-            return new Promise((resolve) => {
-                ipcRenderer.once('pty-port-transfer', (event) => {
-                    // Get the transferred MessagePort from event.ports
-                    const port = event.ports[0];
-                    if (port) {
-                        this.ptyHostPort = port;
-
-                        // Setup message handler for direct PTY host messages
-                        this.ptyHostPort.onmessage = (event) => {
-                            this.handlePTYHostMessage(event.data);
-                        };
-
-                        this.ptyHostPort.start();
-                        this.ptyHostConnected = true;
-
-                        logger.debug('terminal', '✓ Direct PTY host connection established');
-                        resolve();
-                    } else {
-                        logger.error('terminal', 'No MessagePort received');
-                        resolve();
-                    }
-                });
-
-                // Timeout after 5 seconds
-                setTimeout(() => {
-                    if (!this.ptyHostConnected) {
-                        logger.warn('terminal', 'PTY host connection timeout, falling back to IPC');
-                        resolve();
-                    }
-                }, 5000);
-            });
-        } catch (error) {
-            logger.error('terminal', 'Failed to setup PTY host connection:', error);
-        }
-    }
-
-    /**
-     * Handle message from PTY host via direct MessagePort
-     */
-    handlePTYHostMessage(message) {
-        const { type, terminalId, data: messageData } = message;
-
-        // Only handle messages for this terminal
-        if (terminalId && terminalId !== this.terminalId) {
+    async attach() {
+        if (this.isAttached) {
+            logger.warn('terminal', 'Terminal already attached');
             return;
         }
 
-        switch (type) {
-            case 'terminal-data':
-                const receiveTimestamp = performance.now();
-                console.log(`[LATENCY] 📥 RECEIVED at ${receiveTimestamp.toFixed(3)}ms: ${messageData.length} bytes`);
+        logger.debug('terminal', 'Attaching terminal to DOM');
 
-                if (this.lastInputTimestamp) {
-                    const roundTripTime = receiveTimestamp - this.lastInputTimestamp;
-                    console.log(`[LATENCY] 🔄 ROUND TRIP: ${roundTripTime.toFixed(3)}ms`);
-                }
+        // CRITICAL: Follow xterm.js initialization order
+        // 1. Open terminal in DOM FIRST
+        this.xterm.open(this.container);
+        this.isAttached = true;
 
-                // Data from PTY host (buffered, batched)
-                const beforeWrite = performance.now();
-                this.xterm.write(messageData, () => {
-                    const afterWrite = performance.now();
-                    console.log(`[LATENCY] ✍️  XTERM WRITE at ${afterWrite.toFixed(3)}ms (${(afterWrite - beforeWrite).toFixed(3)}ms duration)`);
-
-                    if (this.lastInputTimestamp) {
-                        const totalLatency = afterWrite - this.lastInputTimestamp;
-                        console.log(`[LATENCY] ⚡ TOTAL LATENCY: ${totalLatency.toFixed(3)}ms (input -> display)`);
-                    }
-                });
-
-                // Flow control: Acknowledge received data
-                this.acknowledgeData(messageData.length);
-                break;
-
-            case 'terminal-created':
-                logger.debug('terminal', 'PTY host confirmed terminal creation:', message);
-                break;
-
-            case 'terminal-exit':
-                logger.debug('terminal', 'Terminal exited:', message);
-                const exitMsg = `\r\n\x1b[1;31m[Process exited with code ${message.exitCode}]\x1b[0m\r\n`;
-                this.xterm.write(exitMsg);
-                eventBus.emit('terminal:exit', { terminalId: this.terminalId, exitCode: message.exitCode, signal: message.signal });
-                this.terminalId = null;
-                break;
-
-            case 'terminal-create-failed':
-                logger.error('terminal', 'PTY host failed to create terminal:', message.error);
-                break;
-
-            case 'error':
-                logger.error('terminal', 'PTY host error:', message.error);
-                break;
-
-            default:
-                logger.warn('terminal', 'Unknown PTY host message type:', type);
-        }
-    }
-
-    /**
-     * Acknowledge data received from PTY host (flow control)
-     * This prevents overwhelming the renderer with rapid data
-     */
-    acknowledgeData(byteCount) {
-        if (!this.ptyHostConnected || !this.terminalId) return;
-
-        this.unacknowledgedBytes -= byteCount;
-
-        // Send acknowledgment to PTY host (via main process for now)
-        // TODO: Could send directly via MessagePort if needed
-        ipcRenderer.invoke('terminal-acknowledge-data', this.terminalId, byteCount).catch(err => {
-            logger.error('terminal', 'Error acknowledging data:', err);
+        // Log container dimensions immediately after open
+        const rectAfterOpen = this.container.getBoundingClientRect();
+        console.log(`[TERMINAL ${this.id}] Container after open():`, {
+            width: rectAfterOpen.width,
+            height: rectAfterOpen.height,
+            top: rectAfterOpen.top,
+            left: rectAfterOpen.left,
+            className: this.container.className,
+            display: window.getComputedStyle(this.container).display,
+            position: window.getComputedStyle(this.container).position
         });
-    }
 
-    /**
-     * Setup IPC listeners for terminal events from backend
-     * Handles both direct PTY host messages and SSH terminal messages
-     */
-    setupIPCListeners() {
-        // Listen for PTY host messages (forwarded by main process as fallback)
-        this.ptyHostListener = (event, message) => {
-            if (!this.ptyHostConnected) {
-                // Use IPC messages if direct connection failed
-                this.handlePTYHostMessage(message);
-            }
-        };
-        ipcRenderer.on('pty-host-message', this.ptyHostListener);
+        // 2. THEN load addons (per xterm.js documentation)
+        logger.debug('terminal', 'Loading addons after open()');
+        this.xterm.loadAddon(this.fitAddon);
+        this.xterm.loadAddon(this.webLinksAddon);
 
-        // Listen for terminal data from backend (SSH terminals use this)
-        this.dataListener = (event, { terminalId, data }) => {
-            if (terminalId === this.terminalId) {
-                // Debug logging to track corruption
-                // Check for 5+ repeated W characters (upper or lowercase)
-                const hasWCharacters = /[Ww]{5,}/.test(data);
-                const dataPreview = data.substring(0, 200);
+        // Try to load WebGL addon for better performance
+        try {
+            this.webglAddon = new WebglAddon();
+            this.xterm.loadAddon(this.webglAddon);
+            logger.debug('terminal', 'WebGL renderer enabled');
+        } catch (error) {
+            logger.warn('terminal', 'WebGL renderer not available, using canvas:', error.message);
+        }
 
-                // Also log the hex representation to see control characters
-                const hexPreview = Array.from(data.substring(0, 100))
-                    .map(c => c.charCodeAt(0).toString(16).padStart(2, '0'))
-                    .join(' ');
+        // 3. Wait for container to be properly sized in the DOM
+        // Give extra time for the active class to apply and container to have dimensions
+        await new Promise(resolve => setTimeout(resolve, 200));
 
-                logger.debug('terminal', 'Received data from backend:', {
-                    terminalId: this.terminalId,
-                    dataLength: data.length,
-                    dataPreview: dataPreview,
-                    hexPreview: hexPreview,
-                    hasRepeatedW: hasWCharacters,
-                    xterm: {
-                        cols: this.xterm.cols,
-                        rows: this.xterm.rows,
-                        cursorX: this.xterm.buffer.active.cursorX,
-                        cursorY: this.xterm.buffer.active.cursorY
-                    },
-                    container: {
-                        width: this.container.clientWidth,
-                        height: this.container.clientHeight,
-                        display: this.container.style.display,
-                        visible: this.container.offsetParent !== null
+        // Log container dimensions before first fit
+        const rectBeforeFit = this.container.getBoundingClientRect();
+        console.log(`[TERMINAL ${this.id}] Container before fit():`, {
+            width: rectBeforeFit.width,
+            height: rectBeforeFit.height,
+            className: this.container.className,
+            display: window.getComputedStyle(this.container).display
+        });
+
+        // 4. Fit terminal to container multiple times to ensure proper sizing
+        this.fit();
+        await new Promise(resolve => setTimeout(resolve, 100));
+        this.fit();
+
+        // Get final dimensions for PTY creation
+        const dimensions = this.fitAddon.proposeDimensions();
+        const cols = dimensions ? dimensions.cols : this.cols;
+        const rows = dimensions ? dimensions.rows : this.rows;
+
+        logger.debug('terminal', `Creating PTY with dimensions: ${cols}x${rows}`);
+
+        // Start listening for data BEFORE creating PTY
+        // Data will be buffered until terminal is fully ready (VSCode pattern)
+        this.startDataListener();
+
+        try {
+            const result = await window.electronAPI.terminalCreate(cols, rows, this.id);
+            if (result.success) {
+                this.ptyId = result.ptyId;
+                logger.info('terminal', `PTY created: ${this.ptyId}`);
+
+                // Wait a bit for terminal to be fully ready, then flush buffered data
+                // This prevents corrupted ANSI sequences from being displayed
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                // Flush any buffered data now that terminal is ready
+                this.flushDataBuffer();
+
+                // Set a safety timeout to stop buffering after 10 seconds (VSCode pattern)
+                this._bufferTimeout = setTimeout(() => {
+                    if (this._isBufferingData) {
+                        logger.warn('terminal', 'Buffer timeout reached, flushing data');
+                        this.flushDataBuffer();
                     }
-                });
-
-                if (hasWCharacters) {
-                    logger.warn('terminal', '⚠️ CORRUPTION DETECTED: Repeated W characters in data!', {
-                        terminalId: this.terminalId,
-                        fullData: data,
-                        fullDataHex: Array.from(data).map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join(' '),
-                        dataLength: data.length,
-                        timestamp: Date.now(),
-                        ptyInfo: 'Check if PTY is sending corrupt data or if rendering is broken'
-                    });
-                }
-
-                // Write data to xterm display
-                this.xterm.write(data);
+                }, 10000);
+            } else {
+                logger.error('terminal', 'Failed to create PTY:', result.error);
+                this.write(`\x1b[31mError: Failed to create terminal: ${result.error}\x1b[0m\r\n`);
             }
-        };
-        ipcRenderer.on('terminal-data', this.dataListener);
+        } catch (error) {
+            logger.error('terminal', 'Error creating PTY:', error);
+            this.write(`\x1b[31mError: ${error.message}\x1b[0m\r\n`);
+        }
 
-        // Listen for terminal exit from backend
-        this.exitListener = (event, { terminalId, exitCode, signal }) => {
-            if (terminalId === this.terminalId) {
-                logger.debug('terminal', 'Terminal exited:', { exitCode, signal });
+        // Set up ResizeObserver to handle container size changes
+        this.setupResizeObserver();
 
-                // Display exit message
-                const exitMsg = `\r\n\x1b[1;31m[Process exited with code ${exitCode}]\x1b[0m\r\n`;
-                this.xterm.write(exitMsg);
-
-                // Emit exit event
-                eventBus.emit('terminal:exit', { terminalId: this.terminalId, exitCode, signal });
-
-                // Clear terminal ID
-                this.terminalId = null;
-            }
-        };
-        ipcRenderer.on('terminal-exit', this.exitListener);
+        logger.debug('terminal', 'Terminal attached successfully');
     }
 
     /**
-     * Setup resize observer to handle container size changes
+     * Setup ResizeObserver to handle container resizing
+     * This ensures terminal refits when dev console opens/closes or window resizes
      */
     setupResizeObserver() {
-        // Use ResizeObserver to detect container size changes
-        this.resizeObserver = new ResizeObserver((entries) => {
-            if (this.fitAddon && this.isAttached) {
-                try {
-                    const entry = entries[0];
+        if (!this.container || !window.ResizeObserver) {
+            logger.warn('terminal', 'ResizeObserver not available');
+            return;
+        }
 
-                    // CRITICAL FIX: Skip resize if container is hidden (display: none)
-                    // This prevents resizing to collapsed dimensions when terminals are switched
-                    const isVisible = this.container.style.display !== 'none' &&
-                                     this.container.offsetParent !== null &&
-                                     this.container.clientWidth > 0 &&
-                                     this.container.clientHeight > 0;
+        this._resizeObserver = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                // Debounce resize events to avoid excessive refitting
+                if (this._resizeTimeout) {
+                    clearTimeout(this._resizeTimeout);
+                }
 
-                    logger.debug('terminal', 'ResizeObserver triggered:', {
-                        terminalId: this.terminalId,
-                        contentRect: {
-                            width: entry.contentRect.width,
-                            height: entry.contentRect.height
-                        },
-                        container: {
-                            display: this.container.style.display,
-                            visibility: this.container.style.visibility,
-                            visible: this.container.offsetParent !== null,
-                            clientWidth: this.container.clientWidth,
-                            clientHeight: this.container.clientHeight,
-                            isVisible: isVisible
-                        },
-                        xterm: {
-                            cols: this.xterm.cols,
-                            rows: this.xterm.rows
-                        }
+                this._resizeTimeout = setTimeout(() => {
+                    const { width, height } = entry.contentRect;
+                    console.log(`[TERMINAL ${this.id}] ResizeObserver detected size change:`, {
+                        width,
+                        height,
+                        target: entry.target.className
                     });
 
-                    if (!isVisible) {
-                        logger.debug('terminal', 'Skipping resize - container is hidden');
-                        return;
+                    // Only refit if we have meaningful dimensions
+                    if (width > 0 && height > 0 && this.isAttached && !this.isDisposed) {
+                        console.log(`[TERMINAL ${this.id}] Refitting due to container resize`);
+                        this.fit();
                     }
-
-                    // Use debounced resize to prevent race conditions with other resize mechanisms
-                    this.debouncedResize();
-                } catch (error) {
-                    logger.error('terminal', 'Error fitting terminal in ResizeObserver:', error);
-                }
-            } else {
-                logger.debug('terminal', 'ResizeObserver triggered but skipped:', {
-                    hasFitAddon: !!this.fitAddon,
-                    isAttached: this.isAttached
-                });
+                }, 100); // 100ms debounce
             }
         });
 
-        this.resizeObserver.observe(this.container);
-        logger.debug('terminal', 'ResizeObserver set up for terminal:', this.terminalId);
+        this._resizeObserver.observe(this.container);
+        console.log(`[TERMINAL ${this.id}] ResizeObserver attached to container`);
+        logger.debug('terminal', 'ResizeObserver setup complete');
     }
 
     /**
-     * Setup 240Hz resize check for ultra-responsive terminal resizing
+     * Start listening for data from PTY
+     * Implements VSCode's buffering pattern to prevent race conditions
      */
-    setup240HzResizeCheck() {
-        // 240Hz = 1000ms / 240 = ~4.17ms per frame
-        const RESIZE_CHECK_INTERVAL = Math.floor(1000 / 240);
-
-        this.resizeInterval = setInterval(() => {
-            if (!this.fitAddon || !this.isAttached || !this.xterm) {
-                return;
-            }
-
-            try {
-                // Quick visibility check (no logging here - too frequent!)
-                const isVisible = this.container.style.display !== 'none' &&
-                                 this.container.offsetParent !== null;
-
-                if (!isVisible) {
-                    return;
+    startDataListener() {
+        // Listen for PTY data events
+        const handleData = (data) => {
+            if (this.ptyId && data.ptyId === this.ptyId) {
+                // If still buffering initial data, store it
+                if (this._isBufferingData) {
+                    this._initialDataBuffer.push(data.data);
+                } else {
+                    this.write(data.data);
                 }
+            }
+        };
 
-                const currentWidth = this.container.clientWidth;
-                const currentHeight = this.container.clientHeight;
+        const handleExit = (data) => {
+            if (this.ptyId && data.ptyId === this.ptyId) {
+                logger.info('terminal', `PTY exited: ${this.ptyId}, code: ${data.exitCode}`);
+                this.write(`\r\n\x1b[33mProcess exited with code ${data.exitCode}\x1b[0m\r\n`);
+                eventBus.emit('terminal:exit', { id: this.id, exitCode: data.exitCode });
+            }
+        };
 
-                // Only refit if dimensions actually changed
-                if (currentWidth !== this.lastWidth || currentHeight !== this.lastHeight) {
-                    this.lastWidth = currentWidth;
-                    this.lastHeight = currentHeight;
+        eventBus.on('terminal:data', handleData);
+        eventBus.on('terminal:exit', handleExit);
 
-                    // Only refit if dimensions are valid
-                    if (currentWidth > 0 && currentHeight > 0) {
-                        // Use debounced resize to prevent race conditions
-                        // NO LOGGING HERE - runs 240 times per second!
-                        this.debouncedResize();
-                    }
+        // Store for cleanup
+        this._dataHandler = handleData;
+        this._exitHandler = handleExit;
+    }
+
+    /**
+     * Flush buffered data and stop buffering (VSCode pattern)
+     * Call this after terminal is fully attached and sized
+     */
+    flushDataBuffer() {
+        if (!this._isBufferingData) {
+            return;
+        }
+
+        logger.debug('terminal', `Flushing ${this._initialDataBuffer.length} buffered data events`);
+
+        // Write all buffered data in order
+        for (const data of this._initialDataBuffer) {
+            this.write(data);
+        }
+
+        // Clear buffer and stop buffering
+        this._initialDataBuffer = [];
+        this._isBufferingData = false;
+
+        // Clear timeout if it exists
+        if (this._bufferTimeout) {
+            clearTimeout(this._bufferTimeout);
+            this._bufferTimeout = null;
+        }
+
+        logger.debug('terminal', 'Data buffer flushed, normal operation started');
+    }
+
+    /**
+     * Write data to terminal
+     */
+    write(data) {
+        if (this.xterm && !this.isDisposed) {
+            this.xterm.write(data);
+        }
+    }
+
+    /**
+     * Fit terminal to container
+     */
+    fit() {
+        if (this.fitAddon && this.isAttached) {
+            try {
+                // Log container dimensions before fit
+                const rect = this.container.getBoundingClientRect();
+                const computedStyle = window.getComputedStyle(this.container);
+
+                console.log(`[TERMINAL ${this.id}] fit() called - Container state:`, {
+                    boundingRect: {
+                        width: rect.width,
+                        height: rect.height,
+                        top: rect.top,
+                        left: rect.left
+                    },
+                    computedStyle: {
+                        display: computedStyle.display,
+                        position: computedStyle.position,
+                        width: computedStyle.width,
+                        height: computedStyle.height,
+                        top: computedStyle.top,
+                        left: computedStyle.left,
+                        right: computedStyle.right,
+                        bottom: computedStyle.bottom
+                    },
+                    className: this.container.className,
+                    parentElement: this.container.parentElement ? this.container.parentElement.className : 'none'
+                });
+
+                // Get proposed dimensions before fit
+                const proposedBefore = this.fitAddon.proposeDimensions();
+                console.log(`[TERMINAL ${this.id}] proposeDimensions() BEFORE fit():`, proposedBefore);
+
+                // Perform fit
+                this.fitAddon.fit();
+
+                // Get actual dimensions after fit
+                const proposedAfter = this.fitAddon.proposeDimensions();
+                console.log(`[TERMINAL ${this.id}] proposeDimensions() AFTER fit():`, proposedAfter);
+                console.log(`[TERMINAL ${this.id}] xterm.cols x rows:`, this.xterm.cols, 'x', this.xterm.rows);
+
+                if (proposedAfter) {
+                    logger.debug('terminal', `Fit dimensions: ${proposedAfter.cols}x${proposedAfter.rows}`);
                 }
             } catch (error) {
-                // Silently ignore errors in high-frequency loop
+                console.error(`[TERMINAL ${this.id}] Error fitting terminal:`, error);
+                logger.error('terminal', 'Error fitting terminal:', error);
             }
-        }, RESIZE_CHECK_INTERVAL);
-
-        logger.debug('terminal', '240Hz resize check enabled (silent mode) for terminal:', this.terminalId);
-    }
-
-    /**
-     * Debounced resize - prevents multiple concurrent resize operations
-     * All resize mechanisms (ResizeObserver, 240Hz polling, manual) should call this
-     */
-    debouncedResize() {
-        // Clear any existing debounce timer
-        if (this.resizeDebounceTimer) {
-            clearTimeout(this.resizeDebounceTimer);
-        }
-
-        // If already resizing, mark that we need another resize after this one completes
-        if (this.isResizing) {
-            this.pendingResize = true;
-            return;
-        }
-
-        // Schedule the resize
-        this.resizeDebounceTimer = setTimeout(() => {
-            this.performResize();
-        }, this.RESIZE_DEBOUNCE_DELAY);
-    }
-
-    /**
-     * Perform the actual resize operation
-     * Internal method called by debouncedResize()
-     */
-    performResize() {
-        if (!this.fitAddon || !this.isAttached || !this.xterm) {
-            return;
-        }
-
-        // Check if container is visible
-        const isVisible = this.container.style.display !== 'none' &&
-                         this.container.offsetParent !== null &&
-                         this.container.clientWidth > 0 &&
-                         this.container.clientHeight > 0;
-
-        if (!isVisible) {
-            return;
-        }
-
-        // Set resizing flag to prevent concurrent operations
-        this.isResizing = true;
-
-        try {
-            const currentCols = this.xterm.cols;
-            const currentRows = this.xterm.rows;
-
-            // Perform the resize
-            this.fitAddon.fit();
-
-            const newCols = this.xterm.cols;
-            const newRows = this.xterm.rows;
-
-            // If size changed, refresh the display to prevent corruption
-            if (currentCols !== newCols || currentRows !== newRows) {
-                this.xterm.refresh(0, this.xterm.rows - 1);
-                logger.debug('terminal', 'Terminal resized:', {
-                    terminalId: this.terminalId,
-                    from: { cols: currentCols, rows: currentRows },
-                    to: { cols: newCols, rows: newRows }
-                });
-            }
-        } catch (error) {
-            logger.error('terminal', 'Error performing resize:', error);
-        } finally {
-            // Clear resizing flag
-            this.isResizing = false;
-
-            // If a resize was requested while we were resizing, perform it now
-            if (this.pendingResize) {
-                this.pendingResize = false;
-                // Use a small delay to avoid immediate re-entry
-                setTimeout(() => this.debouncedResize(), 10);
-            }
+        } else {
+            console.warn(`[TERMINAL ${this.id}] fit() skipped - fitAddon: ${!!this.fitAddon}, isAttached: ${this.isAttached}`);
         }
     }
 
     /**
-     * Manually trigger terminal resize
-     * Public API - uses debounced resize internally
+     * Resize terminal
      */
-    resize() {
-        this.debouncedResize();
-    }
-
-    /**
-     * Write text to terminal
-     * @param {string} text - Text to write
-     */
-    write(text) {
-        if (this.xterm) {
-            this.xterm.write(text);
-        }
-    }
-
-    /**
-     * Clear terminal
-     */
-    clear() {
-        if (this.xterm) {
-            this.xterm.clear();
+    resize(cols, rows) {
+        if (this.xterm && !this.isDisposed) {
+            this.xterm.resize(cols, rows);
+            logger.debug('terminal', `Terminal resized: ${cols}x${rows}`);
         }
     }
 
@@ -761,102 +415,139 @@ class Terminal {
      * Focus terminal
      */
     focus() {
-        if (this.xterm) {
+        if (this.xterm && !this.isDisposed) {
             this.xterm.focus();
         }
     }
 
     /**
-     * Scroll to bottom
+     * Clear terminal
      */
-    scrollToBottom() {
-        if (this.xterm) {
-            this.xterm.scrollToBottom();
+    clear() {
+        if (this.xterm && !this.isDisposed) {
+            this.xterm.clear();
         }
     }
 
     /**
-     * Get terminal ID
+     * Get terminal theme
      */
-    getTerminalId() {
-        return this.terminalId;
+    getTheme() {
+        return {
+            background: '#1e1e1e',
+            foreground: '#cccccc',
+            cursor: '#ffffff',
+            cursorAccent: '#000000',
+            selection: 'rgba(255, 255, 255, 0.3)',
+            black: '#000000',
+            red: '#cd3131',
+            green: '#0dbc79',
+            yellow: '#e5e510',
+            blue: '#2472c8',
+            magenta: '#bc3fbc',
+            cyan: '#11a8cd',
+            white: '#e5e5e5',
+            brightBlack: '#666666',
+            brightRed: '#f14c4c',
+            brightGreen: '#23d18b',
+            brightYellow: '#f5f543',
+            brightBlue: '#3b8eea',
+            brightMagenta: '#d670d6',
+            brightCyan: '#29b8db',
+            brightWhite: '#ffffff',
+        };
     }
 
     /**
-     * Get terminal info from backend
+     * Get selection
      */
-    async getInfo() {
-        if (this.terminalId === null) {
-            return { success: false, error: 'Terminal not initialized' };
-        }
+    getSelection() {
+        return this.xterm ? this.xterm.getSelection() : '';
+    }
 
-        try {
-            const result = await ipcRenderer.invoke('terminal-get-info', this.terminalId);
-            return result;
-        } catch (error) {
-            logger.error('terminal', 'Error getting terminal info:', error);
-            return { success: false, error: error.message };
+    /**
+     * Select all
+     */
+    selectAll() {
+        if (this.xterm && !this.isDisposed) {
+            this.xterm.selectAll();
         }
     }
 
     /**
-     * Destroy terminal
+     * Clear selection
      */
-    async destroy() {
-        logger.debug('terminal', 'Destroying terminal:', this.terminalId);
-
-        // Remove IPC listeners
-        if (this.dataListener) {
-            ipcRenderer.removeListener('terminal-data', this.dataListener);
+    clearSelection() {
+        if (this.xterm && !this.isDisposed) {
+            this.xterm.clearSelection();
         }
-        if (this.exitListener) {
-            ipcRenderer.removeListener('terminal-exit', this.exitListener);
-        }
+    }
 
-        // Clear 240Hz resize interval
-        if (this.resizeInterval) {
-            clearInterval(this.resizeInterval);
-            this.resizeInterval = null;
+    /**
+     * Dispose terminal
+     */
+    async dispose() {
+        if (this.isDisposed) {
+            return;
         }
 
-        // Clear resize debounce timer
-        if (this.resizeDebounceTimer) {
-            clearTimeout(this.resizeDebounceTimer);
-            this.resizeDebounceTimer = null;
+        logger.debug('terminal', `Disposing terminal: ${this.id}`);
+
+        this.isDisposed = true;
+
+        // Clear buffer timeout if it exists
+        if (this._bufferTimeout) {
+            clearTimeout(this._bufferTimeout);
+            this._bufferTimeout = null;
         }
 
-        // Disconnect resize observer
-        if (this.resizeObserver) {
-            this.resizeObserver.disconnect();
-            this.resizeObserver = null;
+        // Clear resize timeout and observer
+        if (this._resizeTimeout) {
+            clearTimeout(this._resizeTimeout);
+            this._resizeTimeout = null;
+        }
+        if (this._resizeObserver) {
+            this._resizeObserver.disconnect();
+            this._resizeObserver = null;
         }
 
-        // Close backend terminal (PTY or SSH shell)
-        if (this.terminalId !== null) {
+        // Clear data buffer
+        this._initialDataBuffer = [];
+        this._isBufferingData = false;
+
+        // Remove event listeners
+        if (this._dataHandler) {
+            eventBus.off('terminal:data', this._dataHandler);
+        }
+        if (this._exitHandler) {
+            eventBus.off('terminal:exit', this._exitHandler);
+        }
+
+        // Close PTY
+        if (this.ptyId) {
             try {
-                const closeHandler = this.terminalType === 'ssh' ? 'ssh-terminal-close' : 'terminal-close';
-                await ipcRenderer.invoke(closeHandler, this.terminalId);
-                logger.debug('terminal', '✓ Backend terminal closed');
+                await window.electronAPI.terminalClose(this.ptyId);
+                logger.debug('terminal', `PTY closed: ${this.ptyId}`);
             } catch (error) {
-                logger.error('terminal', 'Error closing backend terminal:', error);
+                logger.error('terminal', 'Error closing PTY:', error);
             }
-            this.terminalId = null;
         }
 
-        // Dispose xterm instance
+        // Dispose addons
+        if (this.webglAddon) {
+            try {
+                this.webglAddon.dispose();
+            } catch (error) {
+                // Ignore
+            }
+        }
+
+        // Dispose xterm
         if (this.xterm) {
             this.xterm.dispose();
-            this.xterm = null;
-            logger.debug('terminal', '✓ xterm.js disposed');
         }
 
-        this.fitAddon = null;
-        this.isAttached = false;
-
-        logger.debug('terminal', '✓ Terminal destroyed successfully');
-
-        // Emit destroyed event
-        eventBus.emit('terminal:destroyed');
+        logger.debug('terminal', `Terminal disposed: ${this.id}`);
     }
 }
 

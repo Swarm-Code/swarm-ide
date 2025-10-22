@@ -6760,119 +6760,247 @@ body {
         padding: 16px 20px;
     }
 }
-
 /* ========================================
-   Terminal Styles
-   ======================================== */
+ * Terminal Panel Styles
+ * VSCode-inspired terminal panel with tabs
+ * ======================================== */
 
-/* Terminal container - wraps xterm.js instance */
-.terminal-container {
-    width: 100%;
-    height: 100%;
-    background-color: #1e1e1e;
+.terminal-panel {
+    display: none; /* Hidden by default */
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 320px;
+    background: #1e1e1e;
+    border-top: 1px solid #3e3e42;
+    flex-direction: column;
+    z-index: 1000;
+}
+
+/* Resize handle */
+.terminal-panel-resize-handle {
+    position: absolute;
+    top: -3px;
+    left: 0;
+    right: 0;
+    height: 6px;
+    cursor: ns-resize;
+    background: transparent;
+    z-index: 1001;
+}
+
+.terminal-panel-resize-handle:hover {
+    background: rgba(14, 99, 156, 0.3);
+}
+
+/* Header */
+.terminal-panel-header {
+    display: flex;
+    align-items: center;
+    height: 35px;
+    background: #252526;
+    border-bottom: 1px solid #3e3e42;
+    padding: 0 8px;
+    flex-shrink: 0;
+}
+
+.terminal-panel-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: #cccccc;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 0 12px;
+    user-select: none;
+}
+
+.terminal-panel-tabs {
+    display: flex;
+    flex: 1;
+    gap: 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.terminal-panel-tabs::-webkit-scrollbar {
+    height: 4px;
+}
+
+.terminal-panel-tabs::-webkit-scrollbar-thumb {
+    background: #3e3e42;
+    border-radius: 2px;
+}
+
+/* Terminal Tab */
+.terminal-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px;
+    height: 28px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px 3px 0 0;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.1s ease;
+}
+
+.terminal-tab:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.terminal-tab.active {
+    background: #1e1e1e;
+    border-color: #3e3e42;
+    border-bottom-color: #1e1e1e;
+}
+
+.terminal-tab-label {
+    font-size: 12px;
+    color: #858585;
+    white-space: nowrap;
+}
+
+.terminal-tab.active .terminal-tab-label {
+    color: #cccccc;
+}
+
+.terminal-tab-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    color: #858585;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: all 0.1s ease;
+    padding: 0;
+}
+
+.terminal-tab:hover .terminal-tab-close {
+    opacity: 1;
+}
+
+.terminal-tab-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #cccccc;
+}
+
+/* Panel Actions */
+.terminal-panel-actions {
+    display: flex;
+    gap: 2px;
+    align-items: center;
+}
+
+.terminal-panel-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    color: #858585;
+    cursor: pointer;
+    transition: all 0.1s ease;
+    padding: 0;
+}
+
+.terminal-panel-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #cccccc;
+}
+
+.terminal-panel-btn:active {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.terminal-panel-btn .icon {
+    font-size: 16px;
+    line-height: 1;
+}
+
+/* Content */
+.terminal-panel-content {
+    flex: 1;
+    position: relative;
     overflow: hidden;
+}
+
+.terminal-instance {
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
+    display: none;
 }
 
-/* xterm.js container */
-.terminal-container .xterm {
+.terminal-instance.active {
+    display: block;
+}
+
+/* XTerm overrides */
+.terminal-panel .xterm {
     height: 100%;
     padding: 8px;
-    /* DO NOT add font-smoothing or text-rendering here - interferes with canvas! */
 }
 
-/* xterm.js viewport */
-.terminal-container .xterm-viewport {
-    background-color: #1e1e1e !important;
+.terminal-panel .xterm-viewport {
+    background-color: transparent !important;
 }
 
-/* xterm.js screen */
-.terminal-container .xterm-screen {
-    background-color: #1e1e1e !important;
+.terminal-panel .xterm-screen {
+    background-color: transparent !important;
 }
 
-/* Canvas must be left alone - xterm.js customGlyphs handles everything */
-/* DO NOT override font-family, image-rendering, or font-smoothing on canvas! */
-.terminal-container canvas {
-    /* Let xterm.js customGlyphs render pixel-perfect box characters */
-    /* NO CSS overrides here - they break customGlyphs rendering */
+/* Terminal scrollbar */
+.terminal-panel .xterm-viewport::-webkit-scrollbar {
+    width: 10px;
 }
 
-/* Scrollbar for terminal */
-.terminal-container .xterm-viewport::-webkit-scrollbar {
-    width: 14px;
+.terminal-panel .xterm-viewport::-webkit-scrollbar-track {
+    background: #1e1e1e;
 }
 
-.terminal-container .xterm-viewport::-webkit-scrollbar-track {
-    background-color: #1e1e1e;
+.terminal-panel .xterm-viewport::-webkit-scrollbar-thumb {
+    background: #424242;
+    border-radius: 5px;
 }
 
-.terminal-container .xterm-viewport::-webkit-scrollbar-thumb {
-    background-color: #424242;
-    border-radius: 7px;
-    border: 3px solid #1e1e1e;
-}
-
-.terminal-container .xterm-viewport::-webkit-scrollbar-thumb:hover {
-    background-color: #4e4e4e;
+.terminal-panel .xterm-viewport::-webkit-scrollbar-thumb:hover {
+    background: #4e4e4e;
 }
 
 /* Terminal selection */
-.terminal-container .xterm-selection div {
+.terminal-panel .xterm-selection {
     background-color: rgba(255, 255, 255, 0.3) !important;
 }
 
-/* Terminal cursor */
-.terminal-container .xterm-cursor-layer .xterm-cursor {
-    background-color: #ffffff;
-}
-
-/* Terminal links */
-.terminal-container .xterm-link {
+/* Link hover */
+.terminal-panel .xterm-link:hover {
     text-decoration: underline;
     cursor: pointer;
 }
 
-.terminal-container .xterm-link:hover {
-    text-decoration: underline;
-    color: #3794ff;
-}
-
-/* Ensure terminal fits properly in pane */
-.pane-content .terminal-container {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-}
-
-
-/* FIX: Hide xterm's character measurement element without breaking measurements
-   Using visibility:hidden instead of display:none so xterm.js can still measure it */
-.xterm-char-measure-element {
+/* CRITICAL: Hide xterm.js character measurement element */
+.terminal-panel .xterm-char-measure-element {
+    position: absolute !important;
     visibility: hidden !important;
-    position: absolute !important;
-    left: -9999px !important;
-    top: -9999px !important;
-    z-index: -9999 !important;
     pointer-events: none !important;
-    opacity: 0 !important;
 }
 
-/* Hide xterm's helper textarea (used for input handling and accessibility)
-   Position it far off-screen and make it invisible while keeping it functional */
-.xterm-helper-textarea {
-    position: absolute !important;
-    left: -9999px !important;
-    top: -9999px !important;
-    width: 0 !important;
-    height: 0 !important;
-    opacity: 0 !important;
-    z-index: -9999 !important;
-    pointer-events: none !important;
+/* Adjust pane container when terminal is visible */
+#pane-container.terminal-visible {
+    bottom: 320px; /* Match terminal panel height */
 }

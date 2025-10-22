@@ -6,6 +6,7 @@ const videoService = require('./src/services/VideoService');
 const languageServerManager = require('./src/services/LanguageServerManager');
 const crashLogger = require('./src/services/CrashLogger');
 const FileWatcherService = require('./src/services/FileWatcherService');
+const pty = require('node-pty');
 
 // ========================================
 // MEMORY OPTIMIZATION: Disable GPU acceleration
@@ -18,6 +19,7 @@ console.log('[MAIN] GPU acceleration disabled for memory optimization');
 let mainWindow;
 const browserViews = new Map(); // tabId -> BrowserView
 const fileWatcher = new FileWatcherService(); // Global file watcher instance
+const terminals = new Map(); // ptyId -> pty instance
 
 // Console log buffer for crash reports
 const consoleLogBuffer = [];
@@ -1104,127 +1106,6 @@ const { spawn } = require('child_process');
 // SSH Connection Manager
 const sshConnectionManager = require('./src/services/SSHConnectionManager');
 
-// Terminal Service - PTY Host Process Architecture
-// Inspired by VS Code's multi-process terminal for ultra-low latency
-const { fork } = require('child_process');
-const { MessageChannel } = require('worker_threads');
-
-let ptyHostProcess = null;
-let ptyHostReady = false;
-let ptyHostMessagePort = null; // For direct renderer communication
-
-/**
- * PTY Host Manager - Spawns and manages dedicated PTY host process
- *
- * Architecture:
- * - PTY host runs as separate utility process (isolated from main/renderer)
- * - Direct MessagePort connection: renderer <-> PTY host (bypasses main process)
- * - Main process only handles lifecycle management
- * - Ultra-low latency through dedicated process and direct IPC
- */
-function startPTYHost() {
-    if (ptyHostProcess) {
-        console.log('[Main] PTY Host already running, PID:', ptyHostProcess.pid);
-        return;
-    }
-
-    console.log('[Main] Starting PTY Host process...');
-
-    const ptyHostPath = path.join(__dirname, 'src/services/ptyHost.js');
-
-    // Spawn PTY host as separate process
-    ptyHostProcess = fork(ptyHostPath, [], {
-        stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
-        env: {
-            ...process.env,
-            PTY_HOST_DEBUG: process.env.PTY_HOST_DEBUG || 'false'
-        }
-    });
-
-    console.log('[Main] PTY Host spawned, PID:', ptyHostProcess.pid);
-
-    // Handle messages from PTY host
-    ptyHostProcess.on('message', (message) => {
-        const mainReceiveTime = Date.now();
-        if (message.type === 'terminal-data') {
-            console.log(`[MAIN LATENCY] 📨 PTY HOST DATA at ${mainReceiveTime}: ${message.data.length} bytes`);
-        }
-
-        // Forward messages to renderer
-        if (mainWindow && mainWindow.webContents) {
-            const beforeSend = Date.now();
-            mainWindow.webContents.send('pty-host-message', message);
-            const afterSend = Date.now();
-            if (message.type === 'terminal-data') {
-                console.log(`[MAIN LATENCY] 📤 FORWARDED TO RENDERER at ${afterSend} (${afterSend - beforeSend}ms duration)`);
-            }
-        }
-    });
-
-    // Handle PTY host exit (restart on crash)
-    ptyHostProcess.on('exit', (code, signal) => {
-        console.log('[Main] PTY Host exited:', { code, signal });
-        ptyHostProcess = null;
-        ptyHostReady = false;
-        ptyHostMessagePort = null;
-
-        // Auto-restart after 1 second
-        setTimeout(() => {
-            console.log('[Main] Restarting PTY Host...');
-            startPTYHost();
-        }, 1000);
-    });
-
-    // Handle PTY host errors
-    ptyHostProcess.on('error', (error) => {
-        console.error('[Main] PTY Host error:', error);
-    });
-
-    ptyHostReady = true;
-}
-
-/**
- * Setup direct MessagePort connection between renderer and PTY host
- * This bypasses the main process for lowest latency data transfer
- */
-function setupDirectPTYConnection(event) {
-    if (!ptyHostProcess || !ptyHostReady) {
-        console.error('[Main] PTY Host not ready for direct connection');
-        return { success: false, error: 'PTY Host not ready' };
-    }
-
-    console.log('[Main] Setting up direct MessagePort connection: renderer <-> PTY host');
-
-    // Create MessageChannel with two ports
-    const { port1, port2 } = new MessageChannel();
-
-    // port1 goes to PTY host
-    ptyHostProcess.send({ type: 'setup-port', port: port1 }, [port1]);
-
-    // port2 goes to renderer (via return)
-    ptyHostMessagePort = port2;
-
-    console.log('[Main] ✓ Direct MessagePort established (ultra-low latency path)');
-
-    return {
-        success: true,
-        port: port2
-    };
-}
-
-/**
- * Send message to PTY host
- */
-function sendToPTYHost(message) {
-    if (!ptyHostProcess || !ptyHostReady) {
-        console.error('[Main] PTY Host not available');
-        return false;
-    }
-
-    ptyHostProcess.send(message);
-    return true;
-}
-
 /**
  * Execute a git command in the main process
  * @param {string} gitPath - Git binary path
@@ -1821,245 +1702,73 @@ ipcMain.handle('ssh-media-cache-save-metadata', async (event, metadata) => {
 });
 
 // ========================================
-// SSH Terminal IPC Handlers
+// Terminal IPC Handlers
 // ========================================
 
-// SSH Terminal service - manages SSH shell sessions
-const sshTerminals = new Map(); // terminalId -> { stream, connectionId }
-let nextSSHTerminalId = 1;
-
-/**
- * Create SSH terminal session
- */
-ipcMain.handle('ssh-terminal-create', async (event, connectionId, options = {}) => {
+// Create terminal (PTY)
+ipcMain.handle('terminal-create', async (event, cols, rows, terminalId) => {
   try {
-    console.log('[Main] Creating SSH terminal for connection:', connectionId);
+    console.log('[Main] Creating terminal:', { cols, rows, terminalId });
 
-    // Get the SSH connection
-    const connection = await sshConnectionManager.getConnection(connectionId);
-    if (!connection) {
-      throw new Error('SSH connection not found');
-    }
+    // Determine shell based on platform
+    const shell = process.platform === 'win32' ? 'powershell.exe' : (process.env.SHELL || '/bin/bash');
+    const cwd = process.env.HOME || process.cwd();
 
-    if (connection.state !== 'connected') {
-      throw new Error('SSH connection is not connected');
-    }
+    // Generate unique PTY ID
+    const ptyId = `pty-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-    const terminalId = `ssh-${nextSSHTerminalId++}`;
-    const cols = options.cols || 80;
-    const rows = options.rows || 24;
-
-    // Get the SSH2 client from node-ssh connection
-    const sshClient = connection.ssh.connection;
-
-    // Create shell with PTY and UTF-8 environment
-    sshClient.shell({
-      term: 'xterm-256color',
+    // Spawn PTY
+    const ptyProcess = pty.spawn(shell, [], {
+      name: 'xterm-256color',
       cols: cols,
       rows: rows,
-      env: {
-        LANG: 'en_US.UTF-8',
-        LC_ALL: 'en_US.UTF-8',
-        LC_CTYPE: 'en_US.UTF-8',
-        TERM: 'xterm-256color',
-        COLORTERM: 'truecolor'
-      },
-      modes: {
-        ECHO: 1,
-        TTY_OP_ISPEED: 14400,
-        TTY_OP_OSPEED: 14400
-      }
-    }, (err, stream) => {
-      if (err) {
-        console.error('[Main] Error creating SSH shell:', err);
-        mainWindow.webContents.send('ssh-terminal-error', { terminalId, error: err.message });
-        return;
-      }
-
-      console.log('[Main] SSH shell created for terminal:', terminalId);
-
-      // Store terminal info
-      sshTerminals.set(terminalId, {
-        stream: stream,
-        connectionId: connectionId,
-        cols: cols,
-        rows: rows
-      });
-
-      // Handle data from SSH server
-      stream.on('data', (data) => {
-        mainWindow.webContents.send('terminal-data', {
-          terminalId,
-          data: data.toString('utf8')
-        });
-      });
-
-      // Handle SSH shell close
-      stream.on('close', () => {
-        console.log('[Main] SSH shell closed:', terminalId);
-        sshTerminals.delete(terminalId);
-        mainWindow.webContents.send('terminal-exit', {
-          terminalId,
-          exitCode: 0,
-          signal: null
-        });
-      });
-
-      // Handle errors
-      stream.on('error', (err) => {
-        console.error('[Main] SSH shell error:', err);
-        mainWindow.webContents.send('terminal-exit', {
-          terminalId,
-          exitCode: 1,
-          signal: 'ERROR'
-        });
-      });
+      cwd: cwd,
+      env: process.env
     });
 
-    return {
-      success: true,
-      terminalId: terminalId,
-      shell: options.shell || '/bin/bash',
-      cwd: options.cwd || '~'
-    };
+    // Store PTY process
+    terminals.set(ptyId, ptyProcess);
 
-  } catch (error) {
-    console.error('[Main] Error creating SSH terminal:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-/**
- * Write data to SSH terminal
- */
-ipcMain.handle('ssh-terminal-write', async (event, terminalId, data) => {
-  try {
-    const terminal = sshTerminals.get(terminalId);
-    if (!terminal) {
-      return { success: false, error: 'Terminal not found' };
-    }
-
-    terminal.stream.write(data);
-    return { success: true };
-
-  } catch (error) {
-    console.error('[Main] Error writing to SSH terminal:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-/**
- * Resize SSH terminal
- */
-ipcMain.handle('ssh-terminal-resize', async (event, terminalId, cols, rows) => {
-  try {
-    const terminal = sshTerminals.get(terminalId);
-    if (!terminal) {
-      return { success: false, error: 'Terminal not found' };
-    }
-
-    terminal.stream.setWindow(rows, cols, 640, 480);
-    terminal.cols = cols;
-    terminal.rows = rows;
-
-    console.log('[Main] SSH terminal resized:', { terminalId, cols, rows });
-    return { success: true };
-
-  } catch (error) {
-    console.error('[Main] Error resizing SSH terminal:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-/**
- * Close SSH terminal
- */
-ipcMain.handle('ssh-terminal-close', async (event, terminalId) => {
-  try {
-    const terminal = sshTerminals.get(terminalId);
-    if (!terminal) {
-      return { success: false, error: 'Terminal not found' };
-    }
-
-    terminal.stream.end();
-    sshTerminals.delete(terminalId);
-
-    console.log('[Main] SSH terminal closed:', terminalId);
-    return { success: true };
-
-  } catch (error) {
-    console.error('[Main] Error closing SSH terminal:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// ========================================
-// Terminal IPC Handlers - PTY Host Architecture
-// ========================================
-
-/**
- * Setup direct MessagePort connection to PTY host
- * This enables lowest-latency communication by bypassing main process
- */
-ipcMain.handle('terminal-setup-direct-connection', async (event) => {
-  try {
-    const result = setupDirectPTYConnection(event);
-
-    if (result.success && result.port) {
-      // Transfer MessagePort to renderer
-      event.sender.postMessage('pty-port-transfer', null, [result.port]);
-      return { success: true };
-    }
-
-    return result;
-  } catch (error) {
-    console.error('[Main] Error setting up direct PTY connection:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-/**
- * Create a new terminal (via PTY host)
- */
-ipcMain.handle('terminal-create', async (event, options = {}) => {
-  try {
-    console.log('[Main] Forwarding terminal-create to PTY host:', options);
-
-    // Forward to PTY host
-    const success = sendToPTYHost({
-      type: 'create-terminal',
-      data: options
+    // Handle PTY data - send to renderer
+    ptyProcess.onData((data) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('terminal:data', {
+          ptyId: ptyId,
+          data: data
+        });
+      }
     });
 
-    if (!success) {
-      return { success: false, error: 'PTY Host not available' };
-    }
+    // Handle PTY exit
+    ptyProcess.onExit(({ exitCode, signal }) => {
+      console.log('[Main] Terminal exited:', { ptyId, exitCode, signal });
+      terminals.delete(ptyId);
 
-    // PTY host will send response directly to renderer via MessagePort
-    return { success: true, pending: true };
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('terminal:exit', {
+          ptyId: ptyId,
+          exitCode: exitCode
+        });
+      }
+    });
+
+    console.log('[Main] Terminal created successfully:', ptyId);
+    return { success: true, ptyId: ptyId };
   } catch (error) {
     console.error('[Main] Error creating terminal:', error);
     return { success: false, error: error.message };
   }
 });
 
-/**
- * Write data to terminal (via PTY host)
- */
-ipcMain.handle('terminal-write', async (event, terminalId, data) => {
+// Write data to terminal
+ipcMain.handle('terminal-write', async (event, ptyId, data) => {
   try {
-    const mainReceiveTime = Date.now();
-    console.log(`[MAIN LATENCY] 📨 IPC RECEIVED at ${mainReceiveTime}: "${data.replace(/\r/g, '\\r').replace(/\n/g, '\\n')}" (${data.length} bytes)`);
+    const ptyProcess = terminals.get(ptyId);
+    if (!ptyProcess) {
+      return { success: false, error: 'Terminal not found' };
+    }
 
-    // Forward to PTY host
-    const beforeForward = Date.now();
-    sendToPTYHost({
-      type: 'write-terminal',
-      data: { terminalId, data }
-    });
-    const afterForward = Date.now();
-    console.log(`[MAIN LATENCY] ⏩ FORWARDED TO PTY HOST at ${afterForward} (${afterForward - beforeForward}ms duration)`);
-
+    ptyProcess.write(data);
     return { success: true };
   } catch (error) {
     console.error('[Main] Error writing to terminal:', error);
@@ -2067,17 +1776,16 @@ ipcMain.handle('terminal-write', async (event, terminalId, data) => {
   }
 });
 
-/**
- * Resize terminal (via PTY host)
- */
-ipcMain.handle('terminal-resize', async (event, terminalId, cols, rows) => {
+// Resize terminal
+ipcMain.handle('terminal-resize', async (event, ptyId, cols, rows) => {
   try {
-    // Forward to PTY host (NO LOGGING - called frequently!)
-    sendToPTYHost({
-      type: 'resize-terminal',
-      data: { terminalId, cols, rows }
-    });
+    const ptyProcess = terminals.get(ptyId);
+    if (!ptyProcess) {
+      return { success: false, error: 'Terminal not found' };
+    }
 
+    ptyProcess.resize(cols, rows);
+    console.log('[Main] Terminal resized:', { ptyId, cols, rows });
     return { success: true };
   } catch (error) {
     console.error('[Main] Error resizing terminal:', error);
@@ -2085,18 +1793,17 @@ ipcMain.handle('terminal-resize', async (event, terminalId, cols, rows) => {
   }
 });
 
-/**
- * Close terminal (via PTY host)
- */
-ipcMain.handle('terminal-close', async (event, terminalId) => {
+// Close terminal
+ipcMain.handle('terminal-close', async (event, ptyId) => {
   try {
-    console.log('[Main] Forwarding terminal-close to PTY host:', terminalId);
+    const ptyProcess = terminals.get(ptyId);
+    if (!ptyProcess) {
+      return { success: false, error: 'Terminal not found' };
+    }
 
-    sendToPTYHost({
-      type: 'close-terminal',
-      data: { terminalId }
-    });
-
+    ptyProcess.kill();
+    terminals.delete(ptyId);
+    console.log('[Main] Terminal closed:', ptyId);
     return { success: true };
   } catch (error) {
     console.error('[Main] Error closing terminal:', error);
@@ -2104,31 +1811,11 @@ ipcMain.handle('terminal-close', async (event, terminalId) => {
   }
 });
 
-/**
- * Acknowledge data received (flow control)
- */
-ipcMain.handle('terminal-acknowledge-data', async (event, terminalId, byteCount) => {
-  try {
-    // Forward to PTY host (NO LOGGING - called frequently!)
-    sendToPTYHost({
-      type: 'acknowledge-data',
-      data: { terminalId, byteCount }
-    });
-
-    return { success: true };
-  } catch (error) {
-    console.error('[Main] Error acknowledging terminal data:', error);
-    return { success: false, error: error.message };
-  }
-});
 
 app.whenReady().then(async () => {
   // Initialize crash logger
   await crashLogger.init();
   console.log('[MAIN] Crash logger initialized');
-
-  // Start PTY Host process for ultra-low latency terminals
-  startPTYHost();
 
   createWindow();
 
@@ -2148,13 +1835,6 @@ app.on('window-all-closed', () => {
 app.on('quit', async () => {
   await languageServerManager.shutdownAll();
   await sshConnectionManager.shutdown();
-
-  // Shutdown PTY host process
-  if (ptyHostProcess) {
-    console.log('[Main] Shutting down PTY Host...');
-    ptyHostProcess.kill('SIGTERM');
-    ptyHostProcess = null;
-  }
 });
 
 // Dialog IPC handlers for SSH Import/Export
