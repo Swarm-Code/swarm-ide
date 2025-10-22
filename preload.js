@@ -755,6 +755,52 @@ const electronAPI = {
     },
 
     // ========================================
+    // SSH Terminal API (for SSH-based terminals)
+    // ========================================
+
+    /**
+     * Create a new SSH terminal (shell session)
+     * @param {string} connectionId - SSH connection identifier
+     * @param {number} cols - Terminal columns
+     * @param {number} rows - Terminal rows
+     * @param {string} terminalId - Terminal identifier
+     * @returns {Promise<Object>} Result with SSH terminal ID
+     */
+    sshTerminalCreate: (connectionId, cols, rows, terminalId) => {
+        return ipcRenderer.invoke('ssh-terminal-create', connectionId, cols, rows, terminalId);
+    },
+
+    /**
+     * Write data to SSH terminal
+     * @param {string} sshTermId - SSH terminal identifier
+     * @param {string} data - Data to write
+     * @returns {Promise<Object>} Write result
+     */
+    sshTerminalWrite: (sshTermId, data) => {
+        return ipcRenderer.invoke('ssh-terminal-write', sshTermId, data);
+    },
+
+    /**
+     * Resize SSH terminal
+     * @param {string} sshTermId - SSH terminal identifier
+     * @param {number} cols - New column count
+     * @param {number} rows - New row count
+     * @returns {Promise<Object>} Resize result
+     */
+    sshTerminalResize: (sshTermId, cols, rows) => {
+        return ipcRenderer.invoke('ssh-terminal-resize', sshTermId, cols, rows);
+    },
+
+    /**
+     * Close SSH terminal
+     * @param {string} sshTermId - SSH terminal identifier
+     * @returns {Promise<Object>} Close result
+     */
+    sshTerminalClose: (sshTermId) => {
+        return ipcRenderer.invoke('ssh-terminal-close', sshTermId);
+    },
+
+    // ========================================
     // SSH Media Cache API (for viewing media files over SSH)
     // ========================================
 

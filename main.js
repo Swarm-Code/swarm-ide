@@ -20,6 +20,7 @@ let mainWindow;
 const browserViews = new Map(); // tabId -> BrowserView
 const fileWatcher = new FileWatcherService(); // Global file watcher instance
 const terminals = new Map(); // ptyId -> pty instance
+const sshTerminals = new Map(); // sshTerminalId -> { stream, connectionId }
 
 // Console log buffer for crash reports
 const consoleLogBuffer = [];
@@ -1807,6 +1808,174 @@ ipcMain.handle('terminal-close', async (event, ptyId) => {
     return { success: true };
   } catch (error) {
     console.error('[Main] Error closing terminal:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// ========================================
+// SSH Terminal IPC Handlers
+// ========================================
+
+// Create SSH terminal (shell session)
+ipcMain.handle('ssh-terminal-create', async (event, connectionId, cols, rows, terminalId) => {
+  try {
+    console.log('[Main] Creating SSH terminal:', { connectionId, cols, rows, terminalId });
+
+    const connection = sshConnectionManager.getConnection(connectionId);
+    if (!connection) {
+      console.error('[Main] SSH connection not found:', connectionId);
+      return { success: false, error: 'SSH connection not found' };
+    }
+
+    // Get underlying ssh2 client from node-ssh wrapper
+    const ssh2Client = connection.ssh.connection;
+
+    if (!ssh2Client) {
+      console.error('[Main] SSH2 client not available');
+      return { success: false, error: 'SSH connection not established' };
+    }
+
+    return new Promise((resolve, reject) => {
+      ssh2Client.shell({ cols, rows, term: 'xterm-256color' }, (err, stream) => {
+        if (err) {
+          console.error('[Main] Error creating SSH shell:', err);
+          return resolve({ success: false, error: err.message });
+        }
+
+        const sshTermId = `ssh-term-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        sshTerminals.set(sshTermId, { stream, connectionId, closed: false });
+
+        // Forward SSH stream data to renderer
+        stream.on('data', (data) => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('terminal:data', {
+              ptyId: sshTermId,
+              data: data.toString('utf-8')
+            });
+          }
+        });
+
+        // Handle stream close
+        stream.on('close', () => {
+          console.log('[Main] SSH terminal closed:', sshTermId);
+          const terminal = sshTerminals.get(sshTermId);
+          if (terminal) {
+            terminal.closed = true;
+          }
+          sshTerminals.delete(sshTermId);
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('terminal:exit', {
+              ptyId: sshTermId,
+              exitCode: 0
+            });
+          }
+        });
+
+        // Handle stream errors (including EPIPE)
+        stream.on('error', (error) => {
+          console.error('[Main] SSH terminal stream error:', sshTermId, error.message);
+          const terminal = sshTerminals.get(sshTermId);
+          if (terminal) {
+            terminal.closed = true;
+          }
+          // Don't delete terminal here, let close event handle it
+        });
+
+        // Handle stderr data
+        stream.stderr.on('data', (data) => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('terminal:data', {
+              ptyId: sshTermId,
+              data: data.toString('utf-8')
+            });
+          }
+        });
+
+        console.log('[Main] SSH terminal created successfully:', sshTermId);
+        resolve({ success: true, ptyId: sshTermId });
+      });
+    });
+  } catch (error) {
+    console.error('[Main] Error creating SSH terminal:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Write data to SSH terminal
+ipcMain.handle('ssh-terminal-write', async (event, sshTermId, data) => {
+  try {
+    const terminal = sshTerminals.get(sshTermId);
+    if (!terminal) {
+      return { success: false, error: 'SSH terminal not found' };
+    }
+
+    // Check if stream is closed (EPIPE protection)
+    if (terminal.closed || terminal.stream.destroyed) {
+      console.warn('[Main] Attempted to write to closed SSH terminal:', sshTermId);
+      return { success: false, error: 'Terminal closed' };
+    }
+
+    // Check if stream is writable
+    if (!terminal.stream.writable) {
+      console.warn('[Main] SSH terminal stream not writable:', sshTermId);
+      return { success: false, error: 'Stream not writable' };
+    }
+
+    terminal.stream.write(data);
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error writing to SSH terminal:', error);
+    // Mark as closed if we get EPIPE
+    const terminal = sshTerminals.get(sshTermId);
+    if (terminal && error.code === 'EPIPE') {
+      terminal.closed = true;
+    }
+    return { success: false, error: error.message };
+  }
+});
+
+// Resize SSH terminal
+ipcMain.handle('ssh-terminal-resize', async (event, sshTermId, cols, rows) => {
+  try {
+    const terminal = sshTerminals.get(sshTermId);
+    if (!terminal) {
+      return { success: false, error: 'SSH terminal not found' };
+    }
+
+    // Check if stream is closed (EPIPE protection)
+    if (terminal.closed || terminal.stream.destroyed) {
+      console.warn('[Main] Attempted to resize closed SSH terminal:', sshTermId);
+      return { success: false, error: 'Terminal closed' };
+    }
+
+    terminal.stream.setWindow(rows, cols);
+    console.log('[Main] SSH terminal resized:', { sshTermId, cols, rows });
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error resizing SSH terminal:', error);
+    // Mark as closed if we get EPIPE
+    const terminal = sshTerminals.get(sshTermId);
+    if (terminal && error.code === 'EPIPE') {
+      terminal.closed = true;
+    }
+    return { success: false, error: error.message };
+  }
+});
+
+// Close SSH terminal
+ipcMain.handle('ssh-terminal-close', async (event, sshTermId) => {
+  try {
+    const terminal = sshTerminals.get(sshTermId);
+    if (!terminal) {
+      return { success: false, error: 'SSH terminal not found' };
+    }
+
+    terminal.stream.close();
+    sshTerminals.delete(sshTermId);
+    console.log('[Main] SSH terminal closed:', sshTermId);
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error closing SSH terminal:', error);
     return { success: false, error: error.message };
   }
 });

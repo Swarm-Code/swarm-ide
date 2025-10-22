@@ -73,9 +73,18 @@ class TerminalPanel {
                 <div class="terminal-panel-title">TERMINAL</div>
                 <div class="terminal-panel-tabs"></div>
                 <div class="terminal-panel-actions">
-                    <button class="terminal-panel-btn terminal-panel-new" title="New Terminal (Ctrl+Shift+\`)">
-                        <span class="icon">+</span>
-                    </button>
+                    <div class="terminal-panel-new-dropdown">
+                        <button class="terminal-panel-btn terminal-panel-new" title="New Terminal (Ctrl+Shift+\`)">
+                            <span class="icon">+</span>
+                        </button>
+                        <button class="terminal-panel-btn terminal-panel-new-dropdown-toggle" title="Terminal Options">
+                            <span class="icon">▼</span>
+                        </button>
+                        <div class="terminal-panel-dropdown-menu" style="display: none;">
+                            <div class="terminal-panel-dropdown-item terminal-new-local">Local Terminal</div>
+                            <div class="terminal-panel-dropdown-item terminal-new-ssh">SSH Terminal</div>
+                        </div>
+                    </div>
                     <button class="terminal-panel-btn terminal-panel-split" title="Split Terminal">
                         <span class="icon">⊞</span>
                     </button>
@@ -106,11 +115,42 @@ class TerminalPanel {
     setupEventListeners() {
         // Panel action buttons
         const newBtn = this.panel.querySelector('.terminal-panel-new');
+        const dropdownToggle = this.panel.querySelector('.terminal-panel-new-dropdown-toggle');
+        const dropdownMenu = this.panel.querySelector('.terminal-panel-dropdown-menu');
+        const newLocalBtn = this.panel.querySelector('.terminal-new-local');
+        const newSSHBtn = this.panel.querySelector('.terminal-new-ssh');
         const splitBtn = this.panel.querySelector('.terminal-panel-split');
         const trashBtn = this.panel.querySelector('.terminal-panel-trash');
         const closeBtn = this.panel.querySelector('.terminal-panel-close');
 
+        // New terminal button (default: local)
         newBtn.addEventListener('click', () => this.createTerminal());
+
+        // Dropdown toggle
+        dropdownToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isVisible = dropdownMenu.style.display === 'block';
+            dropdownMenu.style.display = isVisible ? 'none' : 'block';
+        });
+
+        // Dropdown options
+        newLocalBtn.addEventListener('click', () => {
+            dropdownMenu.style.display = 'none';
+            this.createTerminal();
+        });
+
+        newSSHBtn.addEventListener('click', () => {
+            dropdownMenu.style.display = 'none';
+            this.createSSHTerminal();
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.terminal-panel-new-dropdown')) {
+                dropdownMenu.style.display = 'none';
+            }
+        });
+
         splitBtn.addEventListener('click', () => this.splitTerminal());
         trashBtn.addEventListener('click', () => this.killActiveTerminal());
         closeBtn.addEventListener('click', () => this.hide());
@@ -127,22 +167,70 @@ class TerminalPanel {
     }
 
     /**
-     * Create a new terminal
+     * Create SSH terminal with connection selector
      */
-    async createTerminal() {
+    async createSSHTerminal() {
+        logger.debug('terminalPanel', 'Creating SSH terminal with connection selector');
+
+        // Import SSHConnectionManager dynamically
+        const sshConnectionManager = require('../../services/SSHConnectionManager');
+
+        // Get active connections
+        const connections = sshConnectionManager.getAllConnections();
+
+        if (connections.length === 0) {
+            eventBus.emit('notification:show', {
+                type: 'warning',
+                message: 'No active SSH connections. Please connect to an SSH server first.',
+                duration: 5000
+            });
+            logger.warn('terminalPanel', 'No active SSH connections available');
+            return;
+        }
+
+        // For now, use the first connection (in future, show a picker dialog)
+        // TODO: Implement connection picker UI
+        const connection = connections[0];
+
+        logger.info('terminalPanel', `Creating SSH terminal for connection: ${connection.id}`);
+
+        await this.createTerminal({
+            connectionType: 'ssh',
+            connectionId: connection.id
+        });
+    }
+
+    /**
+     * Create a new terminal
+     * @param {Object} options - Terminal options
+     * @param {string} options.connectionType - 'local' or 'ssh'
+     * @param {string} options.connectionId - SSH connection ID (required for SSH terminals)
+     */
+    async createTerminal(options = {}) {
+        const connectionType = options.connectionType || 'local';
+        const connectionId = options.connectionId || null;
+
         const id = `terminal-${this.nextTerminalId++}`;
-        logger.debug('terminalPanel', `Creating terminal: ${id}`);
+        logger.debug('terminalPanel', `Creating ${connectionType} terminal: ${id}`);
 
         // Create terminal container
         const terminalContainer = document.createElement('div');
         terminalContainer.className = 'terminal-instance';
         terminalContainer.dataset.terminalId = id;
+        terminalContainer.dataset.connectionType = connectionType;
+        if (connectionId) {
+            terminalContainer.dataset.connectionId = connectionId;
+        }
         // Don't set display: none, use 'active' class for visibility
 
         this.content.appendChild(terminalContainer);
 
-        // Create terminal instance
-        const terminal = new Terminal(terminalContainer, { id });
+        // Create terminal instance with connection options
+        const terminal = new Terminal(terminalContainer, {
+            id,
+            connectionType,
+            connectionId
+        });
         await terminal.init();
         await terminal.attach();
 
@@ -173,8 +261,13 @@ class TerminalPanel {
         const terminal = this.terminals.get(terminalId);
         const tabNumber = this.terminals.size;
 
+        // Get terminal label based on connection type
+        const container = this.content.querySelector(`[data-terminal-id="${terminalId}"]`);
+        const connectionType = container ? container.dataset.connectionType : 'local';
+        const label = connectionType === 'ssh' ? 'ssh' : 'bash';
+
         tab.innerHTML = `
-            <span class="terminal-tab-label">${tabNumber}: bash</span>
+            <span class="terminal-tab-label">${tabNumber}: ${label}</span>
             <button class="terminal-tab-close" title="Kill Terminal">×</button>
         `;
 

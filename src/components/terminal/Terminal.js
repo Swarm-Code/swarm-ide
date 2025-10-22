@@ -28,6 +28,10 @@ class Terminal {
         this.cols = options.cols || 80;
         this.rows = options.rows || 24;
 
+        // Connection type: 'local' or 'ssh'
+        this.connectionType = options.connectionType || 'local';
+        this.connectionId = options.connectionId || null; // SSH connection ID (for SSH terminals)
+
         // xterm.js instance
         this.xterm = null;
 
@@ -105,8 +109,12 @@ class Terminal {
         // Handle user input
         this.xterm.onData((data) => {
             if (this.ptyId) {
-                // Send input to PTY
-                window.electronAPI.terminalWrite(this.ptyId, data);
+                // Send input to PTY (route based on connection type)
+                if (this.connectionType === 'ssh') {
+                    window.electronAPI.sshTerminalWrite(this.ptyId, data);
+                } else {
+                    window.electronAPI.terminalWrite(this.ptyId, data);
+                }
             }
         });
 
@@ -114,7 +122,12 @@ class Terminal {
         this.xterm.onResize(({ cols, rows }) => {
             logger.debug('terminal', `Terminal resized: ${cols}x${rows}`);
             if (this.ptyId) {
-                window.electronAPI.terminalResize(this.ptyId, cols, rows);
+                // Route resize based on connection type
+                if (this.connectionType === 'ssh') {
+                    window.electronAPI.sshTerminalResize(this.ptyId, cols, rows);
+                } else {
+                    window.electronAPI.terminalResize(this.ptyId, cols, rows);
+                }
             }
         });
 
@@ -170,6 +183,12 @@ class Terminal {
             logger.debug('terminal', 'WebGL renderer enabled');
         } catch (error) {
             logger.warn('terminal', 'WebGL renderer not available, using canvas:', error.message);
+            // Notify user about performance degradation due to WebGL unavailability
+            eventBus.emit('notification:show', {
+                type: 'warning',
+                message: 'Terminal using canvas renderer (WebGL unavailable). Performance may be reduced.',
+                duration: 5000
+            });
         }
 
         // 3. Wait for container to be properly sized in the DOM
@@ -195,17 +214,27 @@ class Terminal {
         const cols = dimensions ? dimensions.cols : this.cols;
         const rows = dimensions ? dimensions.rows : this.rows;
 
-        logger.debug('terminal', `Creating PTY with dimensions: ${cols}x${rows}`);
+        logger.debug('terminal', `Creating ${this.connectionType} terminal with dimensions: ${cols}x${rows}`);
 
         // Start listening for data BEFORE creating PTY
         // Data will be buffered until terminal is fully ready (VSCode pattern)
         this.startDataListener();
 
         try {
-            const result = await window.electronAPI.terminalCreate(cols, rows, this.id);
+            // Route terminal creation based on connection type
+            let result;
+            if (this.connectionType === 'ssh') {
+                if (!this.connectionId) {
+                    throw new Error('SSH connection ID is required for SSH terminals');
+                }
+                result = await window.electronAPI.sshTerminalCreate(this.connectionId, cols, rows, this.id);
+            } else {
+                result = await window.electronAPI.terminalCreate(cols, rows, this.id);
+            }
+
             if (result.success) {
                 this.ptyId = result.ptyId;
-                logger.info('terminal', `PTY created: ${this.ptyId}`);
+                logger.info('terminal', `${this.connectionType.toUpperCase()} terminal created: ${this.ptyId}`);
 
                 // Wait a bit for terminal to be fully ready, then flush buffered data
                 // This prevents corrupted ANSI sequences from being displayed
@@ -214,13 +243,13 @@ class Terminal {
                 // Flush any buffered data now that terminal is ready
                 this.flushDataBuffer();
 
-                // Set a safety timeout to stop buffering after 10 seconds (VSCode pattern)
+                // Set a safety timeout to stop buffering after 3 seconds (reduced from 10s)
                 this._bufferTimeout = setTimeout(() => {
                     if (this._isBufferingData) {
                         logger.warn('terminal', 'Buffer timeout reached, flushing data');
                         this.flushDataBuffer();
                     }
-                }, 10000);
+                }, 3000);
             } else {
                 logger.error('terminal', 'Failed to create PTY:', result.error);
                 this.write(`\x1b[31mError: Failed to create terminal: ${result.error}\x1b[0m\r\n`);
@@ -523,13 +552,17 @@ class Terminal {
             eventBus.off('terminal:exit', this._exitHandler);
         }
 
-        // Close PTY
+        // Close PTY (route based on connection type)
         if (this.ptyId) {
             try {
-                await window.electronAPI.terminalClose(this.ptyId);
-                logger.debug('terminal', `PTY closed: ${this.ptyId}`);
+                if (this.connectionType === 'ssh') {
+                    await window.electronAPI.sshTerminalClose(this.ptyId);
+                } else {
+                    await window.electronAPI.terminalClose(this.ptyId);
+                }
+                logger.debug('terminal', `${this.connectionType.toUpperCase()} terminal closed: ${this.ptyId}`);
             } catch (error) {
-                logger.error('terminal', 'Error closing PTY:', error);
+                logger.error('terminal', 'Error closing terminal:', error);
             }
         }
 
