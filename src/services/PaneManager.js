@@ -2355,36 +2355,18 @@ class PaneManager {
 
             for (const tabData of data.tabs) {
                 // CRITICAL: Handle different content types during restoration
-                // Terminals: contentType='terminal' (no filePath)
-                // Files: contentType='file-viewer' (has filePath)
+                // Terminals: contentType='terminal' (no filePath) - ALREADY EXISTS, just hidden
+                // Files: contentType='file-viewer' (has filePath) - need to restore
                 // Browsers: contentType='browser' (has browserInstanceId)
 
                 if (tabData.contentType === 'terminal') {
-                    // CRITICAL FIX: For terminal persistence, only create if terminal doesn't already exist
-                    // If terminal already exists in registry, it's just hidden - don't recreate it
-                    // This preserves the PTY connection and allows pure CSS hide/show
-
-                    // Check if terminal registry is available and terminal exists
-                    const terminalRegistry = window.terminalRegistry;
-                    const terminalExists = terminalRegistry && terminalRegistry.exists(tabData.terminalId);
-
-                    if (!terminalExists) {
-                        // Terminal doesn't exist yet - create it for the first time
-                        logger.debug('paneCreate', 'Creating NEW terminal tab in pane:', pane.id, 'terminal:', tabData.terminalId);
-                        requestAnimationFrame(() => {
-                            requestAnimationFrame(() => {
-                                eventBus.emit('terminal:create-in-pane', {
-                                    paneId: pane.id,
-                                    terminalId: tabData.terminalId
-                                });
-                            });
-                        });
-                    } else {
-                        // Terminal already exists - just skip restoration
-                        // The terminal is already running and visible/hidden via CSS
-                        logger.debug('paneCreate', 'Skipping restoration - terminal already exists:', tabData.terminalId);
-                    }
-                } else {
+                    // DO NOT restore terminal tabs!
+                    // Terminals are already in the pane DOM - they were created when the user
+                    // originally opened them. When workspaces switch, terminals are hidden via
+                    // CSS (display: none) but remain in the DOM with active PTY connections.
+                    // When we show the workspace again, they become visible automatically.
+                    logger.debug('paneCreate', 'Skipping terminal tab restoration (already exists in DOM):', pane.id);
+                } else if (tabData.filePath) {
                     // CRITICAL FIX #10: Use RAF instead of setTimeout for proper layout completion
                     // Request the file to be opened in this pane after layout is complete
                     requestAnimationFrame(() => {

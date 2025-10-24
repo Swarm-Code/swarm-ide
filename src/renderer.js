@@ -666,19 +666,72 @@ class Application {
                 await this.openFileInPane(data.paneId, data.filePath);
             });
 
-            // CRITICAL FIX: Handle terminal creation when requested
-            // This is ONLY called for new terminals (first creation)
-            // Existing terminals are NOT recreated - they persist via CSS hide/show
+            // CRITICAL FIX: Handle terminal restoration when workspace layout is loaded
+            // Don't create new terminals - reuse existing ones from the registry
+            // This preserves the PTY connection and terminal state across workspace switches
             eventBus.on('terminal:create-in-pane', async (data) => {
-                logger.debug('appInit', '====== TERMINAL CREATION STARTING ======');
+                logger.debug('appInit', '====== TERMINAL RESTORATION STARTING ======');
                 logger.debug('appInit', 'Pane ID:', data.paneId);
-                logger.debug('appInit', 'Terminal ID:', data.terminalId);
+                logger.debug('appInit', 'Terminal ID (from data):', data.terminalId);
 
                 const pane = this.paneManager.getPane(data.paneId);
                 if (!pane) {
-                    logger.error('appInit', 'Pane not found for terminal creation:', data.paneId);
+                    logger.error('appInit', 'Pane not found for terminal restoration:', data.paneId);
                     return;
                 }
+
+                // ====================================================================
+                // TERMINAL PERSISTENCE LOGIC
+                // ====================================================================
+                // Check if this terminal already exists in the registry
+                const existingTerminal = TerminalRegistryAPI.get(data.terminalId);
+
+                if (existingTerminal && !existingTerminal.isDisposed) {
+                    // PERSISTENCE SCENARIO: Terminal already exists!
+                    // This happens when switching workspaces - the terminal was created before
+                    // and is still alive with its PTY connection intact
+                    logger.debug('appInit', `✓ REUSING EXISTING TERMINAL: ${data.terminalId}`);
+                    logger.debug('appInit', 'This terminal has been running in the background!');
+
+                    const terminalContainer = existingTerminal.container;
+                    const terminalTitle = `Terminal`;
+
+                    // Add the existing container as a tab to this pane
+                    const tabId = this.paneManager.addTab(
+                        data.paneId,
+                        `terminal://${data.terminalId}`,
+                        terminalTitle,
+                        terminalContainer,
+                        'terminal',
+                        null
+                    );
+
+                    // Update registry to reflect new pane
+                    TerminalRegistryAPI.updatePaneId(data.terminalId, data.paneId);
+
+                    // Trigger resize to fit new pane
+                    if (existingTerminal.fitAddon) {
+                        requestAnimationFrame(() => {
+                            requestAnimationFrame(() => {
+                                try {
+                                    existingTerminal.fitAddon.fit();
+                                    logger.debug('appInit', `✓ Terminal fitted to pane size: ${data.terminalId}`);
+                                } catch (e) {
+                                    logger.error('appInit', 'Error fitting terminal:', e.message);
+                                }
+                            });
+                        });
+                    }
+
+                    logger.debug('appInit', '✓ TERMINAL PERSISTENCE SUCCESSFUL - Terminal reused with existing PTY connection');
+                    return;
+                }
+
+                // ====================================================================
+                // NEW TERMINAL SCENARIO
+                // ====================================================================
+                // Terminal doesn't exist yet - create a brand new one
+                logger.debug('appInit', `⚠ CREATING NEW TERMINAL (not in registry yet): ${data.terminalId}`);
 
                 // Create terminal container
                 const terminalContainer = document.createElement('div');
@@ -693,7 +746,7 @@ class Application {
                 // Add as a tab to the pane
                 const tabId = this.paneManager.addTab(
                     data.paneId,
-                    `terminal://${data.terminalId}`,
+                    `terminal://${Date.now()}`,
                     terminalTitle,
                     terminalContainer,
                     'terminal',
@@ -704,7 +757,7 @@ class Application {
                 const Terminal = require('./components/terminal/Terminal');
 
                 // Create Terminal instance
-                logger.debug('appInit', 'Creating Terminal instance:', data.terminalId);
+                logger.debug('appInit', 'Creating NEW Terminal instance with tabId:', tabId);
                 const terminal = new Terminal(terminalContainer, { id: data.terminalId });
                 await terminal.init();
                 await terminal.attach();
@@ -712,17 +765,15 @@ class Application {
                 // Store reference for cleanup
                 terminalContainer._terminalInstance = terminal;
 
-                // CRITICAL: Register terminal in the registry
-                // This enables persistence across workspace switches
+                // CRITICAL: Register terminal in the registry so it won't be recreated on next workspace switch
                 TerminalRegistryAPI.register(terminal, terminalContainer);
                 TerminalRegistryAPI.updatePaneId(terminal.id, data.paneId);
-                logger.debug('appInit', `✓ Terminal registered in registry: ${data.terminalId}`);
 
                 // Track terminal in active workspace
                 this.workspaceManager.trackTerminalInActiveWorkspace(terminal.id);
 
-                logger.debug('appInit', '✓ TERMINAL CREATED SUCCESSFULLY');
-                logger.debug('appInit', '====== TERMINAL CREATION COMPLETE ======');
+                logger.debug('appInit', '✓ NEW TERMINAL CREATED AND REGISTERED SUCCESSFULLY');
+                logger.debug('appInit', '====== TERMINAL RESTORATION COMPLETE ======');
             });
 
             // Handle file selection - open in active pane
