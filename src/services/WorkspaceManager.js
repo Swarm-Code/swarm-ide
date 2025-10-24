@@ -473,6 +473,14 @@ class WorkspaceManager {
             if (pane && pane.element) {
                 pane.element.style.display = 'flex';
 
+                // CRITICAL: Re-render the tab bar and switch to active tab
+                // This ensures the correct tab content is visible (display: flex)
+                // Without this, all tabs may still have display: none
+                if (pane.activeTabId) {
+                    logger.debug('workspaceLoad', `Switching to active tab: ${pane.activeTabId} in pane: ${paneId}`);
+                    this.paneManager.switchTab(paneId, pane.activeTabId);
+                }
+
                 // Force terminal resize if pane contains terminals
                 // This is critical because container dimensions changed while workspace was hidden
                 if (pane.tabs) {
