@@ -696,6 +696,12 @@ class Application {
                     const terminalContainer = existingTerminal.container;
                     const terminalTitle = `Terminal`;
 
+                    // CRITICAL FIX: Reset container display to flex
+                    // The container may have display: none from being hidden in another pane
+                    // We need to ensure it's visible when added to the new pane
+                    terminalContainer.style.display = 'flex';
+                    logger.debug('appInit', `Reset terminal container display to flex for ${data.terminalId}`);
+
                     // Add the existing container as a tab to this pane
                     const tabId = this.paneManager.addTab(
                         data.paneId,
