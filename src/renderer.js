@@ -1297,9 +1297,31 @@ class Application {
 
     /**
      * Restore workspace layout
+     *
+     * CRITICAL FOR TERMINAL PERSISTENCE:
+     * This method should ONLY deserialize layout when panes don't exist yet (first load).
+     * On workspace switches, panes are already in memory (just hidden), so we skip
+     * deserialization to avoid recreating terminals and causing duplication.
      */
     async restoreWorkspaceLayout(workspace) {
         logger.debug('appInit', 'Restoring workspace layout for:', workspace.name);
+
+        // CRITICAL CHECK: Do the workspace panes already exist in memory?
+        // If yes, they're just hidden and we should NOT deserialize (which would recreate them)
+        const panesAlreadyExist = workspace.paneIds && workspace.paneIds.length > 0 &&
+            workspace.paneIds.some(paneId => this.paneManager.panes.has(paneId));
+
+        if (panesAlreadyExist) {
+            logger.debug('appInit', '✓ SKIP LAYOUT DESERIALIZATION - Panes already exist in memory (just hidden)');
+            logger.debug('appInit', `Workspace has ${workspace.paneIds.length} panes that are already created`);
+            logger.debug('appInit', 'WorkspaceManager.showWorkspacePanes() will handle showing them');
+            // Panes are already created and in the DOM, just hidden via CSS
+            // WorkspaceManager.showWorkspacePanes() will set display='flex' to show them
+            // This preserves terminals with their PTY connections intact
+            return;
+        }
+
+        logger.debug('appInit', 'Panes do NOT exist yet - will deserialize layout from scratch');
 
         if (!workspace.paneLayout) {
             logger.debug('appInit', 'No layout to restore, creating fresh layout');
@@ -1323,7 +1345,8 @@ class Application {
             return;
         }
 
-        // Restore the saved layout
+        // Restore the saved layout (ONLY on first load when panes don't exist)
+        logger.debug('appInit', 'Deserializing layout - creating panes from scratch');
         await this.paneManager.deserializeLayout(workspace.paneLayout);
 
         logger.debug('appInit', 'Workspace layout restored');
