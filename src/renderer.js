@@ -167,6 +167,10 @@ const TerminalRegistryAPI = {
 window.terminalRegistry = TerminalRegistryAPI;
 logger.info('appInit', '✓ Terminal registry initialized (accessible via window.terminalRegistry)');
 
+// Expose workspaceManager for debugging
+window.workspaceManager = workspaceManager;
+logger.info('appInit', '✓ WorkspaceManager exposed (accessible via window.workspaceManager)');
+
 // Import components
 const MenuBar = require('./components/MenuBar');
 const FileExplorer = require('./components/FileExplorer');
@@ -701,12 +705,6 @@ class Application {
                     // We need to ensure it's visible when added to the new pane
                     terminalContainer.style.display = 'flex';
                     logger.debug('appInit', `Reset terminal container display to flex for ${data.terminalId}`);
-
-                    // IMPORTANT: Do NOT call xterm.open() again!
-                    // According to xterm.js docs, terminal.open() should only be called ONCE
-                    // when the terminal is first created. The xterm.js instance is already
-                    // rendered in the container. We just need to move the container to the new pane.
-                    logger.debug('appInit', `Reusing existing xterm.js rendering in container for ${data.terminalId}`);
 
                     // Add the existing container as a tab to this pane
                     const tabId = this.paneManager.addTab(
