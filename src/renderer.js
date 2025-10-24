@@ -666,32 +666,19 @@ class Application {
                 await this.openFileInPane(data.paneId, data.filePath);
             });
 
-            // CRITICAL FIX: Handle terminal restoration when workspace layout is loaded
-            // SIMPLE APPROACH: Just hide/show terminals via pane visibility (CSS display toggling)
-            // Don't move DOM elements or call addTab again - that breaks the DOM hierarchy
+            // CRITICAL FIX: Handle terminal creation when requested
+            // This is ONLY called for new terminals (first creation)
+            // Existing terminals are NOT recreated - they persist via CSS hide/show
             eventBus.on('terminal:create-in-pane', async (data) => {
-                logger.debug('appInit', 'terminal:create-in-pane event - Terminal ID:', data.terminalId);
+                logger.debug('appInit', '====== TERMINAL CREATION STARTING ======');
+                logger.debug('appInit', 'Pane ID:', data.paneId);
+                logger.debug('appInit', 'Terminal ID:', data.terminalId);
 
                 const pane = this.paneManager.getPane(data.paneId);
                 if (!pane) {
-                    logger.error('appInit', 'Pane not found for terminal restoration:', data.paneId);
+                    logger.error('appInit', 'Pane not found for terminal creation:', data.paneId);
                     return;
                 }
-
-                // Check if terminal already exists in registry
-                const existingTerminal = TerminalRegistryAPI.get(data.terminalId);
-
-                if (existingTerminal && !existingTerminal.isDisposed) {
-                    // Terminal already exists - just update its pane location in the registry
-                    // The CSS display toggling from pane show/hide will take care of visibility
-                    logger.debug('appInit', `✓ Terminal already exists and is alive: ${data.terminalId}`);
-                    TerminalRegistryAPI.updatePaneId(data.terminalId, data.paneId);
-                    logger.debug('appInit', 'Terminal will be shown via pane CSS visibility');
-                    return;
-                }
-
-                // Terminal doesn't exist yet - create a brand new one (first time)
-                logger.debug('appInit', `Creating NEW terminal for first time: ${data.terminalId}`);
 
                 // Create terminal container
                 const terminalContainer = document.createElement('div');
@@ -706,7 +693,7 @@ class Application {
                 // Add as a tab to the pane
                 const tabId = this.paneManager.addTab(
                     data.paneId,
-                    `terminal://${Date.now()}`,
+                    `terminal://${data.terminalId}`,
                     terminalTitle,
                     terminalContainer,
                     'terminal',
@@ -717,7 +704,7 @@ class Application {
                 const Terminal = require('./components/terminal/Terminal');
 
                 // Create Terminal instance
-                logger.debug('appInit', 'Creating Terminal instance');
+                logger.debug('appInit', 'Creating Terminal instance:', data.terminalId);
                 const terminal = new Terminal(terminalContainer, { id: data.terminalId });
                 await terminal.init();
                 await terminal.attach();
@@ -725,14 +712,17 @@ class Application {
                 // Store reference for cleanup
                 terminalContainer._terminalInstance = terminal;
 
-                // Register terminal in the registry so it persists across workspace switches
+                // CRITICAL: Register terminal in the registry
+                // This enables persistence across workspace switches
                 TerminalRegistryAPI.register(terminal, terminalContainer);
                 TerminalRegistryAPI.updatePaneId(terminal.id, data.paneId);
+                logger.debug('appInit', `✓ Terminal registered in registry: ${data.terminalId}`);
 
                 // Track terminal in active workspace
                 this.workspaceManager.trackTerminalInActiveWorkspace(terminal.id);
 
-                logger.debug('appInit', `✓ Terminal created and registered: ${terminal.id}`);
+                logger.debug('appInit', '✓ TERMINAL CREATED SUCCESSFULLY');
+                logger.debug('appInit', '====== TERMINAL CREATION COMPLETE ======');
             });
 
             // Handle file selection - open in active pane

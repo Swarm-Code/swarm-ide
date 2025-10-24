@@ -2360,16 +2360,30 @@ class PaneManager {
                 // Browsers: contentType='browser' (has browserInstanceId)
 
                 if (tabData.contentType === 'terminal') {
-                    // Restore terminal tab
-                    logger.debug('paneCreate', 'Restoring terminal tab in pane:', pane.id);
-                    requestAnimationFrame(() => {
+                    // CRITICAL FIX: For terminal persistence, only create if terminal doesn't already exist
+                    // If terminal already exists in registry, it's just hidden - don't recreate it
+                    // This preserves the PTY connection and allows pure CSS hide/show
+
+                    // Check if terminal registry is available and terminal exists
+                    const terminalRegistry = window.terminalRegistry;
+                    const terminalExists = terminalRegistry && terminalRegistry.exists(tabData.terminalId);
+
+                    if (!terminalExists) {
+                        // Terminal doesn't exist yet - create it for the first time
+                        logger.debug('paneCreate', 'Creating NEW terminal tab in pane:', pane.id, 'terminal:', tabData.terminalId);
                         requestAnimationFrame(() => {
-                            eventBus.emit('terminal:create-in-pane', {
-                                paneId: pane.id,
-                                terminalId: tabData.terminalId
+                            requestAnimationFrame(() => {
+                                eventBus.emit('terminal:create-in-pane', {
+                                    paneId: pane.id,
+                                    terminalId: tabData.terminalId
+                                });
                             });
                         });
-                    });
+                    } else {
+                        // Terminal already exists - just skip restoration
+                        // The terminal is already running and visible/hidden via CSS
+                        logger.debug('paneCreate', 'Skipping restoration - terminal already exists:', tabData.terminalId);
+                    }
                 } else {
                     // CRITICAL FIX #10: Use RAF instead of setTimeout for proper layout completion
                     // Request the file to be opened in this pane after layout is complete
