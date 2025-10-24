@@ -460,10 +460,22 @@ class WorkspaceManager {
             logger.debug('workspaceLoad', `Initialized browserIds array for workspace ${workspaceId}`);
         }
 
-        // If no panes yet, workspace needs to use current pane manager root
-        if (workspace.paneIds.length === 0 && this.paneManager.rootPane) {
-            workspace.paneIds.push(this.paneManager.rootPane.id);
-            this.paneToWorkspace.set(this.paneManager.rootPane.id, workspaceId);
+        // If no panes yet, create a NEW root pane for this workspace
+        // CRITICAL: Each workspace must have its own isolated pane tree
+        if (workspace.paneIds.length === 0) {
+            logger.debug('workspaceLoad', `Creating new root pane for workspace: ${workspaceId}`);
+            const newRootPane = this.paneManager.createRootPane();
+            workspace.paneIds.push(newRootPane.id);
+            this.paneToWorkspace.set(newRootPane.id, workspaceId);
+            logger.debug('workspaceLoad', `Created root pane ${newRootPane.id} for workspace ${workspaceId}`);
+        } else {
+            // Workspace has panes, update paneManager.rootPane to this workspace's root
+            const workspaceRootPaneId = workspace.paneIds[0]; // First pane is typically root
+            const workspaceRootPane = this.paneManager.panes.get(workspaceRootPaneId);
+            if (workspaceRootPane) {
+                this.paneManager.rootPane = workspaceRootPane;
+                logger.debug('workspaceLoad', `Set paneManager.rootPane to ${workspaceRootPaneId} for workspace ${workspaceId}`);
+            }
         }
 
         // Show all panes using CSS display property (restores hidden panes to visible)
