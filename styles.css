@@ -6937,6 +6937,31 @@ body {
     overflow: hidden;
 }
 
+/*
+  CRITICAL FOR TERMINAL PERSISTENCE: Terminal Visibility Rules
+
+  These CSS rules implement the terminal persistence mechanism by toggling
+  visibility via the CSS display property instead of DOM removal.
+
+  How It Works:
+  - .terminal-instance { display: none; } hides a terminal tab without destroying it
+  - .terminal-instance.active { display: block; } shows the active terminal
+  - JavaScript adds/removes the 'active' class to switch between tabs
+  - xterm.js instance stays in memory while hidden
+  - PTY connection remains open while workspace/tab hidden
+  - Terminal output buffer continues accumulating while hidden
+
+  Persistence Benefits:
+  1. Switching between terminal tabs: No reconnection needed
+  2. Switching between workspaces: Terminals keep running commands
+  3. Long-running processes: Continue executing in background
+  4. Scrollback history: Fully preserved and accessible
+  5. Cursor position & selection: Maintained across switches
+
+  This approach avoids expensive DOM recreation and preserves all terminal state.
+  When a terminal becomes visible again (active class added), it immediately shows
+  all accumulated output and continues from where it left off.
+*/
 .terminal-instance {
     position: absolute;
     top: 0;
@@ -6946,6 +6971,7 @@ body {
     display: none;
 }
 
+/* Terminal becomes visible when 'active' class is added by JavaScript */
 .terminal-instance.active {
     display: block;
 }

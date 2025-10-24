@@ -291,7 +291,33 @@ class TerminalPanel {
     }
 
     /**
-     * Set active terminal
+     * Switch between terminal tabs using CSS class toggling
+     *
+     * CRITICAL FOR TERMINAL PERSISTENCE:
+     * This method switches which terminal tab is visible within the TerminalPanel
+     * by adding/removing the 'active' CSS class. Terminals are NOT destroyed when
+     * switched - they remain in memory with active connections and accumulated output.
+     *
+     * Switching Mechanism:
+     * 1. Remove 'active' class from current terminal's container and tab
+     * 2. This triggers CSS rule: .terminal-instance { display: none; }
+     * 3. Add 'active' class to new terminal's container and tab
+     * 4. This triggers CSS rule: .terminal-instance.active { display: block; }
+     * 5. Call terminal.focus() and terminal.fit() to ensure proper rendering
+     *
+     * Why Switching Preserves State:
+     * - xterm.js instance stays in memory while hidden (CSS display: none)
+     * - PTY connection remains open even when terminal not visible
+     * - Output buffer continues accumulating while hidden
+     * - No reconnection or re-creation needed when switching back
+     * - User's scroll position and selection preserved
+     *
+     * Double-Persistence Layer:
+     * - Workspace Level: Panes hidden with display: none when switching workspaces
+     * - Terminal Level: Individual tabs hidden with display: none when switching tabs
+     * - Both mechanisms keep terminals alive, just invisible
+     *
+     * @param {string} terminalId - The terminal ID to make active
      */
     setActiveTerminal(terminalId) {
         if (this.activeTerminalId === terminalId) {
@@ -300,7 +326,9 @@ class TerminalPanel {
 
         logger.debug('terminalPanel', `Setting active terminal: ${terminalId}`);
 
-        // Hide current terminal
+        // Hide current terminal by removing 'active' class
+        // This triggers CSS: .terminal-instance { display: none; }
+        // Terminal stays in memory, just hidden from view
         if (this.activeTerminalId) {
             const currentContainer = this.content.querySelector(`[data-terminal-id="${this.activeTerminalId}"]`);
             if (currentContainer) {
@@ -313,26 +341,12 @@ class TerminalPanel {
             }
         }
 
-        // Show new terminal
+        // Show new terminal by adding 'active' class
+        // This triggers CSS: .terminal-instance.active { display: block; }
+        // Terminal becomes visible immediately with all its previous output
         const newContainer = this.content.querySelector(`[data-terminal-id="${terminalId}"]`);
         if (newContainer) {
-            console.log(`[TERMINAL PANEL] Setting active class on container:`, terminalId);
-            const rectBefore = newContainer.getBoundingClientRect();
-            console.log(`[TERMINAL PANEL] Container BEFORE active class:`, {
-                width: rectBefore.width,
-                height: rectBefore.height,
-                className: newContainer.className
-            });
-
             newContainer.classList.add('active');
-
-            const rectAfter = newContainer.getBoundingClientRect();
-            console.log(`[TERMINAL PANEL] Container AFTER active class:`, {
-                width: rectAfter.width,
-                height: rectAfter.height,
-                className: newContainer.className,
-                display: window.getComputedStyle(newContainer).display
-            });
         }
 
         const newTab = this.tabBar.querySelector(`[data-terminal-id="${terminalId}"]`);
@@ -343,12 +357,11 @@ class TerminalPanel {
         this.activeTerminalId = terminalId;
 
         // Focus and fit terminal AFTER it's visible
+        // 50ms timeout ensures DOM has fully updated and layout is complete
+        // before calling terminal.fit() which measures container dimensions
         const terminal = this.terminals.get(terminalId);
         if (terminal) {
-            // Wait for DOM to update with active class, then fit
-            console.log(`[TERMINAL PANEL] Scheduling fit() in 50ms for:`, terminalId);
             setTimeout(() => {
-                console.log(`[TERMINAL PANEL] Executing focus() and fit() for:`, terminalId);
                 terminal.focus();
                 terminal.fit();
             }, 50);

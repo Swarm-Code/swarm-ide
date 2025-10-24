@@ -130,11 +130,20 @@ class WorkspacePanel {
 
     /**
      * Create workspace item element
+     *
+     * Displays workspace with counts of terminals and open files to help users
+     * understand what's in each workspace and verify persistence.
+     *
+     * Terminal Persistence Indicator:
+     * - Shows count of terminals that will remain running when workspace is hidden
+     * - Users can see at a glance how many background processes each workspace has
+     * - Count refreshes when switching to reflect current state
      */
     createWorkspaceItem(workspace, isActive) {
         const item = document.createElement('div');
         item.className = 'workspace-item' + (isActive ? ' active' : '');
         item.dataset.workspaceId = workspace.id;
+        item.title = 'Click to switch workspace - terminals and editors persist when hidden';
 
         // Workspace info
         const info = document.createElement('div');
@@ -144,11 +153,31 @@ class WorkspacePanel {
         name.className = 'workspace-item-name';
         name.textContent = workspace.name;
 
+        // Create stats/description area
+        const statContainer = document.createElement('div');
+        statContainer.className = 'workspace-item-stats';
+        statContainer.style.cssText = 'display: flex; gap: 12px; margin-top: 4px; font-size: 12px; color: #999;';
+
+        // Terminal count - highlight to show persistence
+        const terminalCount = workspace.terminalIds?.length || 0;
+        const terminalStat = document.createElement('span');
+        terminalStat.innerHTML = `📟 ${terminalCount} ${terminalCount === 1 ? 'terminal' : 'terminals'}`;
+        terminalStat.title = `${terminalCount} terminal(s) will keep running when workspace is hidden`;
+        statContainer.appendChild(terminalStat);
+
+        // File count
+        const fileCount = workspace.fileCount || 0;
+        const fileStat = document.createElement('span');
+        fileStat.innerHTML = `📄 ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`;
+        fileStat.title = 'Open files in this workspace';
+        statContainer.appendChild(fileStat);
+
         const desc = document.createElement('div');
         desc.className = 'workspace-item-desc';
         desc.textContent = workspace.description || 'No description';
 
         info.appendChild(name);
+        info.appendChild(statContainer);
         info.appendChild(desc);
 
         // Actions container
@@ -192,6 +221,19 @@ class WorkspacePanel {
 
     /**
      * Switch to a workspace
+     *
+     * TERMINAL PERSISTENCE GUARANTEED:
+     * When switching workspaces:
+     * 1. Current workspace's panes are hidden (display: none) not destroyed
+     * 2. All terminals in hidden workspace keep running commands
+     * 3. New workspace's panes are shown (display: flex)
+     * 4. All terminals immediately show accumulated output
+     *
+     * Users can confidently switch workspaces knowing:
+     * - Long-running build commands continue in background
+     * - Server processes keep running
+     * - Any background jobs keep executing
+     * - All output is preserved and visible when returning
      */
     switchWorkspace(workspaceId) {
         logger.debug('workspaceLoad', 'Switching to workspace:', workspaceId);

@@ -111,6 +111,14 @@ class WorkspaceManager {
                 if (!ws.terminalIds) ws.terminalIds = [];
                 if (!ws.browserIds) ws.browserIds = [];
 
+                // CRITICAL FIX: Clear dead terminals on app startup
+                // Terminals cannot persist across app restarts because:
+                // 1. PTY processes are killed when app closes
+                // 2. xterm.js instances are destroyed
+                // 3. WebSocket connections are terminated
+                // Start fresh with empty terminal list in this session
+                ws.terminalIds = [];
+
                 this.workspaces.set(ws.id, ws);
             });
 
@@ -118,9 +126,11 @@ class WorkspaceManager {
             paneToWorkspaceMap.forEach(([paneId, workspaceId]) => {
                 this.paneToWorkspace.set(paneId, workspaceId);
             });
-            terminalToWorkspaceMap.forEach(([terminalId, workspaceId]) => {
-                this.terminalToWorkspace.set(terminalId, workspaceId);
-            });
+            // CRITICAL FIX: Don't restore terminal tracking from previous session
+            // These terminals are dead - we only track terminals launched in current session
+            // terminalToWorkspaceMap.forEach(([terminalId, workspaceId]) => {
+            //     this.terminalToWorkspace.set(terminalId, workspaceId);
+            // });
         }
 
         // Only restore workspace if the setting is enabled
@@ -290,16 +300,25 @@ class WorkspaceManager {
 
         const previousWorkspace = this.activeWorkspace;
 
+        // PERFORMANCE TRACKING: Measure workspace switch duration
+        const switchStartTime = performance.now();
+
         // Save current workspace state before switching
         if (previousWorkspace && previousWorkspace.id !== workspaceId) {
             this.saveWorkspaceState(previousWorkspace.id);
 
             // NEW: Hide current workspace's panes (don't destroy!)
+            const hideStartTime = performance.now();
             await this.hideWorkspacePanes(previousWorkspace.id);
+            const hideEndTime = performance.now();
+
+            logger.debug('workspaceLoad', `Hid panes in ${(hideEndTime - hideStartTime).toFixed(1)}ms`);
         }
 
         // NEW: Show target workspace's panes
+        const showStartTime = performance.now();
         await this.showWorkspacePanes(workspaceId);
+        const showEndTime = performance.now();
 
         this.activeWorkspace = workspace;
         workspace.updatedAt = Date.now();
@@ -309,11 +328,18 @@ class WorkspaceManager {
             await this.fileExplorer.openDirectory(workspace.rootPath);
         }
 
+        const switchEndTime = performance.now();
+        const totalDuration = switchEndTime - switchStartTime;
+
         logger.info('workspaceLoad', 'Active workspace set:', workspaceId, {
             name: workspace.name,
             rootPath: workspace.rootPath,
             paneCount: workspace.paneIds.length,
-            terminalCount: workspace.terminalIds.length
+            terminalCount: workspace.terminalIds.length,
+            performanceMetrics: {
+                showPanesDuration: `${(showEndTime - showStartTime).toFixed(1)}ms`,
+                totalSwitchDuration: `${totalDuration.toFixed(1)}ms`
+            }
         });
 
         eventBus.emit('workspace:activated', {
@@ -327,6 +353,27 @@ class WorkspaceManager {
 
     /**
      * Hide workspace panes without destroying them
+     *
+     * CRITICAL FOR TERMINAL PERSISTENCE:
+     * This method hides all panes and their contained elements (terminals, editors, etc)
+     * by setting CSS display property to 'none'. Terminals are NOT destroyed - they
+     * remain in memory and continue running in the background.
+     *
+     * Process:
+     * 1. Iterate through all panes belonging to this workspace
+     * 2. Set pane.element.style.display = 'none' to hide the pane from view
+     * 3. All child elements (terminals, editors, etc) inherit this visibility state
+     * 4. Terminals continue processing and accumulating output while hidden
+     * 5. Long-running commands in hidden workspaces keep executing
+     *
+     * Why this approach:
+     * - Avoids costly DOM recreation when switching back to workspace
+     * - Preserves terminal connection state and xterm.js instance
+     * - Maintains editor undo/redo stacks and cursor positions
+     * - Keeps browser instances loaded in memory
+     * - Allows terminals to run background jobs while workspace is hidden
+     *
+     * @param {string} workspaceId - The workspace ID to hide
      */
     async hideWorkspacePanes(workspaceId) {
         const workspace = this.workspaces.get(workspaceId);
@@ -344,7 +391,8 @@ class WorkspaceManager {
             logger.debug('workspaceLoad', `Initialized browserIds array for workspace ${workspaceId}`);
         }
 
-        // Hide all panes
+        // Hide all panes using CSS display property (not DOM destruction)
+        // This ensures terminals stay alive and continue running commands
         for (const paneId of workspace.paneIds) {
             const pane = this.paneManager.panes.get(paneId);
             if (pane && pane.element) {
@@ -368,7 +416,33 @@ class WorkspaceManager {
     }
 
     /**
-     * Show workspace panes
+     * Show workspace panes after they've been hidden
+     *
+     * CRITICAL FOR TERMINAL PERSISTENCE:
+     * This method restores visibility for all panes in a workspace. Because panes were
+     * hidden (not destroyed), terminals are still alive with active connections and
+     * accumulated output in their buffers.
+     *
+     * Process:
+     * 1. Set pane.element.style.display = 'flex' to make panes visible again
+     * 2. For each terminal in each pane, trigger resize/fit with double RAF pattern
+     * 3. Double RAF ensures DOM layout is complete before calling terminal methods
+     * 4. Terminals immediately become visible with all their previous output
+     * 5. Any commands running in background have their output now visible
+     *
+     * Terminal Restoration Pattern (Double RAF):
+     * - First RAF: Waits for browser to complete painting
+     * - Second RAF: Waits for next frame after paint is done
+     * - Then calls resize() and fit() to adjust terminal to new container dimensions
+     * This prevents race conditions where terminal tries to measure before layout completes
+     *
+     * Why persistence works:
+     * - xterm.js instance never disposed, just hidden with CSS
+     * - PTY connection stays open while workspace hidden
+     * - Terminal output buffer accumulates even while hidden
+     * - No need to re-establish connections or re-create instances
+     *
+     * @param {string} workspaceId - The workspace ID to show
      */
     async showWorkspacePanes(workspaceId) {
         const workspace = this.workspaces.get(workspaceId);
@@ -392,20 +466,24 @@ class WorkspaceManager {
             this.paneToWorkspace.set(this.paneManager.rootPane.id, workspaceId);
         }
 
-        // Show all panes
+        // Show all panes using CSS display property (restores hidden panes to visible)
+        // Terminals remain alive during this restoration process
         for (const paneId of workspace.paneIds) {
             const pane = this.paneManager.panes.get(paneId);
             if (pane && pane.element) {
                 pane.element.style.display = 'flex';
 
                 // Force terminal resize if pane contains terminals
+                // This is critical because container dimensions changed while workspace was hidden
                 if (pane.tabs) {
                     for (const tab of pane.tabs) {
                         if (tab.contentType === 'terminal' && tab.content && tab.content._terminalInstance) {
-                            // Use RAF to ensure layout is complete
+                            // Use double RAF to ensure layout is complete
+                            // First RAF waits for paint, second RAF waits for next frame
                             requestAnimationFrame(() => {
                                 requestAnimationFrame(() => {
                                     try {
+                                        // These methods adjust terminal to match current container size
                                         tab.content._terminalInstance.resize();
                                         tab.content._terminalInstance.fit();
                                     } catch (err) {
@@ -610,7 +688,8 @@ class WorkspaceManager {
         logger.debug('workspaceLoad', 'Saved workspaces to storage (v2):', {
             workspaces: workspacesArray.length,
             paneTracking: paneToWorkspaceArray.length,
-            terminalTracking: terminalToWorkspaceArray.length
+            terminalTracking: terminalToWorkspaceArray.length,
+            terminalNote: 'Only tracking terminals from current session (PTY cannot persist across app restart)'
         });
     }
 

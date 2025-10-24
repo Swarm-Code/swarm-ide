@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <rect width="128" height="128" fill="#1a1a1a"/>
+
+  <!-- Space Invader -->
+  <g transform="translate(24, 32)">
+    <!-- Row 1 -->
+    <rect x="16" y="0" width="8" height="8" fill="#00ff00"/>
+    <rect x="56" y="0" width="8" height="8" fill="#00ff00"/>
+
+    <!-- Row 2 -->
+    <rect x="24" y="8" width="8" height="8" fill="#00ff00"/>
+    <rect x="48" y="8" width="8" height="8" fill="#00ff00"/>
+
+    <!-- Row 3 -->
+    <rect x="16" y="16" width="48" height="8" fill="#00ff00"/>
+
+    <!-- Row 4 -->
+    <rect x="8" y="24" width="8" height="8" fill="#00ff00"/>
+    <rect x="24" y="24" width="32" height="8" fill="#00ff00"/>
+    <rect x="64" y="24" width="8" height="8" fill="#00ff00"/>
+
+    <!-- Row 5 -->
+    <rect x="0" y="32" width="80" height="8" fill="#00ff00"/>
+
+    <!-- Row 6 -->
+    <rect x="0" y="40" width="8" height="8" fill="#00ff00"/>
+    <rect x="16" y="40" width="48" height="8" fill="#00ff00"/>
+    <rect x="72" y="40" width="8" height="8" fill="#00ff00"/>
+
+    <!-- Row 7 -->
+    <rect x="0" y="48" width="8" height="8" fill="#00ff00"/>
+    <rect x="16" y="48" width="8" height="8" fill="#00ff00"/>
+    <rect x="56" y="48" width="8" height="8" fill="#00ff00"/>
+    <rect x="72" y="48" width="8" height="8" fill="#00ff00"/>
+
+    <!-- Row 8 (legs) -->
+    <rect x="24" y="56" width="8" height="8" fill="#00ff00"/>
+    <rect x="48" y="56" width="8" height="8" fill="#00ff00"/>
+  </g>
+
+  <!-- SWARM text -->
+  <text x="64" y="110" font-family="monospace" font-size="12" fill="#00ff00" text-anchor="middle" font-weight="bold">SWARM</text>
+</svg>

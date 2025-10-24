@@ -2189,12 +2189,21 @@ class PaneManager {
                 contentType: pane.contentType,
                 split: pane.split,
                 filePath: pane.filePath,
-                tabs: pane.tabs.map(tab => ({
-                    id: tab.id,
-                    filePath: tab.filePath,
-                    title: tab.title,
-                    contentType: tab.contentType
-                })),
+                tabs: pane.tabs.map(tab => {
+                    const tabData = {
+                        id: tab.id,
+                        filePath: tab.filePath,
+                        title: tab.title,
+                        contentType: tab.contentType
+                    };
+
+                    // CRITICAL FIX: Include terminal ID for terminal tabs so they can be restored
+                    if (tab.contentType === 'terminal' && tab.content && tab.content._terminalInstance) {
+                        tabData.terminalId = tab.content._terminalInstance.id;
+                    }
+
+                    return tabData;
+                }),
                 activeTabId: pane.activeTabId,
                 children: pane.children.map(child => serializePane(child))
             };
@@ -2345,16 +2354,34 @@ class PaneManager {
             logger.debug('paneCreate', 'Restoring pane with', data.tabs.length, 'tabs');
 
             for (const tabData of data.tabs) {
-                // CRITICAL FIX #10: Use RAF instead of setTimeout for proper layout completion
-                // Request the file to be opened in this pane after layout is complete
-                requestAnimationFrame(() => {
+                // CRITICAL: Handle different content types during restoration
+                // Terminals: contentType='terminal' (no filePath)
+                // Files: contentType='file-viewer' (has filePath)
+                // Browsers: contentType='browser' (has browserInstanceId)
+
+                if (tabData.contentType === 'terminal') {
+                    // Restore terminal tab
+                    logger.debug('paneCreate', 'Restoring terminal tab in pane:', pane.id);
                     requestAnimationFrame(() => {
-                        eventBus.emit('pane:request-file-open', {
-                            paneId: pane.id,
-                            filePath: tabData.filePath
+                        requestAnimationFrame(() => {
+                            eventBus.emit('terminal:create-in-pane', {
+                                paneId: pane.id,
+                                terminalId: tabData.terminalId
+                            });
                         });
                     });
-                });
+                } else {
+                    // CRITICAL FIX #10: Use RAF instead of setTimeout for proper layout completion
+                    // Request the file to be opened in this pane after layout is complete
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            eventBus.emit('pane:request-file-open', {
+                                paneId: pane.id,
+                                filePath: tabData.filePath
+                            });
+                        });
+                    });
+                }
             }
         }
 
