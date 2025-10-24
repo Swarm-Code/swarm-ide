@@ -300,6 +300,21 @@ class WorkspaceManager {
 
         const previousWorkspace = this.activeWorkspace;
 
+        // DEBUG: Log workspace pane ownership
+        logger.debug('workspaceLoad', '========== WORKSPACE SWITCH DEBUG ==========');
+        if (previousWorkspace) {
+            logger.debug('workspaceLoad', `Previous workspace: ${previousWorkspace.id} (${previousWorkspace.name})`);
+            logger.debug('workspaceLoad', `Previous paneIds: [${previousWorkspace.paneIds.join(', ')}]`);
+        }
+        logger.debug('workspaceLoad', `Target workspace: ${workspaceId} (${workspace.name})`);
+        logger.debug('workspaceLoad', `Target paneIds: [${workspace.paneIds.join(', ')}]`);
+
+        // Check for pane overlap
+        if (previousWorkspace && previousWorkspace.paneIds.some(id => workspace.paneIds.includes(id))) {
+            logger.error('workspaceLoad', '❌ CRITICAL: Workspaces sharing panes!');
+            logger.error('workspaceLoad', 'Shared pane IDs:', previousWorkspace.paneIds.filter(id => workspace.paneIds.includes(id)));
+        }
+
         // PERFORMANCE TRACKING: Measure workspace switch duration
         const switchStartTime = performance.now();
 
@@ -463,18 +478,20 @@ class WorkspaceManager {
         // If no panes yet, create a NEW root pane for this workspace
         // CRITICAL: Each workspace must have its own isolated pane tree
         if (workspace.paneIds.length === 0) {
-            logger.debug('workspaceLoad', `Creating new root pane for workspace: ${workspaceId}`);
+            logger.debug('workspaceLoad', `📝 Creating new root pane for workspace: ${workspaceId}`);
             const newRootPane = this.paneManager.createRootPane();
             workspace.paneIds.push(newRootPane.id);
             this.paneToWorkspace.set(newRootPane.id, workspaceId);
-            logger.debug('workspaceLoad', `Created root pane ${newRootPane.id} for workspace ${workspaceId}`);
+            logger.debug('workspaceLoad', `✅ Created root pane ${newRootPane.id} for workspace ${workspaceId}`);
         } else {
             // Workspace has panes, update paneManager.rootPane to this workspace's root
             const workspaceRootPaneId = workspace.paneIds[0]; // First pane is typically root
             const workspaceRootPane = this.paneManager.panes.get(workspaceRootPaneId);
             if (workspaceRootPane) {
                 this.paneManager.rootPane = workspaceRootPane;
-                logger.debug('workspaceLoad', `Set paneManager.rootPane to ${workspaceRootPaneId} for workspace ${workspaceId}`);
+                logger.debug('workspaceLoad', `♻️ Set paneManager.rootPane to ${workspaceRootPaneId} for workspace ${workspaceId}`);
+            } else {
+                logger.error('workspaceLoad', `❌ ERROR: Workspace pane ${workspaceRootPaneId} not found in paneManager!`);
             }
         }
 
