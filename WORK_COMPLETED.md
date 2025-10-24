@@ -70,7 +70,8 @@ When workspace switches:
 | `d8b7ebc` | Fix terminal recreation on workspace switches - implement terminal persistence registry |
 | `5d597ff` | Fix terminal recreation by skipping deserialization when panes exist |
 | `8f4c9b6` | Fix blank terminal display by resetting container style |
-| `2862ac3` | Fix blank terminal on workspace switch by reopening xterm.js in container |
+| `2862ac3` | ~~Fix blank terminal on workspace switch by reopening xterm.js in container~~ (REVERTED) |
+| `c3c8b34` | **Fix blank terminal by removing duplicate xterm.open() calls (CORRECT FIX)** |
 | `f90103e` | Add comprehensive Terminal Persistence Fix documentation |
 | `01b06ec` | Add interactive terminal persistence testing guide |
 
@@ -137,11 +138,11 @@ Follow procedures in `TEST_TERMINAL_PERSISTENCE_NOW.md` for comprehensive valida
 - Gracefully creates new if needed
 - Detailed console logging
 
-✅ **xterm.js DOM Management**
-- Properly reopens xterm.js when reusing containers
-- Clears innerHTML before reopening to ensure clean render
+✅ **xterm.js Lifecycle Management**
+- Correctly follows xterm.js best practices: `terminal.open()` called only ONCE on creation
+- When reusing terminals, container is moved in DOM without reopening xterm.js
 - Resets display property to 'flex' when showing terminals
-- Prevents blank terminal issue on workspace switches
+- Preserves xterm.js rendering and terminal output across workspace switches
 
 ✅ **Performance**
 - No negative impact on workspace switch time
@@ -198,11 +199,38 @@ This terminal has been running in the background!
 2. **Process Suspension**: Pause when hidden, resume when shown
 3. **Smart Management**: Auto-restart, log rotation, monitoring
 
+## Root Cause Analysis: Blank Terminal Issue
+
+### The Problem
+When switching workspaces, terminals appeared blank even though the PTY connection was preserved and the terminal ID was correct.
+
+### Initial (Incorrect) Fix Attempt
+Commit `2862ac3` attempted to fix this by:
+1. Clearing the container's `innerHTML`
+2. Calling `existingTerminal.xterm.open(terminalContainer)` again
+
+**Why this failed:** According to xterm.js documentation, `terminal.open()` is **NOT idempotent** and should only be called **ONCE** when the terminal is first created. Calling it multiple times destroys the existing rendering.
+
+### Correct Fix (Commit c3c8b34)
+The xterm.js instance is **already rendered** in its container. When reusing a terminal:
+1. ✅ Reset `terminalContainer.style.display = 'flex'` (container may be hidden)
+2. ✅ Move the container to the new pane via `addTab()`
+3. ✅ Trigger `fitAddon.fit()` to resize
+4. ❌ **DO NOT** call `xterm.open()` again
+5. ❌ **DO NOT** clear `innerHTML`
+
+The container with its xterm.js rendering intact is simply moved in the DOM tree. The terminal's visual state, scrollback, and output are all preserved.
+
+### Key Lesson
+**xterm.js lifecycle:** `terminal.open(container)` → attach once, then manage DOM container position, not xterm.js instance.
+
+---
+
 ## Files Involved
 
 | File | Changes | Lines |
 |------|---------|-------|
-| `src/renderer.js` | Registry, persistence logic, registration, xterm.js reopening | 96-168, 669-749, 1169-1172, 1298-1353 |
+| `src/renderer.js` | Registry, persistence logic, registration, correct xterm.js lifecycle | 96-168, 669-710, 1169-1172, 1298-1353 |
 | `src/services/PaneManager.js` | Terminal ID serialization | 2201-2203, 2367-2371 |
 | `src/services/WorkspaceManager.js` | Skip deserialization, pane hiding/showing | 114-133, 284-503 |
 | `TERMINAL_PERSISTENCE_FIX.md` | Documentation | NEW (350 lines) |
