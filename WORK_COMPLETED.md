@@ -68,6 +68,9 @@ When workspace switches:
 | Hash | Message |
 |------|---------|
 | `d8b7ebc` | Fix terminal recreation on workspace switches - implement terminal persistence registry |
+| `5d597ff` | Fix terminal recreation by skipping deserialization when panes exist |
+| `8f4c9b6` | Fix blank terminal display by resetting container style |
+| `2862ac3` | Fix blank terminal on workspace switch by reopening xterm.js in container |
 | `f90103e` | Add comprehensive Terminal Persistence Fix documentation |
 | `01b06ec` | Add interactive terminal persistence testing guide |
 
@@ -134,6 +137,12 @@ Follow procedures in `TEST_TERMINAL_PERSISTENCE_NOW.md` for comprehensive valida
 - Gracefully creates new if needed
 - Detailed console logging
 
+✅ **xterm.js DOM Management**
+- Properly reopens xterm.js when reusing containers
+- Clears innerHTML before reopening to ensure clean render
+- Resets display property to 'flex' when showing terminals
+- Prevents blank terminal issue on workspace switches
+
 ✅ **Performance**
 - No negative impact on workspace switch time
 - Actually faster (reuse vs create/destroy)
@@ -193,8 +202,9 @@ This terminal has been running in the background!
 
 | File | Changes | Lines |
 |------|---------|-------|
-| `src/renderer.js` | Registry, persistence logic, registration | 96-168, 669-777, 1169-1172 |
+| `src/renderer.js` | Registry, persistence logic, registration, xterm.js reopening | 96-168, 669-749, 1169-1172, 1298-1353 |
 | `src/services/PaneManager.js` | Terminal ID serialization | 2201-2203, 2367-2371 |
+| `src/services/WorkspaceManager.js` | Skip deserialization, pane hiding/showing | 114-133, 284-503 |
 | `TERMINAL_PERSISTENCE_FIX.md` | Documentation | NEW (350 lines) |
 | `TEST_TERMINAL_PERSISTENCE_NOW.md` | Testing guide | NEW (255 lines) |
 
