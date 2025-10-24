@@ -202,6 +202,12 @@ class FileExplorer {
             logger.debug('sshFileExplorer', 'dirPath:', dirPath);
             logger.debug('sshFileExplorer', 'options:', JSON.stringify(options, null, 2));
 
+            // CRITICAL: Create workspace for this folder
+            const workspaceManager = require('../services/WorkspaceManager');
+            const workspace = workspaceManager.createWorkspace(null, `Workspace for ${dirPath}`, 'empty', dirPath);
+            await workspaceManager.setActiveWorkspace(workspace.id);
+            logger.info('workspaceLoad', `Created workspace ${workspace.id} for folder: ${dirPath}`);
+
             // Check if this is an SSH path
             if (dirPath && dirPath.startsWith('ssh://')) {
                 console.log('[FileExplorer] ✅ SSH PATH DETECTED!');

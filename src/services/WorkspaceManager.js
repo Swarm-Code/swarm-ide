@@ -70,90 +70,23 @@ class WorkspaceManager {
      * Initialize workspace manager (ENHANCED: restores tracking maps)
      */
     async init() {
-        // Load config to check restore preference
-        this.config.load();
-        const shouldRestore = this.config.get('restoreWorkspaceOnStartup', false);
+        // CHANGED: No workspace persistence - start fresh every time
+        // Workspaces are created when folders are opened
+        logger.info('workspaceLoad', 'Starting with clean workspace state (no persistence)');
 
-        // Load workspaces and tracking maps from localStorage
-        const storedData = localStorage.getItem(this.storageKey);
-        const persistedState = storedData ? JSON.parse(storedData) : null;
+        // Clear any old persisted state
+        localStorage.removeItem(this.storageKey);
 
-        let storedWorkspaces = [];
-        let paneToWorkspaceMap = [];
-        let terminalToWorkspaceMap = [];
-        let activeWorkspaceId = null;
+        // Initialize empty
+        this.workspaces.clear();
+        this.paneToWorkspace.clear();
+        this.terminalToWorkspace.clear();
+        this.browserToWorkspace.clear();
+        this.activeWorkspace = null;
+        this.defaultWorkspace = null;
+        this.lastWorkspaceId = null;
 
-        if (persistedState && persistedState.version === 2) {
-            // New format with tracking maps
-            storedWorkspaces = persistedState.workspaces || [];
-            paneToWorkspaceMap = persistedState.paneToWorkspace || [];
-            terminalToWorkspaceMap = persistedState.terminalToWorkspace || [];
-            activeWorkspaceId = persistedState.activeWorkspaceId;
-            logger.debug('workspaceLoad', 'Loaded persisted state v2:', {
-                workspaces: storedWorkspaces.length,
-                paneTracking: paneToWorkspaceMap.length,
-                terminalTracking: terminalToWorkspaceMap.length
-            });
-        } else if (persistedState && Array.isArray(persistedState)) {
-            // Legacy format (array of workspaces only)
-            storedWorkspaces = persistedState;
-            logger.debug('workspaceLoad', 'Loaded legacy workspaces:', storedWorkspaces.length);
-        }
-
-        // Store last workspace ID for "Open Previous Workspace" feature
-        this.lastWorkspaceId = activeWorkspaceId;
-
-        // Load existing workspaces into memory (but don't activate)
-        if (storedWorkspaces.length > 0) {
-            storedWorkspaces.forEach(ws => {
-                // Initialize missing arrays for legacy workspaces
-                if (!ws.paneIds) ws.paneIds = [];
-                if (!ws.terminalIds) ws.terminalIds = [];
-                if (!ws.browserIds) ws.browserIds = [];
-
-                // CRITICAL FIX: Clear dead terminals AND panes on app startup
-                // Terminals and panes cannot persist across app restarts because:
-                // 1. PTY processes are killed when app closes
-                // 2. xterm.js instances are destroyed
-                // 3. WebSocket connections are terminated
-                // 4. DOM elements and component state are lost
-                // Start fresh with empty lists in this session
-                ws.terminalIds = [];
-                ws.paneIds = []; // Clear old pane IDs - panes will be created fresh
-
-                this.workspaces.set(ws.id, ws);
-            });
-
-            // CRITICAL FIX: Don't restore pane/terminal tracking from previous session
-            // These panes and terminals are dead - we only track those created in current session
-            // paneToWorkspaceMap.forEach(([paneId, workspaceId]) => {
-            //     this.paneToWorkspace.set(paneId, workspaceId);
-            // });
-            // terminalToWorkspaceMap.forEach(([terminalId, workspaceId]) => {
-            //     this.terminalToWorkspace.set(terminalId, workspaceId);
-            // });
-        }
-
-        // Only restore workspace if the setting is enabled
-        if (shouldRestore && this.lastWorkspaceId) {
-            const targetWorkspace = this.workspaces.get(this.lastWorkspaceId);
-            if (targetWorkspace) {
-                this.activeWorkspace = targetWorkspace;
-                this.defaultWorkspace = targetWorkspace;
-                logger.debug('workspaceLoad', 'Restored active workspace:', targetWorkspace.id);
-            }
-        } else {
-            logger.debug('workspaceLoad', 'Auto-restore disabled, starting with clean slate');
-        }
-
-        logger.debug('workspaceLoad', 'Initialization complete:', {
-            activeWorkspace: this.activeWorkspace?.id,
-            totalWorkspaces: this.workspaces.size,
-            lastWorkspaceId: this.lastWorkspaceId,
-            paneTrackingEntries: this.paneToWorkspace.size,
-            terminalTrackingEntries: this.terminalToWorkspace.size,
-            autoRestore: shouldRestore
-        });
+        logger.debug('workspaceLoad', 'Initialization complete - waiting for folder to be opened');
     }
 
     /**
@@ -741,29 +674,9 @@ class WorkspaceManager {
      * Save workspaces to persistent storage (ENHANCED: saves tracking maps)
      */
     saveWorkspaces() {
-        const workspacesArray = Array.from(this.workspaces.values());
-
-        // Convert Maps to arrays for JSON serialization
-        const paneToWorkspaceArray = Array.from(this.paneToWorkspace.entries());
-        const terminalToWorkspaceArray = Array.from(this.terminalToWorkspace.entries());
-
-        // Create v2 persisted state with tracking maps
-        const persistedState = {
-            version: 2,
-            workspaces: workspacesArray,
-            paneToWorkspace: paneToWorkspaceArray,
-            terminalToWorkspace: terminalToWorkspaceArray,
-            activeWorkspaceId: this.activeWorkspace?.id || null,
-            savedAt: Date.now()
-        };
-
-        localStorage.setItem(this.storageKey, JSON.stringify(persistedState));
-        logger.debug('workspaceLoad', 'Saved workspaces to storage (v2):', {
-            workspaces: workspacesArray.length,
-            paneTracking: paneToWorkspaceArray.length,
-            terminalTracking: terminalToWorkspaceArray.length,
-            terminalNote: 'Only tracking terminals from current session (PTY cannot persist across app restart)'
-        });
+        // NO-OP: Workspaces are not persisted anymore
+        // They are created fresh when folders are opened
+        logger.debug('workspaceLoad', 'saveWorkspaces called but persistence disabled');
     }
 
     /**
