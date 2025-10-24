@@ -111,23 +111,24 @@ class WorkspaceManager {
                 if (!ws.terminalIds) ws.terminalIds = [];
                 if (!ws.browserIds) ws.browserIds = [];
 
-                // CRITICAL FIX: Clear dead terminals on app startup
-                // Terminals cannot persist across app restarts because:
+                // CRITICAL FIX: Clear dead terminals AND panes on app startup
+                // Terminals and panes cannot persist across app restarts because:
                 // 1. PTY processes are killed when app closes
                 // 2. xterm.js instances are destroyed
                 // 3. WebSocket connections are terminated
-                // Start fresh with empty terminal list in this session
+                // 4. DOM elements and component state are lost
+                // Start fresh with empty lists in this session
                 ws.terminalIds = [];
+                ws.paneIds = []; // Clear old pane IDs - panes will be created fresh
 
                 this.workspaces.set(ws.id, ws);
             });
 
-            // Restore tracking maps
-            paneToWorkspaceMap.forEach(([paneId, workspaceId]) => {
-                this.paneToWorkspace.set(paneId, workspaceId);
-            });
-            // CRITICAL FIX: Don't restore terminal tracking from previous session
-            // These terminals are dead - we only track terminals launched in current session
+            // CRITICAL FIX: Don't restore pane/terminal tracking from previous session
+            // These panes and terminals are dead - we only track those created in current session
+            // paneToWorkspaceMap.forEach(([paneId, workspaceId]) => {
+            //     this.paneToWorkspace.set(paneId, workspaceId);
+            // });
             // terminalToWorkspaceMap.forEach(([terminalId, workspaceId]) => {
             //     this.terminalToWorkspace.set(terminalId, workspaceId);
             // });
