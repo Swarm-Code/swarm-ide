@@ -473,36 +473,45 @@ class WorkspaceManager {
             if (pane && pane.element) {
                 pane.element.style.display = 'flex';
 
-                // CRITICAL: Ensure the active tab's content is visible
-                // Tab contents may have display:none from being inactive
+                // CRITICAL FIX: Restore active tab content display
+                // When workspace was hidden, tab contents were set to display: none
+                // We need to restore the active tab content to display: flex
                 if (pane.tabs && pane.tabs.length > 0) {
-                    // Find the active tab
-                    const activeTab = pane.tabs.find(tab => tab.isActiveTab);
+                    // Hide all tab contents first
+                    pane.tabs.forEach(tab => {
+                        if (tab.content) {
+                            tab.content.style.display = 'none';
+                        }
+                    });
 
-                    if (activeTab && activeTab.content) {
-                        // Reset display on the active tab's content element
-                        activeTab.content.style.display = 'flex';
-                        logger.debug('workspaceLoad', `Reset display on active tab content in pane ${paneId}`);
+                    // Show only the active tab content
+                    if (pane.activeTabId) {
+                        const activeTab = pane.tabs.find(t => t.id === pane.activeTabId);
+                        if (activeTab && activeTab.content) {
+                            activeTab.content.style.display = 'flex';
+                            logger.debug('workspaceLoad', `✓ Restored active tab display: ${activeTab.title} (${activeTab.id}) in pane ${paneId}`);
+                        }
+                    }
+                }
 
-                        // If it's a terminal, resize it
-                        if (activeTab.contentType === 'terminal' && activeTab.content._terminalInstance) {
+                // Force terminal resize if pane contains terminals
+                // This is critical because container dimensions changed while workspace was hidden
+                if (pane.tabs) {
+                    for (const tab of pane.tabs) {
+                        if (tab.contentType === 'terminal' && tab.content && tab.content._terminalInstance) {
+                            // Use double RAF to ensure layout is complete
+                            // First RAF waits for paint, second RAF waits for next frame
                             requestAnimationFrame(() => {
                                 requestAnimationFrame(() => {
                                     try {
-                                        activeTab.content._terminalInstance.fit();
-                                        logger.debug('workspaceLoad', `Resized terminal in pane ${paneId}`);
+                                        // These methods adjust terminal to match current container size
+                                        tab.content._terminalInstance.resize();
+                                        tab.content._terminalInstance.fit();
                                     } catch (err) {
                                         logger.error('workspaceLoad', 'Error resizing terminal:', err);
                                     }
                                 });
                             });
-                        }
-                    }
-
-                    // Hide inactive tab contents to ensure only active tab shows
-                    for (const tab of pane.tabs) {
-                        if (!tab.isActiveTab && tab.content) {
-                            tab.content.style.display = 'none';
                         }
                     }
                 }
