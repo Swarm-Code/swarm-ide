@@ -70,8 +70,9 @@ When workspace switches:
 | `d8b7ebc` | Fix terminal recreation on workspace switches - implement terminal persistence registry |
 | `5d597ff` | Fix terminal recreation by skipping deserialization when panes exist |
 | `8f4c9b6` | Fix blank terminal display by resetting container style |
-| `2862ac3` | ~~Fix blank terminal on workspace switch by reopening xterm.js in container~~ (REVERTED) |
-| `c3c8b34` | **Fix blank terminal by removing duplicate xterm.open() calls (CORRECT FIX)** |
+| `2862ac3` | ~~Fix blank terminal on workspace switch by reopening xterm.js in container~~ (WRONG) |
+| `c3c8b34` | ~~Fix blank terminal by removing duplicate xterm.open() calls~~ (INCOMPLETE) |
+| `ee8f539` | **Fix blank terminal by ensuring active tab is shown when workspace is restored (CORRECT FIX)** |
 | `f90103e` | Add comprehensive Terminal Persistence Fix documentation |
 | `01b06ec` | Add interactive terminal persistence testing guide |
 
@@ -204,25 +205,36 @@ This terminal has been running in the background!
 ### The Problem
 When switching workspaces, terminals appeared blank even though the PTY connection was preserved and the terminal ID was correct.
 
-### Initial (Incorrect) Fix Attempt
-Commit `2862ac3` attempted to fix this by:
+### Initial (Incorrect) Fix Attempts
+
+**Commit `2862ac3` (WRONG):** Attempted to fix by:
 1. Clearing the container's `innerHTML`
 2. Calling `existingTerminal.xterm.open(terminalContainer)` again
 
 **Why this failed:** According to xterm.js documentation, `terminal.open()` is **NOT idempotent** and should only be called **ONCE** when the terminal is first created. Calling it multiple times destroys the existing rendering.
 
-### Correct Fix (Commit c3c8b34)
-The xterm.js instance is **already rendered** in its container. When reusing a terminal:
-1. ✅ Reset `terminalContainer.style.display = 'flex'` (container may be hidden)
-2. ✅ Move the container to the new pane via `addTab()`
-3. ✅ Trigger `fitAddon.fit()` to resize
-4. ❌ **DO NOT** call `xterm.open()` again
-5. ❌ **DO NOT** clear `innerHTML`
+**Commit `c3c8b34` (INCOMPLETE):** Removed the incorrect `xterm.open()` calls, but terminals still appeared blank.
 
-The container with its xterm.js rendering intact is simply moved in the DOM tree. The terminal's visual state, scrollback, and output are all preserved.
+**Why this was incomplete:** The issue wasn't with xterm.js lifecycle, it was with **CSS visibility**!
+
+### Actual Root Cause
+The tab system uses `display: none` to hide inactive tabs and `display: flex` to show the active tab. When workspace panes were shown:
+1. ✅ The **pane element** was set to `display: flex`
+2. ❌ But **tab contents inside** remained `display: none`
+3. ❌ `switchTab()` was never called to set the active tab to `display: flex`
+
+Result: The pane was visible, but all tab contents were hidden!
+
+### Correct Fix (Commit ee8f539)
+When showing workspace panes in `WorkspaceManager.showWorkspacePanes()`:
+1. Set pane element to `display: flex`
+2. **Call `paneManager.switchTab(paneId, pane.activeTabId)`** to show the active tab
+3. This triggers the tab visibility logic that properly sets active tab to `display: flex`
+
+The terminal containers were always there, always rendered - they just needed their CSS `display` property set correctly!
 
 ### Key Lesson
-**xterm.js lifecycle:** `terminal.open(container)` → attach once, then manage DOM container position, not xterm.js instance.
+**CSS visibility layers:** When using nested show/hide with CSS, ensure **all levels** are visible, not just the parent container.
 
 ---
 
@@ -230,9 +242,9 @@ The container with its xterm.js rendering intact is simply moved in the DOM tree
 
 | File | Changes | Lines |
 |------|---------|-------|
-| `src/renderer.js` | Registry, persistence logic, registration, correct xterm.js lifecycle | 96-168, 669-710, 1169-1172, 1298-1353 |
+| `src/renderer.js` | Registry, persistence logic, registration, xterm.js lifecycle | 96-168, 669-710, 1169-1172, 1298-1353 |
 | `src/services/PaneManager.js` | Terminal ID serialization | 2201-2203, 2367-2371 |
-| `src/services/WorkspaceManager.js` | Skip deserialization, pane hiding/showing | 114-133, 284-503 |
+| `src/services/WorkspaceManager.js` | Skip deserialization, pane hiding/showing, **switchTab() on restore** | 114-133, 284-513 |
 | `TERMINAL_PERSISTENCE_FIX.md` | Documentation | NEW (350 lines) |
 | `TEST_TERMINAL_PERSISTENCE_NOW.md` | Testing guide | NEW (255 lines) |
 
