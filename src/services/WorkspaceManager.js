@@ -520,28 +520,46 @@ class WorkspaceManager {
                             activeTab.content.style.display = 'flex';
                             logger.debug('workspaceLoad', `✓ Restored active tab display: ${activeTab.title} (${activeTab.id}) in pane ${paneId}`);
 
-                            // CRITICAL FIX: Only resize/fit the ACTIVE terminal
-                            // Terminals need explicit refresh after container visibility changes
-                            if (activeTab.contentType === 'terminal' && activeTab.content._terminalInstance) {
-                                const terminal = activeTab.content._terminalInstance;
-                                // Triple RAF for maximum reliability - ensures DOM is fully painted
+                            // CRITICAL FIX: Force terminal resize AND focus to trigger render
+                            // This mimics what happens when dragging a tab (PaneManager.switchTab)
+                            // Without this, terminals appear blank until manually interacted with
+                            if (activeTab.content._terminalInstance) {
+                                // Use double RAF to ensure layout is complete
                                 requestAnimationFrame(() => {
                                     requestAnimationFrame(() => {
-                                        requestAnimationFrame(() => {
-                                            try {
-                                                logger.debug('workspaceLoad', `🔄 Refreshing terminal: ${terminal.id}`);
-                                                // Call refresh on xterm to force re-render
-                                                if (terminal.xterm && typeof terminal.xterm.refresh === 'function') {
-                                                    terminal.xterm.refresh(0, terminal.xterm.rows - 1);
-                                                }
-                                                // Then resize to match container
-                                                terminal.resize();
-                                                terminal.fit();
-                                                logger.debug('workspaceLoad', `✓ Terminal refreshed: ${terminal.id}`);
-                                            } catch (err) {
-                                                logger.error('workspaceLoad', 'Error refreshing terminal:', err);
-                                            }
-                                        });
+                                        try {
+                                            logger.debug('workspaceLoad', `🔄 Forcing terminal resize and focus for ${activeTab.id}`);
+                                            activeTab.content._terminalInstance.resize();
+                                            activeTab.content._terminalInstance.focus();
+                                        } catch (err) {
+                                            logger.error('workspaceLoad', 'Error resizing/focusing terminal:', err);
+                                        }
+                                    });
+                                });
+                            }
+
+                            // Handle other content types that need refresh
+                            if (activeTab.content._browserInstance) {
+                                requestAnimationFrame(() => {
+                                    requestAnimationFrame(() => {
+                                        try {
+                                            const bounds = activeTab.content._browserInstance.calculateBrowserBounds();
+                                            window.electronAPI.browserUpdateBounds(activeTab.content._browserInstance.activeTabId, bounds);
+                                        } catch (err) {
+                                            logger.error('workspaceLoad', 'Error updating browser bounds:', err);
+                                        }
+                                    });
+                                });
+                            }
+
+                            if (activeTab.content._fileViewerInstance && activeTab.content._fileViewerInstance.textEditor) {
+                                requestAnimationFrame(() => {
+                                    requestAnimationFrame(() => {
+                                        try {
+                                            activeTab.content._fileViewerInstance.textEditor.refresh();
+                                        } catch (err) {
+                                            logger.error('workspaceLoad', 'Error refreshing CodeMirror:', err);
+                                        }
                                     });
                                 });
                             }
