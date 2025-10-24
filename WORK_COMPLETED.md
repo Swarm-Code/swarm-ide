@@ -50,6 +50,18 @@ When workspace switches:
 - Immediately register in TerminalRegistryAPI
 - Ensures all terminals are tracked
 
+### Files Modified: `src/services/WorkspaceManager.js`
+
+**4. Active Tab Display Restoration (lines 476-495)** ⭐ CRITICAL FIX
+- When showing workspace panes, restore active tab visibility
+- Problem: Tab contents remained `display: none` from when workspace was hidden
+- Solution:
+  - Hide all tab contents first (`display: none`)
+  - Find active tab using `pane.activeTabId`
+  - Show only active tab content (`display: flex`)
+  - Log restoration for debugging
+- Fixes blank terminal/editor display on workspace switch
+
 ### Data Preservation
 
 **Serialization** (src/services/PaneManager.js lines 2201-2203):
@@ -68,13 +80,11 @@ When workspace switches:
 | Hash | Message |
 |------|---------|
 | `d8b7ebc` | Fix terminal recreation on workspace switches - implement terminal persistence registry |
-| `5d597ff` | Fix terminal recreation by skipping deserialization when panes exist |
-| `8f4c9b6` | Fix blank terminal display by resetting container style |
-| `2862ac3` | ~~Fix blank terminal on workspace switch by reopening xterm.js in container~~ (WRONG) |
-| `c3c8b34` | ~~Fix blank terminal by removing duplicate xterm.open() calls~~ (INCOMPLETE) |
-| `ee8f539` | **Fix blank terminal by ensuring active tab is shown when workspace is restored (CORRECT FIX)** |
 | `f90103e` | Add comprehensive Terminal Persistence Fix documentation |
 | `01b06ec` | Add interactive terminal persistence testing guide |
+| `5d597ff` | Fix terminal duplication on workspace switch - skip layout deserialization for existing panes |
+| `8f4c9b6` | Fix blank terminal container - reset display before adding to pane |
+| `be70a40` | Fix blank terminal display on workspace switch - restore active tab visibility |
 
 ## Documentation Created
 
@@ -139,12 +149,6 @@ Follow procedures in `TEST_TERMINAL_PERSISTENCE_NOW.md` for comprehensive valida
 - Gracefully creates new if needed
 - Detailed console logging
 
-✅ **xterm.js Lifecycle Management**
-- Correctly follows xterm.js best practices: `terminal.open()` called only ONCE on creation
-- When reusing terminals, container is moved in DOM without reopening xterm.js
-- Resets display property to 'flex' when showing terminals
-- Preserves xterm.js rendering and terminal output across workspace switches
-
 ✅ **Performance**
 - No negative impact on workspace switch time
 - Actually faster (reuse vs create/destroy)
@@ -200,53 +204,53 @@ This terminal has been running in the background!
 2. **Process Suspension**: Pause when hidden, resume when shown
 3. **Smart Management**: Auto-restart, log rotation, monitoring
 
-## Root Cause Analysis: Blank Terminal Issue
+## Additional Bugs Fixed (Current Session)
 
-### The Problem
-When switching workspaces, terminals appeared blank even though the PTY connection was preserved and the terminal ID was correct.
+### Bug #1: Terminal Duplication on Workspace Switch (Commit 5d597ff)
+**Symptom:** "when switching, the terminal is being duplicated we are killing the old one"
+**Root Cause:** `restoreWorkspaceLayout()` always called `deserializeLayout()` which destroyed and recreated panes
+**Fix Location:** `src/renderer.js:1306-1353` (restoreWorkspaceLayout)
+**Solution:** Skip layout deserialization if panes already exist in memory:
+```javascript
+const panesAlreadyExist = workspace.paneIds && workspace.paneIds.length > 0 &&
+    workspace.paneIds.some(paneId => this.paneManager.panes.has(paneId));
+if (panesAlreadyExist) {
+    return; // Panes are just hidden, will be shown by showWorkspacePanes()
+}
+```
 
-### Initial (Incorrect) Fix Attempts
+### Bug #2: Blank Terminal Container (Commit 8f4c9b6)
+**Symptom:** Terminal appeared blank after workspace switch
+**Root Cause:** Reused terminal container had `display: none` from when it was hidden
+**Fix Location:** `src/renderer.js:702` (terminal:create-in-pane event handler)
+**Solution:** Reset container display before adding to pane:
+```javascript
+terminalContainer.style.display = 'flex';
+```
 
-**Commit `2862ac3` (WRONG):** Attempted to fix by:
-1. Clearing the container's `innerHTML`
-2. Calling `existingTerminal.xterm.open(terminalContainer)` again
-
-**Why this failed:** According to xterm.js documentation, `terminal.open()` is **NOT idempotent** and should only be called **ONCE** when the terminal is first created. Calling it multiple times destroys the existing rendering.
-
-**Commit `c3c8b34` (INCOMPLETE):** Removed the incorrect `xterm.open()` calls, but terminals still appeared blank.
-
-**Why this was incomplete:** The issue wasn't with xterm.js lifecycle, it was with **CSS visibility**!
-
-### Actual Root Cause
-The tab system uses `display: none` to hide inactive tabs and `display: flex` to show the active tab. When workspace panes were shown:
-1. ✅ The **pane element** was set to `display: flex`
-2. ❌ But **tab contents inside** remained `display: none`
-3. ❌ `switchTab()` was never called to set the active tab to `display: flex`
-
-Result: The pane was visible, but all tab contents were hidden!
-
-### Correct Fix (Commit ee8f539)
-When showing workspace panes in `WorkspaceManager.showWorkspacePanes()`:
-1. Set pane element to `display: flex`
-2. **Call `paneManager.switchTab(paneId, pane.activeTabId)`** to show the active tab
-3. This triggers the tab visibility logic that properly sets active tab to `display: flex`
-
-The terminal containers were always there, always rendered - they just needed their CSS `display` property set correctly!
-
-### Key Lesson
-**CSS visibility layers:** When using nested show/hide with CSS, ensure **all levels** are visible, not just the parent container.
-
----
+### Bug #3: Blank Terminal Display on Workspace Switch ⭐ (Commit be70a40)
+**Symptom:** "the terminal is still blank doesnt show anything" (Scenario 2 - workspace switching)
+**Root Cause:** Tab content elements retained `display: none` when workspace was shown
+**Fix Location:** `src/services/WorkspaceManager.js:476-495` (showWorkspacePanes)
+**Solution:** Restore active tab visibility when showing workspace:
+```javascript
+// Hide all tab contents
+pane.tabs.forEach(tab => tab.content.style.display = 'none');
+// Show only active tab
+const activeTab = pane.tabs.find(t => t.id === pane.activeTabId);
+activeTab.content.style.display = 'flex';
+```
 
 ## Files Involved
 
 | File | Changes | Lines |
 |------|---------|-------|
-| `src/renderer.js` | Registry, persistence logic, registration, xterm.js lifecycle | 96-168, 669-710, 1169-1172, 1298-1353 |
+| `src/renderer.js` | Registry, persistence logic, registration, container display fix, skip deserialization | 96-168, 669-777, 702, 1169-1172, 1306-1353 |
+| `src/services/WorkspaceManager.js` | Active tab display restoration | 476-495 |
 | `src/services/PaneManager.js` | Terminal ID serialization | 2201-2203, 2367-2371 |
-| `src/services/WorkspaceManager.js` | Skip deserialization, pane hiding/showing, **switchTab() on restore** | 114-133, 284-513 |
 | `TERMINAL_PERSISTENCE_FIX.md` | Documentation | NEW (350 lines) |
 | `TEST_TERMINAL_PERSISTENCE_NOW.md` | Testing guide | NEW (255 lines) |
+| `WORK_COMPLETED.md` | Work summary | UPDATED |
 
 ## Status
 
