@@ -702,6 +702,21 @@ class Application {
                     terminalContainer.style.display = 'flex';
                     logger.debug('appInit', `Reset terminal container display to flex for ${data.terminalId}`);
 
+                    // CRITICAL FIX: Clear the container's innerHTML to prepare for re-opening
+                    // xterm.js needs a clean container to render into
+                    terminalContainer.innerHTML = '';
+                    logger.debug('appInit', `Cleared container innerHTML for ${data.terminalId}`);
+
+                    // CRITICAL FIX: Re-open xterm.js in the container
+                    // When the terminal was hidden, xterm.js lost its DOM connection
+                    // We need to re-open it to render properly
+                    try {
+                        existingTerminal.xterm.open(terminalContainer);
+                        logger.debug('appInit', `✓ Reopened xterm.js in container for ${data.terminalId}`);
+                    } catch (e) {
+                        logger.warn('appInit', `xterm.open() warning (expected if already open): ${e.message}`);
+                    }
+
                     // Add the existing container as a tab to this pane
                     const tabId = this.paneManager.addTab(
                         data.paneId,
