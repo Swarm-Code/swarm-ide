@@ -519,28 +519,32 @@ class WorkspaceManager {
                         if (activeTab && activeTab.content) {
                             activeTab.content.style.display = 'flex';
                             logger.debug('workspaceLoad', `✓ Restored active tab display: ${activeTab.title} (${activeTab.id}) in pane ${paneId}`);
-                        }
-                    }
-                }
 
-                // Force terminal resize if pane contains terminals
-                // This is critical because container dimensions changed while workspace was hidden
-                if (pane.tabs) {
-                    for (const tab of pane.tabs) {
-                        if (tab.contentType === 'terminal' && tab.content && tab.content._terminalInstance) {
-                            // Use double RAF to ensure layout is complete
-                            // First RAF waits for paint, second RAF waits for next frame
-                            requestAnimationFrame(() => {
+                            // CRITICAL FIX: Only resize/fit the ACTIVE terminal
+                            // Terminals need explicit refresh after container visibility changes
+                            if (activeTab.contentType === 'terminal' && activeTab.content._terminalInstance) {
+                                const terminal = activeTab.content._terminalInstance;
+                                // Triple RAF for maximum reliability - ensures DOM is fully painted
                                 requestAnimationFrame(() => {
-                                    try {
-                                        // These methods adjust terminal to match current container size
-                                        tab.content._terminalInstance.resize();
-                                        tab.content._terminalInstance.fit();
-                                    } catch (err) {
-                                        logger.error('workspaceLoad', 'Error resizing terminal:', err);
-                                    }
+                                    requestAnimationFrame(() => {
+                                        requestAnimationFrame(() => {
+                                            try {
+                                                logger.debug('workspaceLoad', `🔄 Refreshing terminal: ${terminal.id}`);
+                                                // Call refresh on xterm to force re-render
+                                                if (terminal.xterm && typeof terminal.xterm.refresh === 'function') {
+                                                    terminal.xterm.refresh(0, terminal.xterm.rows - 1);
+                                                }
+                                                // Then resize to match container
+                                                terminal.resize();
+                                                terminal.fit();
+                                                logger.debug('workspaceLoad', `✓ Terminal refreshed: ${terminal.id}`);
+                                            } catch (err) {
+                                                logger.error('workspaceLoad', 'Error refreshing terminal:', err);
+                                            }
+                                        });
+                                    });
                                 });
-                            });
+                            }
                         }
                     }
                 }
