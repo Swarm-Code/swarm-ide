@@ -202,11 +202,15 @@ class FileExplorer {
             logger.debug('sshFileExplorer', 'dirPath:', dirPath);
             logger.debug('sshFileExplorer', 'options:', JSON.stringify(options, null, 2));
 
-            // CRITICAL: Create workspace for this folder
+            // CRITICAL: Create workspace for this folder (only if no active workspace exists)
             const workspaceManager = require('../services/WorkspaceManager');
-            const workspace = workspaceManager.createWorkspace(null, `Workspace for ${dirPath}`, 'empty', dirPath);
-            await workspaceManager.setActiveWorkspace(workspace.id);
-            logger.info('workspaceLoad', `Created workspace ${workspace.id} for folder: ${dirPath}`);
+            if (!workspaceManager.getActiveWorkspace()) {
+                const workspace = workspaceManager.createWorkspace(null, `Workspace for ${dirPath}`, 'empty', dirPath);
+                // Set active WITHOUT calling fileExplorer.openDirectory again
+                workspaceManager.activeWorkspace = workspace;
+                workspaceManager.defaultWorkspace = workspace;
+                logger.info('workspaceLoad', `Created workspace ${workspace.id} for folder: ${dirPath}`);
+            }
 
             // Check if this is an SSH path
             if (dirPath && dirPath.startsWith('ssh://')) {
