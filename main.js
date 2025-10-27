@@ -1253,6 +1253,74 @@ ipcMain.handle('browser-toggle-extension', async (event, extensionId, enabled) =
   }
 });
 
+/**
+ * Open extension in a separate popup window
+ * Extensions don't work properly in BrowserView, so we need a separate BrowserWindow
+ */
+ipcMain.handle('open-extension-window', async (event, { extensionId, extensionName }) => {
+  try {
+    console.log(`[Main] Opening extension window: ${extensionName} (${extensionId})`);
+
+    // Create a popup window for the extension
+    const popupWindow = new BrowserWindow({
+      width: 500,
+      height: 700,
+      parent: mainWindow,
+      modal: false,
+      show: false,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+        preload: path.join(__dirname, 'preload.js')
+      }
+    });
+
+    // Track popup window to prevent memory leaks
+    popupWindow.once('closed', () => {
+      console.log(`[Main] Extension window closed: ${extensionName}`);
+    });
+
+    // Try different extension pages
+    let loaded = false;
+    const pagesToTry = ['sidepanel.html', 'popup.html', 'options.html', 'index.html'];
+
+    for (const page of pagesToTry) {
+      try {
+        const extensionUrl = `chrome-extension://${extensionId}/${page}`;
+        console.log(`[Main] Attempting to load: ${extensionUrl}`);
+
+        // Load the extension page
+        await popupWindow.loadURL(extensionUrl);
+        loaded = true;
+        console.log(`[Main] Successfully loaded extension page: ${page}`);
+        popupWindow.show();
+        break;
+      } catch (err) {
+        console.log(`[Main] Failed to load ${page}: ${err.message}`);
+        continue;
+      }
+    }
+
+    if (!loaded) {
+      console.error(`[Main] Could not load any extension pages for ${extensionName}`);
+      popupWindow.close();
+      return {
+        success: false,
+        error: `Could not load any pages for ${extensionName}`
+      };
+    }
+
+    return {
+      success: true,
+      message: `Opened ${extensionName} window`
+    };
+  } catch (error) {
+    console.error('[Main] Error opening extension window:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // ========================================
 // Git IPC Handlers
 // ========================================

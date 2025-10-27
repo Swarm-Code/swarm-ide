@@ -1058,7 +1058,8 @@ class Browser {
     }
 
     /**
-     * Open/activate extension
+     * Open/activate extension in a separate popup window
+     * Note: Extensions don't work properly in BrowserView, so we open them in a separate window
      */
     async openExtension(extensionId, extensionName) {
         try {
@@ -1070,78 +1071,25 @@ class Browser {
 
             logger.debug('browserNav', `Opening extension: ${extensionName} (${extensionId})`);
 
-            const tabId = this.tabId;
-            if (!tabId) {
-                logger.error('browserNav', 'No active tab ID');
-                eventBus.emit('notification:show', {
-                    type: 'error',
-                    message: 'No active browser tab'
-                });
-                return;
-            }
+            // Request main process to open extension in a popup window
+            // BrowserView doesn't support extensions properly, so we need a separate window
+            const result = await window.electronAPI.invoke('open-extension-window', {
+                extensionId: extensionId,
+                extensionName: extensionName
+            });
 
-            // For Claude extension specifically (fcoeoabgfenejglbffodgkkbkcdhcgfn), try to open its interface
-            // The Claude extension uses a side panel, so we'll try to navigate to its main page
-            let extensionUrl;
-
-            if (extensionId === 'fcoeoabgfenejglbffodgkkbkcdhcgfn') {
-                // Claude extension has sidepanel.html and options.html
-                // Try sidepanel first (main interface), then options
-                extensionUrl = `chrome-extension://${extensionId}/sidepanel.html`;
-                logger.debug('browserNav', `Attempting Claude extension sidepanel: ${extensionUrl}`);
-            } else {
-                // Generic approach for other extensions - try popup first, then options
-                extensionUrl = `chrome-extension://${extensionId}/popup.html`;
-                logger.debug('browserNav', `Attempting generic popup: ${extensionUrl}`);
-            }
-
-            try {
-                logger.info('browserNav', `Navigating to: ${extensionUrl}`);
-                await window.electronAPI.browserNavigate(tabId, extensionUrl);
-                logger.info('browserNav', `Successfully navigated to extension page`);
-
+            if (result && result.success) {
+                logger.info('browserNav', `Opened extension window: ${extensionName}`);
                 eventBus.emit('notification:show', {
                     type: 'info',
-                    message: `Opened ${extensionName}`
+                    message: `Opened ${extensionName} in popup window`
                 });
-            } catch (navError) {
-                logger.warn('browserNav', `Navigation to ${extensionUrl} failed, trying alternative pages`);
-
-                // Try alternative pages based on extension type
-                let alternativePages;
-                if (extensionId === 'fcoeoabgfenejglbffodgkkbkcdhcgfn') {
-                    alternativePages = ['options.html', 'offscreen.html'];
-                } else {
-                    alternativePages = ['options.html', 'index.html', 'popup.html'];
-                }
-                let success = false;
-
-                for (const page of alternativePages) {
-                    try {
-                        const altUrl = `chrome-extension://${extensionId}/${page}`;
-                        logger.debug('browserNav', `Trying alternative: ${altUrl}`);
-                        await window.electronAPI.browserNavigate(tabId, altUrl);
-                        logger.info('browserNav', `Successfully navigated to: ${altUrl}`);
-                        success = true;
-                        break;
-                    } catch (err) {
-                        logger.debug('browserNav', `${page} not found`);
-                        continue;
-                    }
-                }
-
-                if (success) {
-                    eventBus.emit('notification:show', {
-                        type: 'info',
-                        message: `Opened ${extensionName}`
-                    });
-                } else {
-                    logger.error('browserNav', `Could not find any valid extension page`);
-                    eventBus.emit('notification:show', {
-                        type: 'warning',
-                        message: `${extensionName} extension may not have a UI page. Check if it's active in the browser.`
-                    });
-                }
+            } else {
+                logger.error('browserNav', `Failed to open extension window: ${result?.error}`);
+                eventBus.emit('notification:show', {
+                    type: 'error',
+                    message: `Failed to open ${extensionName}: ${result?.error || 'Unknown error'}`
+                });
             }
         } catch (error) {
             logger.error('browserNav', `Error opening extension: ${error.message}`);
