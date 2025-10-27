@@ -746,7 +746,9 @@ class Application {
                 // Create terminal container
                 const terminalContainer = document.createElement('div');
                 terminalContainer.className = 'terminal-pane-container';
-                terminalContainer.style.cssText = 'position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; width: 100%; height: 100%; background: #1e1e1e;';
+                // CRITICAL: Don't use position: absolute with bottom: 0 - it ignores parent padding
+                // Use height: 100% to fill the pane-content area which respects pane-container padding
+                terminalContainer.style.cssText = 'display: flex; flex-direction: column; width: 100%; height: 100%; background: #1e1e1e;';
 
                 // Terminal title
                 const terminalTitle = 'Terminal';
@@ -1147,7 +1149,9 @@ class Application {
         // Create terminal container
         const terminalContainer = document.createElement('div');
         terminalContainer.className = 'terminal-pane-container';
-        terminalContainer.style.cssText = 'position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; width: 100%; height: 100%; background: #1e1e1e;';
+        // CRITICAL: Don't use position: absolute with bottom: 0 - it ignores parent padding
+        // Use height: 100% to fill the pane-content area which respects pane-container padding
+        terminalContainer.style.cssText = 'display: flex; flex-direction: column; width: 100%; height: 100%; background: #1e1e1e;';
 
         // Terminal title
         const terminalTitle = 'Terminal';

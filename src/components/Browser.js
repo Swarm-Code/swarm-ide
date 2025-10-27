@@ -303,36 +303,55 @@ class Browser {
      * Calculate browser view bounds
      */
     calculateBrowserBounds() {
-        // CRITICAL FIX: Use the PANE CONTENT CONTAINER, not browser-view-container
-        // This ensures browser renders at the exact same level as text editors
-        const paneContent = this.container.closest('.pane-content');
+        // CRITICAL FIX: Use the BROWSER VIEW CONTAINER, not pane-content
+        // The toolbar is HTML and sits above the BrowserView, so we need to position
+        // the BrowserView in the .browser-view-container area ONLY
+        const browserViewContainer = this.container.querySelector('.browser-view-container');
 
-        if (!paneContent) {
-            logger.error('browserNav', 'Could not find pane-content container!');
+        if (!browserViewContainer) {
+            logger.error('browserNav', '❌ Could not find browser-view-container!', {
+                containerExists: !!this.container,
+                containerClass: this.container?.className
+            });
             return this.lastKnownBounds || { x: 0, y: 80, width: 800, height: 600 };
         }
 
-        // CRITICAL FIX #6: Check if pane content is hidden (display: none)
+        // DEBUG: Log toolbar info to verify it's present
+        const toolbar = this.container.querySelector('.browser-toolbar');
+        let toolbarHeight = 42; // Default expected toolbar height
+        if (toolbar) {
+            const toolbarRect = toolbar.getBoundingClientRect();
+            toolbarHeight = Math.round(toolbarRect.height);
+            logger.debug('browserNav', '🔧 Toolbar detected:', {
+                height: toolbarHeight,
+                top: Math.round(toolbarRect.top),
+                bottom: Math.round(toolbarRect.bottom)
+            });
+        } else {
+            logger.warn('browserNav', '⚠️ Toolbar not found - this should not happen!');
+        }
+
+        // CRITICAL FIX #6: Check if browser view container is hidden (display: none)
         // When tabs are switched, hidden tabs have display: none and getBoundingClientRect returns zeros
-        const isHidden = paneContent.style.display === 'none' ||
-                         paneContent.offsetParent === null ||
-                         paneContent.clientWidth === 0 ||
-                         paneContent.clientHeight === 0;
+        const isHidden = browserViewContainer.style.display === 'none' ||
+                         browserViewContainer.offsetParent === null ||
+                         browserViewContainer.clientWidth === 0 ||
+                         browserViewContainer.clientHeight === 0;
 
         if (isHidden) {
-            logger.warn('browserNav', 'Pane content is hidden, using cached bounds or defaults', {
+            logger.warn('browserNav', 'Browser view container is hidden, using cached bounds or defaults', {
                 paneId: this.paneId,
                 tabId: this.tabId,
-                display: paneContent.style.display,
-                offsetParent: paneContent.offsetParent,
-                clientWidth: paneContent.clientWidth,
-                clientHeight: paneContent.clientHeight
+                display: browserViewContainer.style.display,
+                offsetParent: browserViewContainer.offsetParent,
+                clientWidth: browserViewContainer.clientWidth,
+                clientHeight: browserViewContainer.clientHeight
             });
             // Return cached bounds if we have them, otherwise return sensible defaults
             return this.lastKnownBounds || { x: 0, y: 80, width: 800, height: 600 };
         }
 
-        const rect = paneContent.getBoundingClientRect();
+        const rect = browserViewContainer.getBoundingClientRect();
         let availableHeight = Math.round(rect.height);
 
         // CRITICAL FIX: Always check for visible status bar
@@ -349,14 +368,14 @@ class Browser {
         }
 
         const debugData = {
-            usingPaneContent: true,
+            usingBrowserViewContainer: true,
             containerHeight: Math.round(rect.height),
             containerTop: Math.round(rect.top),
             containerBottom: Math.round(rect.top + rect.height),
             bottomReservedSpace: bottomReservedSpace,
             windowHeight: window.innerHeight
         };
-        logger.debug('browserNav', '📐 calculateBrowserBounds() - Using PANE CONTENT:', JSON.stringify(debugData));
+        logger.debug('browserNav', '📐 calculateBrowserBounds() - Using BROWSER VIEW CONTAINER:', JSON.stringify(debugData));
 
         // CRITICAL FIX: Subtract reserved bottom space (status bar)
         // Calculate where the reserved area starts from the top
@@ -394,7 +413,13 @@ class Browser {
         // CRITICAL FIX #6: Cache valid bounds for use when container is hidden
         this.lastKnownBounds = finalBounds;
 
-        logger.debug('browserNav', '📦 Final bounds (cached):', finalBounds);
+        logger.debug('browserNav', '📦 Final BrowserView bounds (toolbar will be visible above):', {
+            bounds: finalBounds,
+            toolbarEndsAt: Math.round(rect.top),
+            browserViewStartsAt: Math.round(rect.top),
+            toolbarHeight: toolbarHeight,
+            noOverlap: true
+        });
 
         return finalBounds;
     }
@@ -530,8 +555,8 @@ class Browser {
 
     /**
      * Setup resize observer for pane changes
-     * CRITICAL FIX: Observe pane-content, not browser-view-container
-     * When panes resize, pane-content changes size, triggering browser update
+     * Observes pane-content for size changes (pane splits, window resize, etc.)
+     * Recalculates BrowserView bounds using browser-view-container dimensions
      */
     setupResizeObserver() {
         // Watch the pane-content element (changes size when panes resize)
@@ -552,6 +577,7 @@ class Browser {
 
             logger.debug('browserNav', '📐 ResizeObserver triggered - pane-content size changed');
 
+            // Recalculate bounds based on browser-view-container (accounts for toolbar)
             const bounds = this.calculateBrowserBounds();
 
             // Update BrowserView immediately

@@ -825,6 +825,13 @@ ipcMain.handle('browser-create-view', async (event, tabId, bounds, profileId = n
 
     console.log('[Main] Using partition:', partition);
 
+    // CRITICAL: Set user agent to look like a normal Chrome browser
+    // Remove Electron identifier to prevent websites from detecting it's an Electron app
+    const userAgent = view.webContents.getUserAgent();
+    const normalUserAgent = userAgent.replace(/\s+Electron\/[\d.]+/g, '');
+    view.webContents.setUserAgent(normalUserAgent);
+    console.log('[Main] Set user agent (removed Electron identifier):', normalUserAgent);
+
     // Set bounds
     view.setBounds({
       x: bounds.x || 0,
@@ -833,10 +840,12 @@ ipcMain.handle('browser-create-view', async (event, tabId, bounds, profileId = n
       height: bounds.height || 600
     });
 
-    // Auto-resize with window
+    // CRITICAL: Disable auto-resize to prevent BrowserView from covering the toolbar
+    // We manually manage bounds via ResizeObserver in Browser.js
+    // Auto-resize was causing the BrowserView to expand over the HTML toolbar after page load
     view.setAutoResize({
-      width: true,
-      height: true,
+      width: false,
+      height: false,
       horizontal: false,
       vertical: false
     });

@@ -13,7 +13,7 @@ body {
 
 .container {
     display: flex;
-    height: calc(100vh - 32px);
+    height: calc(100vh - 54px); /* 32px menu bar + 22px status bar */
     width: 100vw;
 }
 
@@ -3444,11 +3444,6 @@ body {
 
 .tree-item-label {
     padding: 2px 4px;
-}
-
-.container {
-    display: flex;
-    height: 100%;
 }
 
 /* ========================================

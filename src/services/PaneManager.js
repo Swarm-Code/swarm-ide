@@ -2355,18 +2355,22 @@ class PaneManager {
 
             for (const tabData of data.tabs) {
                 // CRITICAL: Handle different content types during restoration
-                // Terminals: contentType='terminal' (no filePath) - ALREADY EXISTS, just hidden
-                // Files: contentType='file-viewer' (has filePath) - need to restore
+                // Terminals: contentType='terminal' (no filePath)
+                // Files: contentType='file-viewer' (has filePath)
                 // Browsers: contentType='browser' (has browserInstanceId)
 
                 if (tabData.contentType === 'terminal') {
-                    // DO NOT restore terminal tabs!
-                    // Terminals are already in the pane DOM - they were created when the user
-                    // originally opened them. When workspaces switch, terminals are hidden via
-                    // CSS (display: none) but remain in the DOM with active PTY connections.
-                    // When we show the workspace again, they become visible automatically.
-                    logger.debug('paneCreate', 'Skipping terminal tab restoration (already exists in DOM):', pane.id);
-                } else if (tabData.filePath) {
+                    // Restore terminal tab
+                    logger.debug('paneCreate', 'Restoring terminal tab in pane:', pane.id);
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            eventBus.emit('terminal:create-in-pane', {
+                                paneId: pane.id,
+                                terminalId: tabData.terminalId
+                            });
+                        });
+                    });
+                } else {
                     // CRITICAL FIX #10: Use RAF instead of setTimeout for proper layout completion
                     // Request the file to be opened in this pane after layout is complete
                     requestAnimationFrame(() => {
