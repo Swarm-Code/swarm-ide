@@ -256,6 +256,10 @@ class Application {
             uiManager.initialize();
             logger.info('appInit', '✓ UIManager initialized');
 
+            // Expose UIManager globally for keyboard shortcut handling
+            window.UIManager = uiManager;
+            logger.debug('appInit', '✓ UIManager exposed to window');
+
             // 3.5. Initialize Git services
             await this.initializeGitServices();
             logger.info('appInit', '✓ Git services initialized');

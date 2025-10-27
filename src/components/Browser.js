@@ -35,6 +35,7 @@ class Browser {
         this.isVisible = false; // CRITICAL FIX: Start as false, will be set to true when createTab completes
         this.overlayIsVisible = false; // Track if modal/settings is open
         this.lastKnownBounds = null; // CRITICAL FIX #6: Cache for bounds when tab is hidden
+        this.workspacePanelWidth = 0; // Track workspace panel width for resizing browser
 
         // CRITICAL: Generate unique instance ID and register in global registry
         this.instanceId = `browser-${++Browser.instanceCounter}-${Date.now()}`;
@@ -126,6 +127,21 @@ class Browser {
 
                     <!-- Action buttons -->
                     <div class="browser-action-buttons">
+                        <!-- Extensions button with dropdown -->
+                        <div class="browser-extensions-selector">
+                            <button class="browser-btn browser-extensions" title="Extensions">
+                                🧩
+                            </button>
+                            <div class="browser-extensions-dropdown" style="display: none;">
+                                <div class="browser-extensions-header">
+                                    <span>Browser Extensions</span>
+                                </div>
+                                <div class="browser-extensions-list">
+                                    <!-- Extensions will be populated here -->
+                                </div>
+                            </div>
+                        </div>
+
                         <button class="browser-btn browser-devtools" title="DevTools">
                             🔧
                         </button>
@@ -223,12 +239,28 @@ class Browser {
             this.openProfileManager();
         });
 
-        // Close dropdown when clicking outside
+        // Extensions button
+        const extensionsBtn = this.container.querySelector('.browser-extensions');
+        extensionsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleExtensionsDropdown();
+        });
+
+        // Close dropdowns when clicking outside
         document.addEventListener('click', (e) => {
-            const dropdown = this.container.querySelector('.browser-profile-dropdown');
-            if (dropdown && dropdown.style.display === 'block') {
+            // Close profile dropdown
+            const profileDropdown = this.container.querySelector('.browser-profile-dropdown');
+            if (profileDropdown && profileDropdown.style.display === 'block') {
                 if (!e.target.closest('.browser-profile-selector')) {
-                    dropdown.style.display = 'none';
+                    profileDropdown.style.display = 'none';
+                }
+            }
+
+            // Close extensions dropdown
+            const extensionsDropdown = this.container.querySelector('.browser-extensions-dropdown');
+            if (extensionsDropdown && extensionsDropdown.style.display === 'block') {
+                if (!e.target.closest('.browser-extensions-selector')) {
+                    extensionsDropdown.style.display = 'none';
                 }
             }
         });
@@ -236,6 +268,9 @@ class Browser {
         // Initialize profile display
         this.updateProfileDisplay();
         this.populateProfileDropdown();
+
+        // Initialize extensions display
+        this.populateExtensionsDropdown();
     }
 
     /**
@@ -403,10 +438,14 @@ class Browser {
             }
         }
 
+        // CRITICAL FIX: Subtract workspace panel width from available width
+        // Workspace panel slides in from right, so reduce width but keep same x position
+        let availableWidth = Math.round(rect.width) - this.workspacePanelWidth;
+
         const finalBounds = {
             x: Math.round(rect.left),
             y: Math.round(rect.top),
-            width: Math.round(rect.width),
+            width: Math.max(0, availableWidth), // Ensure non-negative width
             height: Math.max(0, availableHeight) // Ensure non-negative height
         };
 
@@ -415,6 +454,9 @@ class Browser {
 
         logger.debug('browserNav', '📦 Final BrowserView bounds (toolbar will be visible above):', {
             bounds: finalBounds,
+            workspacePanelWidth: this.workspacePanelWidth,
+            originalWidth: Math.round(rect.width),
+            adjustedWidth: availableWidth,
             toolbarEndsAt: Math.round(rect.top),
             browserViewStartsAt: Math.round(rect.top),
             toolbarHeight: toolbarHeight,
@@ -489,6 +531,44 @@ class Browser {
                 logger.debug('browserNav', 'Browser tab is not active, keeping BrowserView hidden');
             }
         });
+
+        // CRITICAL FIX: Listen for workspace-panel events (sidebar, not full-screen)
+        // Workspace panel is 350px sidebar, so resize browser instead of hiding
+        eventBus.on('workspace-panel:shown', (data) => {
+            logger.info('browserNav', `Workspace panel shown (${data.width}px), resizing BrowserView`);
+            this.workspacePanelWidth = data.width;
+            if (this.isVisible && !this.overlayIsVisible) {
+                this.updateBrowserBounds();
+            }
+        });
+
+        eventBus.on('workspace-panel:hidden', () => {
+            logger.info('browserNav', 'Workspace panel hidden, restoring BrowserView to full width');
+            this.workspacePanelWidth = 0;
+            if (this.isVisible && !this.overlayIsVisible) {
+                this.updateBrowserBounds();
+            }
+        });
+    }
+
+    /**
+     * Update BrowserView bounds (without changing visibility)
+     */
+    async updateBrowserBounds() {
+        if (!this.activeTabId) {
+            logger.debug('browserNav', 'Cannot update bounds - no active tab');
+            return;
+        }
+
+        const bounds = this.calculateBrowserBounds();
+        logger.debug('browserNav', 'Updating BrowserView bounds:', bounds);
+
+        try {
+            await window.electronAPI.browserUpdateBounds(this.activeTabId, bounds);
+            logger.debug('browserNav', 'BrowserView bounds updated successfully');
+        } catch (error) {
+            logger.error('browserNav', 'Error updating browser bounds:', error);
+        }
     }
 
     /**
@@ -863,6 +943,173 @@ class Browser {
             type: 'info',
             message: 'Profile manager coming soon!'
         });
+    }
+
+    /**
+     * Toggle extensions dropdown visibility
+     */
+    toggleExtensionsDropdown() {
+        const dropdown = this.container.querySelector('.browser-extensions-dropdown');
+        if (dropdown) {
+            const isVisible = dropdown.style.display === 'block';
+            dropdown.style.display = isVisible ? 'none' : 'block';
+
+            if (!isVisible) {
+                // Refresh extensions list when opening
+                this.populateExtensionsDropdown();
+            }
+        }
+    }
+
+    /**
+     * Populate extensions dropdown with available extensions
+     */
+    async populateExtensionsDropdown() {
+        const extensionsList = this.container.querySelector('.browser-extensions-list');
+        if (!extensionsList) return;
+
+        try {
+            // Get extensions from main process
+            const extensions = await window.electronAPI.browserGetExtensions();
+
+            // Clear existing list
+            extensionsList.innerHTML = '';
+
+            if (extensions.length === 0) {
+                extensionsList.innerHTML = '<div class="browser-extensions-empty">No extensions available</div>';
+                return;
+            }
+
+            // Add extension items
+            extensions.forEach(ext => {
+                // Get current state from localStorage
+                const isEnabled = this.getExtensionState(ext.id);
+
+                const extItem = document.createElement('div');
+                extItem.className = 'browser-extension-item';
+
+                extItem.innerHTML = `
+                    <div class="browser-extension-item-info">
+                        <div class="browser-extension-item-name">${ext.name}</div>
+                        <div class="browser-extension-item-id">${ext.id}</div>
+                    </div>
+                    <label class="browser-extension-toggle">
+                        <input type="checkbox" ${isEnabled ? 'checked' : ''} data-extension-id="${ext.id}">
+                        <span class="browser-extension-toggle-slider"></span>
+                    </label>
+                `;
+
+                // Add click listener to open/activate extension
+                const extInfo = extItem.querySelector('.browser-extension-item-info');
+                extInfo.style.cursor = 'pointer';
+                extInfo.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    logger.debug('browserNav', `Opening extension: ${ext.name} (${ext.id})`);
+                    await this.openExtension(ext.id, ext.name);
+                });
+
+                // Add toggle event listener (stop propagation to prevent opening extension)
+                const checkbox = extItem.querySelector('input[type="checkbox"]');
+                checkbox.addEventListener('change', async (e) => {
+                    e.stopPropagation();
+                    await this.toggleExtension(ext.id, checkbox.checked);
+                });
+
+                extensionsList.appendChild(extItem);
+            });
+        } catch (error) {
+            logger.error('browserNav', 'Error populating extensions:', error);
+            extensionsList.innerHTML = '<div class="browser-extensions-error">Error loading extensions</div>';
+        }
+    }
+
+    /**
+     * Toggle extension enabled/disabled state
+     */
+    async toggleExtension(extensionId, enabled) {
+        logger.debug('browserNav', `Toggling extension ${extensionId}: ${enabled}`);
+
+        try {
+            // Update state in localStorage
+            this.setExtensionState(extensionId, enabled);
+
+            // Notify main process to enable/disable extension
+            const result = await window.electronAPI.browserToggleExtension(extensionId, enabled);
+
+            if (result.success) {
+                eventBus.emit('notification:show', {
+                    type: 'success',
+                    message: `Extension ${enabled ? 'enabled' : 'disabled'}. Please reload browser tabs for changes to take effect.`
+                });
+            } else {
+                logger.error('browserNav', 'Failed to toggle extension:', result.error);
+                eventBus.emit('notification:show', {
+                    type: 'error',
+                    message: `Failed to toggle extension: ${result.error}`
+                });
+            }
+        } catch (error) {
+            logger.error('browserNav', 'Error toggling extension:', error);
+            eventBus.emit('notification:show', {
+                type: 'error',
+                message: 'Error toggling extension'
+            });
+        }
+    }
+
+    /**
+     * Open/activate extension
+     */
+    async openExtension(extensionId, extensionName) {
+        try {
+            // Close the dropdown when opening extension
+            const dropdown = this.container.querySelector('.browser-extensions-dropdown');
+            if (dropdown) {
+                dropdown.style.display = 'none';
+            }
+
+            // Navigate to the extension's page
+            // Chrome extensions can be accessed via chrome-extension://[id]/[page].html
+            const extensionUrl = `chrome-extension://${extensionId}/index.html`;
+
+            logger.debug('browserNav', `Navigating to extension: ${extensionUrl}`);
+
+            // Navigate the current browser tab to the extension
+            const tabId = this.tabId;
+            if (tabId) {
+                await window.electronAPI.browserNavigate(tabId, extensionUrl);
+                logger.info('browserNav', `Opened extension: ${extensionName}`);
+
+                eventBus.emit('notification:show', {
+                    type: 'info',
+                    message: `Opened ${extensionName}`
+                });
+            }
+        } catch (error) {
+            logger.error('browserNav', `Error opening extension: ${error.message}`);
+            eventBus.emit('notification:show', {
+                type: 'error',
+                message: `Failed to open extension: ${error.message}`
+            });
+        }
+    }
+
+    /**
+     * Get extension enabled/disabled state from localStorage
+     */
+    getExtensionState(extensionId) {
+        const key = `browser-extension-${extensionId}`;
+        const state = localStorage.getItem(key);
+        // Default to enabled (true) if not set
+        return state === null ? true : state === 'true';
+    }
+
+    /**
+     * Set extension enabled/disabled state in localStorage
+     */
+    setExtensionState(extensionId, enabled) {
+        const key = `browser-extension-${extensionId}`;
+        localStorage.setItem(key, enabled.toString());
     }
 
     /**
