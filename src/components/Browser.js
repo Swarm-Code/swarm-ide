@@ -1085,9 +1085,10 @@ class Browser {
             let extensionUrl;
 
             if (extensionId === 'fcoeoabgfenejglbffodgkkbkcdhcgfn') {
-                // Try Claude extension specific pages
-                extensionUrl = `chrome-extension://${extensionId}/side-panel.html`;
-                logger.debug('browserNav', `Attempting Claude extension side panel: ${extensionUrl}`);
+                // Claude extension has sidepanel.html and options.html
+                // Try sidepanel first (main interface), then options
+                extensionUrl = `chrome-extension://${extensionId}/sidepanel.html`;
+                logger.debug('browserNav', `Attempting Claude extension sidepanel: ${extensionUrl}`);
             } else {
                 // Generic approach for other extensions - try popup first, then options
                 extensionUrl = `chrome-extension://${extensionId}/popup.html`;
@@ -1106,8 +1107,13 @@ class Browser {
             } catch (navError) {
                 logger.warn('browserNav', `Navigation to ${extensionUrl} failed, trying alternative pages`);
 
-                // Try alternative pages
-                const alternativePages = ['index.html', 'options.html', 'popup.html'];
+                // Try alternative pages based on extension type
+                let alternativePages;
+                if (extensionId === 'fcoeoabgfenejglbffodgkkbkcdhcgfn') {
+                    alternativePages = ['options.html', 'offscreen.html'];
+                } else {
+                    alternativePages = ['options.html', 'index.html', 'popup.html'];
+                }
                 let success = false;
 
                 for (const page of alternativePages) {
