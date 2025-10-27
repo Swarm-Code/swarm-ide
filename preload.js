@@ -438,6 +438,28 @@ const electronAPI = {
     },
 
     // ========================================
+    // Browser Extensions API
+    // ========================================
+
+    /**
+     * Get list of available browser extensions
+     * @returns {Promise<Array>} List of extensions
+     */
+    browserGetExtensions: () => {
+        return ipcRenderer.invoke('browser-get-extensions');
+    },
+
+    /**
+     * Toggle browser extension enabled/disabled state
+     * @param {string} extensionId - Extension identifier
+     * @param {boolean} enabled - Enable (true) or disable (false)
+     * @returns {Promise<Object>} Result
+     */
+    browserToggleExtension: (extensionId, enabled) => {
+        return ipcRenderer.invoke('browser-toggle-extension', extensionId, enabled);
+    },
+
+    // ========================================
     // File Watcher API
     // ========================================
 
@@ -810,6 +832,23 @@ const electronAPI = {
      */
     invoke: (channel, ...args) => {
         return ipcRenderer.invoke(channel, ...args);
+    },
+
+    /**
+     * Listen for extension events
+     * @param {Function} callback - Callback function
+     */
+    onExtensionEvent: (callback) => {
+        ipcRenderer.on('extension:open-claude', (event, data) => {
+            callback(data);
+        });
+    },
+
+    /**
+     * Remove extension event listener
+     */
+    removeExtensionListener: () => {
+        ipcRenderer.removeAllListeners('extension:open-claude');
     }
 };
 

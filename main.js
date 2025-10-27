@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain, dialog, Menu, session } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, dialog, Menu, session, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const sqlite3 = require('sqlite3').verbose();
@@ -1121,6 +1121,60 @@ ipcMain.handle('browser-import-cookies', async (event, profileId, cookies) => {
 });
 
 // ========================================
+// Browser Extensions IPC Handlers
+// ========================================
+
+/**
+ * Get list of available browser extensions
+ */
+ipcMain.handle('browser-get-extensions', async (event) => {
+  try {
+    // Return the list of extensions from BROWSER_EXTENSIONS
+    const extensions = BROWSER_EXTENSIONS.map(ext => ({
+      name: ext.name,
+      id: ext.id,
+      enabled: ext.enabled
+    }));
+
+    console.log('[Main] Returning extensions list:', extensions);
+    return extensions;
+  } catch (error) {
+    console.error('[Main] Error getting extensions:', error);
+    return [];
+  }
+});
+
+/**
+ * Toggle extension enabled/disabled state
+ * Note: Extensions are loaded at startup, so changes require app restart
+ */
+ipcMain.handle('browser-toggle-extension', async (event, extensionId, enabled) => {
+  try {
+    console.log(`[Main] Toggling extension ${extensionId}: ${enabled}`);
+
+    // Find and update the extension in BROWSER_EXTENSIONS
+    const ext = BROWSER_EXTENSIONS.find(e => e.id === extensionId);
+    if (!ext) {
+      return { success: false, error: 'Extension not found' };
+    }
+
+    ext.enabled = enabled;
+
+    console.log(`[Main] Extension ${ext.name} ${enabled ? 'enabled' : 'disabled'}`);
+    console.log('[Main] Note: Changes will take effect after app restart or browser tab reload');
+
+    return {
+      success: true,
+      requiresRestart: true,
+      message: 'Extension state updated. Please restart the app or reload browser tabs for changes to take effect.'
+    };
+  } catch (error) {
+    console.error('[Main] Error toggling extension:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// ========================================
 // Git IPC Handlers
 // ========================================
 
@@ -2013,16 +2067,29 @@ ipcMain.handle('ssh-terminal-close', async (event, sshTermId) => {
 });
 
 
+// Track loaded extensions per session
+const loadedExtensions = new Map(); // session -> Set of extension IDs
+
 /**
- * Load browser extensions
+ * Load browser extensions into a specific session
  */
-async function loadBrowserExtensions() {
+async function loadBrowserExtensionsForSession(sessionInstance, sessionName = 'default') {
   const homeDir = os.homedir();
   const extensionBasePath = path.join(homeDir, '.config', 'chromium', 'Default', 'Extensions');
 
+  if (!loadedExtensions.has(sessionName)) {
+    loadedExtensions.set(sessionName, new Set());
+  }
+
   for (const ext of BROWSER_EXTENSIONS) {
     if (!ext.enabled) {
-      console.log(`[MAIN] Skipping disabled extension: ${ext.name}`);
+      console.log(`[MAIN] Skipping disabled extension: ${ext.name} for session ${sessionName}`);
+      continue;
+    }
+
+    // Skip if already loaded for this session
+    if (loadedExtensions.get(sessionName).has(ext.id)) {
+      console.log(`[MAIN] Extension already loaded: ${ext.name} for session ${sessionName}`);
       continue;
     }
 
@@ -2046,16 +2113,29 @@ async function loadBrowserExtensions() {
       // Use the first (and usually only) version
       const versionPath = path.join(extPath, versions[0]);
 
-      // Load the extension
-      await session.defaultSession.loadExtension(versionPath, {
+      // Load the extension into the specific session
+      await sessionInstance.loadExtension(versionPath, {
         allowFileAccess: true
       });
 
-      console.log(`[MAIN] ✅ Loaded browser extension: ${ext.name} (${ext.id})`);
+      loadedExtensions.get(sessionName).add(ext.id);
+      console.log(`[MAIN] ✅ Loaded browser extension: ${ext.name} (${ext.id}) into session ${sessionName}`);
     } catch (error) {
-      console.error(`[MAIN] Failed to load extension ${ext.name}:`, error.message);
+      console.error(`[MAIN] Failed to load extension ${ext.name} into session ${sessionName}:`, error.message);
     }
   }
+}
+
+/**
+ * Load browser extensions into all common sessions
+ */
+async function loadBrowserExtensions() {
+  // Load into default session
+  await loadBrowserExtensionsForSession(session.defaultSession, 'default');
+
+  // Load into default profile session (used by BrowserViews)
+  const profileSession = session.fromPartition('persist:profile-default');
+  await loadBrowserExtensionsForSession(profileSession, 'profile-default');
 }
 
 app.whenReady().then(async () => {
@@ -2067,6 +2147,14 @@ app.whenReady().then(async () => {
   await loadBrowserExtensions();
 
   createWindow();
+
+  // Register global keyboard shortcuts
+  globalShortcut.register('ctrl+e', () => {
+    const mainWindow = BrowserWindow.getFocusedWindow();
+    if (mainWindow) {
+      mainWindow.webContents.send('extension:open-claude');
+    }
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

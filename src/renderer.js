@@ -670,6 +670,19 @@ class Application {
                 await this.openFileInPane(data.paneId, data.filePath);
             });
 
+            // Handle Ctrl+E - Open Claude extension
+            logger.debug('appInit', 'Setting up extension:open-claude handler...');
+            if (window.electronAPI && window.electronAPI.onExtensionEvent) {
+                window.electronAPI.onExtensionEvent(() => {
+                    logger.debug('appInit', 'Ctrl+E pressed - Opening Claude extension');
+                    const browser = uiManager.getComponent('browser');
+                    if (browser && browser.toggleExtensionsDropdown) {
+                        browser.toggleExtensionsDropdown();
+                    }
+                });
+                logger.debug('appInit', '✓ extension:open-claude handler set');
+            }
+
             // CRITICAL FIX: Handle terminal restoration when workspace layout is loaded
             // Don't create new terminals - reuse existing ones from the registry
             // This preserves the PTY connection and terminal state across workspace switches
