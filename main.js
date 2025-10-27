@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain, dialog, Menu, session, globalShortcut } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, dialog, Menu, session } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const sqlite3 = require('sqlite3').verbose();
@@ -892,6 +892,20 @@ ipcMain.handle('browser-create-view', async (event, tabId, bounds, profileId = n
 
     view.webContents.on('did-stop-loading', () => {
       mainWindow.webContents.send('browser-loading', { tabId, loading: false });
+    });
+
+    // Intercept keyboard input to handle Ctrl+E
+    view.webContents.on('before-input-event', (event, input) => {
+      // Ctrl+E / Cmd+E - Open Claude extension
+      const isMac = process.platform === 'darwin';
+      const ctrlOrCmd = isMac ? input.meta : input.control;
+
+      if (ctrlOrCmd && input.key.toLowerCase() === 'e' && !input.shift && !input.alt) {
+        console.log('[Main] Ctrl+E pressed in BrowserView - opening Claude extension');
+        event.preventDefault();
+        mainWindow.webContents.send('extension:open-claude');
+        return;
+      }
     });
 
     console.log('[Main] BrowserView created successfully');
@@ -2148,14 +2162,6 @@ app.whenReady().then(async () => {
 
   createWindow();
 
-  // Register global keyboard shortcuts
-  globalShortcut.register('ctrl+e', () => {
-    const mainWindow = BrowserWindow.getFocusedWindow();
-    if (mainWindow) {
-      mainWindow.webContents.send('extension:open-claude');
-    }
-  });
-
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -2170,9 +2176,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('quit', async () => {
-  // Unregister global shortcuts
-  globalShortcut.unregisterAll();
-
   await languageServerManager.shutdownAll();
   await sshConnectionManager.shutdown();
 });
