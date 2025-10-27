@@ -1259,9 +1259,9 @@ ipcMain.handle('browser-toggle-extension', async (event, extensionId, enabled) =
 const extensionWindows = new Map();
 
 /**
- * Open extension in a modal window positioned inside the IDE
- * Extensions don't work properly in BrowserView, so we need a separate BrowserWindow
- * but we position it to appear as a modal inside the main window
+ * Open extension as a side panel next to the browser
+ * Extensions don't work properly in BrowserView, so we position a separate window
+ * as a sidebar to the right of the browser
  */
 ipcMain.handle('open-extension-window', async (event, { extensionId, extensionName }) => {
   try {
@@ -1275,22 +1275,26 @@ ipcMain.handle('open-extension-window', async (event, { extensionId, extensionNa
       }
     }
 
-    // Get main window bounds to position extension window inside it
+    // Get main window bounds to position extension window as a side panel
     const mainBounds = mainWindow.getBounds();
-    const centerX = mainBounds.x + (mainBounds.width - 600) / 2;
-    const centerY = mainBounds.y + (mainBounds.height - 800) / 2;
 
-    // Create a popup window for the extension
-    // Note: BrowserWindow instances appear as separate windows at OS level,
-    // even with parent/modal relationship. This is the industry standard approach.
+    // Position to the right side of main window
+    // Width: 400px for sidebar, Height: match main window height
+    const sidebarWidth = 400;
+    const sidebarX = mainBounds.x + mainBounds.width - sidebarWidth;
+    const sidebarY = mainBounds.y;
+    const sidebarHeight = mainBounds.height;
+
+    // Create a side panel window for the extension
     const popupWindow = new BrowserWindow({
-      width: 600,
-      height: 800,
-      x: Math.max(0, centerX),
-      y: Math.max(0, centerY),
+      width: sidebarWidth,
+      height: sidebarHeight,
+      x: sidebarX,
+      y: sidebarY,
       parent: mainWindow,
-      modal: true,
+      modal: false,
       show: false,
+      frame: true,
       resizable: true,
       minimizable: false,
       maximizable: false,
@@ -1302,11 +1306,8 @@ ipcMain.handle('open-extension-window', async (event, { extensionId, extensionNa
       }
     });
 
-    // Set window icon title
+    // Set window title
     popupWindow.setTitle(`${extensionName}`);
-
-    // Center it more reliably
-    popupWindow.center();
 
     // Store reference to prevent garbage collection
     extensionWindows.set(extensionId, popupWindow);

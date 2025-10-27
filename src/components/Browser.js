@@ -1058,7 +1058,7 @@ class Browser {
     }
 
     /**
-     * Open/activate extension by navigating browser to extension URL
+     * Open/activate extension as a side panel
      */
     async openExtension(extensionId, extensionName) {
         try {
@@ -1070,46 +1070,23 @@ class Browser {
 
             logger.debug('browserNav', `Opening extension: ${extensionName} (${extensionId})`);
 
-            const tabId = this.tabId;
-            if (!tabId) {
-                logger.error('browserNav', 'No active tab ID');
+            // Request main process to open extension as a side panel
+            const result = await window.electronAPI.invoke('open-extension-window', {
+                extensionId: extensionId,
+                extensionName: extensionName
+            });
+
+            if (result && result.success) {
+                logger.info('browserNav', `Opened extension side panel: ${extensionName}`);
                 eventBus.emit('notification:show', {
-                    type: 'error',
-                    message: 'No active browser tab'
+                    type: 'info',
+                    message: `Opened ${extensionName}`
                 });
-                return;
-            }
-
-            // Navigate to the extension in the browser
-            // Try sidepanel.html first (main interface), then fallback to other pages
-            const pagesToTry = ['sidepanel.html', 'popup.html', 'options.html', 'index.html'];
-            let navigated = false;
-
-            for (const page of pagesToTry) {
-                try {
-                    const extensionUrl = `chrome-extension://${extensionId}/${page}`;
-                    logger.info('browserNav', `Navigating to extension: ${extensionUrl}`);
-
-                    await window.electronAPI.browserNavigate(tabId, extensionUrl);
-                    navigated = true;
-                    logger.info('browserNav', `Successfully navigated to ${extensionName}`);
-
-                    eventBus.emit('notification:show', {
-                        type: 'info',
-                        message: `Opened ${extensionName}`
-                    });
-                    break;
-                } catch (err) {
-                    logger.debug('browserNav', `Failed to navigate to ${page}: ${err.message}`);
-                    continue;
-                }
-            }
-
-            if (!navigated) {
-                logger.error('browserNav', `Could not navigate to any extension page`);
+            } else {
+                logger.error('browserNav', `Failed to open extension: ${result?.error}`);
                 eventBus.emit('notification:show', {
                     type: 'error',
-                    message: `Failed to open ${extensionName}`
+                    message: `Failed to open ${extensionName}: ${result?.error || 'Unknown error'}`
                 });
             }
         } catch (error) {
