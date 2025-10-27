@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, dialog, Menu, session } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const sqlite3 = require('sqlite3').verbose();
@@ -7,6 +7,19 @@ const languageServerManager = require('./src/services/LanguageServerManager');
 const crashLogger = require('./src/services/CrashLogger');
 const FileWatcherService = require('./src/services/FileWatcherService');
 const pty = require('node-pty');
+const os = require('os');
+
+// ========================================
+// BROWSER EXTENSIONS CONFIGURATION
+// ========================================
+const BROWSER_EXTENSIONS = [
+  {
+    name: 'Claude',
+    id: 'fcoeoabgfenejglbffodgkkbkcdhcgfn',
+    enabled: true
+  }
+  // Add more extensions here as needed
+];
 
 // ========================================
 // MEMORY OPTIMIZATION: Disable GPU acceleration
@@ -2000,10 +2013,58 @@ ipcMain.handle('ssh-terminal-close', async (event, sshTermId) => {
 });
 
 
+/**
+ * Load browser extensions
+ */
+async function loadBrowserExtensions() {
+  const homeDir = os.homedir();
+  const extensionBasePath = path.join(homeDir, '.config', 'chromium', 'Default', 'Extensions');
+
+  for (const ext of BROWSER_EXTENSIONS) {
+    if (!ext.enabled) {
+      console.log(`[MAIN] Skipping disabled extension: ${ext.name}`);
+      continue;
+    }
+
+    try {
+      const extPath = path.join(extensionBasePath, ext.id);
+
+      // Check if extension directory exists
+      const extDirExists = await fs.access(extPath).then(() => true).catch(() => false);
+      if (!extDirExists) {
+        console.warn(`[MAIN] Extension not found: ${ext.name} at ${extPath}`);
+        continue;
+      }
+
+      // Find the version directory (usually only one)
+      const versions = await fs.readdir(extPath);
+      if (versions.length === 0) {
+        console.warn(`[MAIN] No version found for extension: ${ext.name}`);
+        continue;
+      }
+
+      // Use the first (and usually only) version
+      const versionPath = path.join(extPath, versions[0]);
+
+      // Load the extension
+      await session.defaultSession.loadExtension(versionPath, {
+        allowFileAccess: true
+      });
+
+      console.log(`[MAIN] ✅ Loaded browser extension: ${ext.name} (${ext.id})`);
+    } catch (error) {
+      console.error(`[MAIN] Failed to load extension ${ext.name}:`, error.message);
+    }
+  }
+}
+
 app.whenReady().then(async () => {
   // Initialize crash logger
   await crashLogger.init();
   console.log('[MAIN] Crash logger initialized');
+
+  // Load browser extensions
+  await loadBrowserExtensions();
 
   createWindow();
 
