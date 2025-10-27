@@ -1286,6 +1286,7 @@ ipcMain.handle('open-extension-window', async (event, { extensionId, extensionNa
     const sidebarHeight = mainBounds.height;
 
     // Create a side panel window for the extension
+    // Note: This is technically a separate window, but we style it to look integrated as a sidebar
     const popupWindow = new BrowserWindow({
       width: sidebarWidth,
       height: sidebarHeight,
@@ -1294,10 +1295,13 @@ ipcMain.handle('open-extension-window', async (event, { extensionId, extensionNa
       parent: mainWindow,
       modal: false,
       show: false,
-      frame: true,
-      resizable: true,
+      frame: false,                    // Frameless for seamless look
+      transparent: false,
+      resizable: false,                // Fixed width for sidebar
       minimizable: false,
       maximizable: false,
+      skipTaskbar: true,               // Don't show in taskbar
+      alwaysOnTop: true,               // Keep on top of main window
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -1306,15 +1310,35 @@ ipcMain.handle('open-extension-window', async (event, { extensionId, extensionNa
       }
     });
 
-    // Set window title
-    popupWindow.setTitle(`${extensionName}`);
-
     // Store reference to prevent garbage collection
     extensionWindows.set(extensionId, popupWindow);
+
+    // Sync sidebar position when main window moves (Windows/Linux behavior)
+    const updateSidebarPosition = () => {
+      if (!popupWindow.isDestroyed()) {
+        const mainBounds = mainWindow.getBounds();
+        const newX = mainBounds.x + mainBounds.width - sidebarWidth;
+        const newY = mainBounds.y;
+        popupWindow.setPosition(newX, newY);
+      }
+    };
+
+    mainWindow.on('move', updateSidebarPosition);
+    mainWindow.on('resize', () => {
+      // Adjust height and position on main window resize
+      if (!popupWindow.isDestroyed()) {
+        const mainBounds = mainWindow.getBounds();
+        const newX = mainBounds.x + mainBounds.width - sidebarWidth;
+        const newY = mainBounds.y;
+        popupWindow.setPosition(newX, newY);
+        popupWindow.setSize(sidebarWidth, mainBounds.height);
+      }
+    });
 
     // Clean up on close
     popupWindow.once('closed', () => {
       console.log(`[Main] Extension window closed: ${extensionName}`);
+      mainWindow.removeListener('move', updateSidebarPosition);
       extensionWindows.delete(extensionId);
     });
 
