@@ -2170,6 +2170,9 @@ app.on('window-all-closed', () => {
 });
 
 app.on('quit', async () => {
+  // Unregister global shortcuts
+  globalShortcut.unregisterAll();
+
   await languageServerManager.shutdownAll();
   await sshConnectionManager.shutdown();
 });
