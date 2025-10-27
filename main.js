@@ -900,10 +900,6 @@ ipcMain.handle('browser-create-view', async (event, tabId, bounds, profileId = n
       const isMac = process.platform === 'darwin';
       const ctrlOrCmd = isMac ? input.meta : input.control;
 
-      // Debug: Log all keyboard input
-      if (input.key && input.key.toLowerCase() === 'e') {
-        console.log('[Main] Key E pressed - control:', input.control, 'meta:', input.meta, 'shift:', input.shift, 'alt:', input.alt);
-      }
 
       if (ctrlOrCmd && input.key && input.key.toLowerCase() === 'e' && !input.shift && !input.alt) {
         console.log('[Main] ✓✓✓ Ctrl+E DETECTED in BrowserView - opening Claude extension');
@@ -915,7 +911,39 @@ ipcMain.handle('browser-create-view', async (event, tabId, bounds, profileId = n
           mainWindow.webContents.executeJavaScript(`
             (function() {
               console.log('[Renderer] Ctrl+E received - toggling extensions');
-              const browser = window.UIManager?.getComponent?.('browser');
+
+              // Try to get browser through UIManager first
+              let browser = window.UIManager?.getComponent?.('browser');
+
+              // If not found in UIManager, try to find it through the pane system
+              if (!browser) {
+                console.log('[Renderer] Browser not in UIManager, searching through panes...');
+                const paneManager = window.UIManager?.getComponent?.('paneManager');
+                if (paneManager) {
+                  const activePane = paneManager.getActivePane?.();
+                  if (activePane && activePane.tabs && activePane.tabs.length > 0) {
+                    const activeTab = activePane.tabs.find(t => t.isActive);
+                    if (activeTab && activeTab.contentElement) {
+                      browser = activeTab.contentElement._browserInstance;
+                      console.log('[Renderer] Found browser instance in active tab');
+                    }
+                  }
+                }
+              }
+
+              // Last resort: search DOM for browser container with _browserInstance
+              if (!browser) {
+                console.log('[Renderer] Searching DOM for browser instance...');
+                const browserContainers = document.querySelectorAll('[class*="browser"][class*="container"]');
+                for (const container of browserContainers) {
+                  if (container._browserInstance) {
+                    browser = container._browserInstance;
+                    console.log('[Renderer] Found browser instance in DOM');
+                    break;
+                  }
+                }
+              }
+
               if (browser && typeof browser.toggleExtensionsDropdown === 'function') {
                 console.log('[Renderer] ✓ Calling toggleExtensionsDropdown');
                 browser.toggleExtensionsDropdown();
