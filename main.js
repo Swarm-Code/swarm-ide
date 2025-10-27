@@ -1254,17 +1254,18 @@ ipcMain.handle('browser-toggle-extension', async (event, extensionId, enabled) =
 });
 
 /**
- * Track extension sidebar view
+ * Track extension sidebar view and popup window
  */
 let extensionView = null;
+let extensionPopupWindow = null;
 
 /**
- * Open extension as an integrated sidebar in the main window
- * Uses BrowserView positioned over the sidebar HTML element
+ * Load extension sidebar UI in the main window
+ * The sidebar shows controls/UI, not the actual extension (which must open in a popup)
  */
 ipcMain.handle('open-extension-window', async (event, { extensionId, extensionName }) => {
   try {
-    console.log(`[Main] Opening extension sidebar: ${extensionName} (${extensionId})`);
+    console.log(`[Main] Opening extension sidebar: ${extensionName}`);
 
     // Close existing extension view if already open
     if (extensionView) {
@@ -1277,13 +1278,12 @@ ipcMain.handle('open-extension-window', async (event, { extensionId, extensionNa
       }
     }
 
-    // Create BrowserView for extension sidebar
-    // This embeds the extension directly in the main window, not as a separate window
+    // Create BrowserView for sidebar UI (not the extension itself)
     extensionView = new BrowserView({
       webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        sandbox: true
+        nodeIntegration: true,
+        contextIsolation: false,
+        preload: path.join(__dirname, 'preload.js')
       }
     });
 
@@ -1291,8 +1291,6 @@ ipcMain.handle('open-extension-window', async (event, { extensionId, extensionNa
     mainWindow.addBrowserView(extensionView);
 
     // Set bounds to match the right sidebar area
-    // Sidebar is 400px wide, positioned at right side of window
-    // Top starts after menu bar (54px)
     const windowBounds = mainWindow.getContentBounds();
     const sidebarWidth = 400;
     const sidebarX = windowBounds.width - sidebarWidth;
@@ -1306,35 +1304,23 @@ ipcMain.handle('open-extension-window', async (event, { extensionId, extensionNa
       height: sidebarHeight
     });
 
-    console.log(`[Main] Extension view bounds: x=${sidebarX}, y=${sidebarY}, w=${sidebarWidth}, h=${sidebarHeight}`);
+    console.log(`[Main] Extension sidebar view bounds: x=${sidebarX}, y=${sidebarY}, w=${sidebarWidth}, h=${sidebarHeight}`);
 
-    // Try different extension pages
-    let loaded = false;
-    const pagesToTry = ['sidepanel.html', 'popup.html', 'options.html', 'index.html'];
+    // Load the sidebar HTML file (not the extension itself)
+    const sidebarPath = path.join(__dirname, 'src/extension-sidebar.html');
+    console.log(`[Main] Loading sidebar from: ${sidebarPath}`);
 
-    for (const page of pagesToTry) {
-      try {
-        const extensionUrl = `chrome-extension://${extensionId}/${page}`;
-        console.log(`[Main] Attempting to load in sidebar: ${extensionUrl}`);
-
-        await extensionView.webContents.loadURL(extensionUrl);
-        loaded = true;
-        console.log(`[Main] Successfully loaded extension page in sidebar: ${page}`);
-        break;
-      } catch (err) {
-        console.log(`[Main] Failed to load ${page} in sidebar: ${err.message}`);
-        continue;
-      }
-    }
-
-    if (!loaded) {
-      console.error(`[Main] Could not load any extension pages for ${extensionName}`);
+    try {
+      await extensionView.webContents.loadFile(sidebarPath);
+      console.log(`[Main] Successfully loaded extension sidebar UI`);
+    } catch (err) {
+      console.error(`[Main] Failed to load sidebar HTML: ${err.message}`);
       mainWindow.removeBrowserView(extensionView);
       extensionView.webContents.destroy();
       extensionView = null;
       return {
         success: false,
-        error: `Could not load any pages for ${extensionName}`
+        error: `Failed to load sidebar UI: ${err.message}`
       };
     }
 
@@ -1343,10 +1329,80 @@ ipcMain.handle('open-extension-window', async (event, { extensionId, extensionNa
 
     return {
       success: true,
-      message: `Opened ${extensionName} in sidebar`
+      message: `Opened ${extensionName} sidebar`
     };
   } catch (error) {
     console.error('[Main] Error opening extension sidebar:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Open extension in a popup window (separate window, unavoidable for extensions)
+ * Called from the sidebar "Open Extension" button
+ */
+ipcMain.handle('open-extension-popup', async (event, { extensionId, extensionName }) => {
+  try {
+    console.log(`[Main] Opening extension popup: ${extensionName}`);
+
+    // Close existing popup if open
+    if (extensionPopupWindow && !extensionPopupWindow.isDestroyed()) {
+      extensionPopupWindow.close();
+    }
+
+    // Create popup window for the extension
+    extensionPopupWindow = new BrowserWindow({
+      width: 600,
+      height: 800,
+      parent: mainWindow,
+      modal: false,
+      show: false,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true
+      }
+    });
+
+    extensionPopupWindow.setTitle(extensionName);
+
+    // Try different extension pages
+    let loaded = false;
+    const pagesToTry = ['sidepanel.html', 'popup.html', 'options.html', 'index.html'];
+
+    for (const page of pagesToTry) {
+      try {
+        const extensionUrl = `chrome-extension://${extensionId}/${page}`;
+        console.log(`[Main] Attempting to load popup: ${extensionUrl}`);
+
+        await extensionPopupWindow.loadURL(extensionUrl);
+        loaded = true;
+        console.log(`[Main] Successfully loaded ${page} in popup`);
+        extensionPopupWindow.show();
+        break;
+      } catch (err) {
+        console.log(`[Main] Failed to load ${page}: ${err.message}`);
+        continue;
+      }
+    }
+
+    if (!loaded) {
+      console.error(`[Main] Could not load any extension pages`);
+      extensionPopupWindow.close();
+      extensionPopupWindow = null;
+      return {
+        success: false,
+        error: `Could not load any pages for ${extensionName}`
+      };
+    }
+
+    extensionPopupWindow.on('closed', () => {
+      extensionPopupWindow = null;
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error opening extension popup:', error);
     return { success: false, error: error.message };
   }
 });
@@ -1363,9 +1419,7 @@ ipcMain.handle('close-extension-window', async (event) => {
       extensionView.webContents.destroy();
       extensionView = null;
 
-      // Notify renderer to hide the sidebar
       mainWindow.webContents.send('extension-sidebar-closed');
-
       return { success: true };
     }
 

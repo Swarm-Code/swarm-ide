@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #252526;
+            color: #cccccc;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .sidebar-content {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            padding: 0;
+        }
+
+        .extension-header {
+            padding: 12px 16px;
+            background-color: #2d2d30;
+            border-bottom: 1px solid #3e3e42;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .extension-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .extension-icon {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 16px;
+            background-color: #0e639c;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+        }
+
+        .extension-name {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .extension-description {
+            font-size: 12px;
+            color: #858585;
+            margin-bottom: 20px;
+        }
+
+        .extension-button {
+            padding: 8px 16px;
+            background-color: #0e639c;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: background-color 0.15s ease;
+        }
+
+        .extension-button:hover {
+            background-color: #1177bb;
+        }
+
+        .extension-button:active {
+            background-color: #0e639c;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar-content">
+        <div class="extension-header">Claude</div>
+        <div class="extension-body">
+            <div class="extension-icon">🧠</div>
+            <div class="extension-name">Claude</div>
+            <div class="extension-description">Chat with Claude directly in your browser</div>
+            <button class="extension-button" id="open-extension">Open Extension</button>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+
+        // Handle open button
+        document.getElementById('open-extension').addEventListener('click', async () => {
+            console.log('[Sidebar] Opening extension...');
+            const result = await ipcRenderer.invoke('open-extension-popup', {
+                extensionId: 'fcoeoabgfenejglbffodgkkbkcdhcgfn',
+                extensionName: 'Claude'
+            });
+
+            if (result && result.success) {
+                console.log('[Sidebar] Extension opened');
+            } else {
+                console.error('[Sidebar] Failed to open extension:', result?.error);
+            }
+        });
+    </script>
+</body>
+</html>
