@@ -1306,7 +1306,17 @@ ipcMain.handle('ssh-get-connection', async (event, connectionId) => {
     if (!connection) {
       return { success: false, error: 'Connection not found' };
     }
-    return { success: true, connection: connection.getInfo() };
+    // Return full config including password (user is authenticated to use the app)
+    return {
+      success: true,
+      connection: {
+        ...connection.getInfo(),
+        password: connection.config.password,
+        privateKeyPath: connection.config.privateKeyPath,
+        passphrase: connection.config.passphrase,
+        name: connection.config.name
+      }
+    };
   } catch (error) {
     console.error('[Main] Error getting SSH connection:', error);
     return { success: false, error: error.message };

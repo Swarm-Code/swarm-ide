@@ -315,7 +315,7 @@ class SSHPanel {
                     <span class="icon">📋</span>
                     Copy SSH
                 </button>
-                <button class="ssh-action-btn ssh-copy-pass-btn" title="Copy Password" ${!connection.password ? 'style="display: none;"' : ''}>
+                <button class="ssh-action-btn ssh-copy-pass-btn" title="Copy Password">
                     <span class="icon">🔑</span>
                     Copy Password
                 </button>
@@ -464,13 +464,16 @@ class SSHPanel {
      */
     async copyPassword(connection, button) {
         try {
-            if (!connection.password) {
-                this.showStatus('No password available for this connection', 'error');
+            // Fetch full connection data (list view doesn't include password for security)
+            const fullConnection = await window.sshService.getConnection(connection.id);
+
+            if (!fullConnection || !fullConnection.password) {
+                this.showStatus('No password available - this connection uses SSH key authentication', 'warning');
                 return;
             }
 
             // Copy to clipboard
-            await navigator.clipboard.writeText(connection.password);
+            await navigator.clipboard.writeText(fullConnection.password);
 
             // Visual feedback
             const originalHTML = button.innerHTML;
