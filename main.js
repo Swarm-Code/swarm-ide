@@ -908,6 +908,20 @@ ipcMain.handle('browser-create-view', async (event, tabId, bounds, profileId = n
       }
     });
 
+    // Enable context menu (right-click) for copy/paste functionality
+    view.webContents.on('context-menu', (params) => {
+      const template = [
+        { label: 'Cut', role: 'cut' },
+        { label: 'Copy', role: 'copy' },
+        { label: 'Paste', role: 'paste' },
+        { type: 'separator' },
+        { label: 'Select All', role: 'selectAll' },
+      ];
+
+      const menu = Menu.buildFromTemplate(template);
+      menu.popup();
+    });
+
     console.log('[Main] BrowserView created successfully');
     return { success: true, tabId };
   } catch (error) {
