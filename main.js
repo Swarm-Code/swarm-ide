@@ -900,21 +900,29 @@ ipcMain.handle('browser-create-view', async (event, tabId, bounds, profileId = n
       const isMac = process.platform === 'darwin';
       const ctrlOrCmd = isMac ? input.meta : input.control;
 
-      if (ctrlOrCmd && input.key.toLowerCase() === 'e' && !input.shift && !input.alt) {
-        console.log('[Main] Ctrl+E pressed in BrowserView - opening Claude extension');
+      // Debug: Log all keyboard input
+      if (input.key && input.key.toLowerCase() === 'e') {
+        console.log('[Main] Key E pressed - control:', input.control, 'meta:', input.meta, 'shift:', input.shift, 'alt:', input.alt);
+      }
+
+      if (ctrlOrCmd && input.key && input.key.toLowerCase() === 'e' && !input.shift && !input.alt) {
+        console.log('[Main] ✓✓✓ Ctrl+E DETECTED in BrowserView - opening Claude extension');
         event.preventDefault();
 
         // Execute JavaScript in the main window to toggle extensions
         if (mainWindow && mainWindow.webContents) {
+          console.log('[Main] Executing extension toggle in main window');
           mainWindow.webContents.executeJavaScript(`
             (function() {
               console.log('[Renderer] Ctrl+E received - toggling extensions');
               const browser = window.UIManager?.getComponent?.('browser');
               if (browser && typeof browser.toggleExtensionsDropdown === 'function') {
+                console.log('[Renderer] ✓ Calling toggleExtensionsDropdown');
                 browser.toggleExtensionsDropdown();
-                console.log('[Renderer] Extensions dropdown toggled');
+                console.log('[Renderer] ✓ Extensions dropdown toggled');
               } else {
                 console.log('[Renderer] Browser component not found or method not available');
+                console.log('[Renderer] UIManager:', window.UIManager);
               }
             })();
           `).catch(err => console.error('[Main] Error executing extension toggle:', err));
