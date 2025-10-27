@@ -1254,19 +1254,40 @@ ipcMain.handle('browser-toggle-extension', async (event, extensionId, enabled) =
 });
 
 /**
- * Open extension in a separate popup window
+ * Track open extension windows to avoid duplicates
+ */
+const extensionWindows = new Map();
+
+/**
+ * Open extension in a modal window positioned inside the IDE
  * Extensions don't work properly in BrowserView, so we need a separate BrowserWindow
+ * but we position it to appear as a modal inside the main window
  */
 ipcMain.handle('open-extension-window', async (event, { extensionId, extensionName }) => {
   try {
     console.log(`[Main] Opening extension window: ${extensionName} (${extensionId})`);
 
-    // Create a popup window for the extension
+    // Close existing extension window if already open
+    if (extensionWindows.has(extensionId)) {
+      const existingWindow = extensionWindows.get(extensionId);
+      if (existingWindow && !existingWindow.isDestroyed()) {
+        existingWindow.close();
+      }
+    }
+
+    // Get main window bounds to position extension window inside it
+    const mainBounds = mainWindow.getBounds();
+    const centerX = mainBounds.x + (mainBounds.width - 600) / 2;
+    const centerY = mainBounds.y + (mainBounds.height - 800) / 2;
+
+    // Create a popup window for the extension, positioned inside the main window
     const popupWindow = new BrowserWindow({
-      width: 500,
-      height: 700,
+      width: 600,
+      height: 800,
+      x: Math.max(0, centerX),
+      y: Math.max(0, centerY),
       parent: mainWindow,
-      modal: false,
+      modal: true,
       show: false,
       webPreferences: {
         nodeIntegration: false,
@@ -1276,9 +1297,13 @@ ipcMain.handle('open-extension-window', async (event, { extensionId, extensionNa
       }
     });
 
-    // Track popup window to prevent memory leaks
+    // Store reference to prevent garbage collection
+    extensionWindows.set(extensionId, popupWindow);
+
+    // Clean up on close
     popupWindow.once('closed', () => {
       console.log(`[Main] Extension window closed: ${extensionName}`);
+      extensionWindows.delete(extensionId);
     });
 
     // Try different extension pages
