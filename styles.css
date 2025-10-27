@@ -3142,9 +3142,9 @@ body {
 }
 
 .browser-profile-dropdown {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
+    position: fixed;
+    top: 56px;
+    right: 12px;
     width: 320px;
     max-height: 450px;
     background-color: #252526;
@@ -3265,9 +3265,9 @@ body {
 
 /* Extensions Dropdown */
 .browser-extensions-dropdown {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
+    position: fixed;
+    top: 56px;
+    right: 350px;
     width: 380px;
     max-height: 450px;
     background-color: #252526;
