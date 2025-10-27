@@ -311,6 +311,14 @@ class SSHPanel {
                     <span class="icon">🔌</span>
                     Disconnect
                 </button>
+                <button class="ssh-action-btn ssh-copy-cmd-btn" title="Copy SSH Command">
+                    <span class="icon">📋</span>
+                    Copy SSH
+                </button>
+                <button class="ssh-action-btn ssh-copy-pass-btn" title="Copy Password" ${connection.authMethod !== 'password' ? 'style="display: none;"' : ''}>
+                    <span class="icon">🔑</span>
+                    Copy Password
+                </button>
                 <button class="ssh-action-btn ssh-files-btn" title="Browse Files" ${connection.state !== 'connected' ? 'disabled' : ''}>
                     <span class="icon">📁</span>
                     Files
@@ -337,12 +345,18 @@ class SSHPanel {
     setupConnectionEventListeners(element, connection) {
         const connectBtn = element.querySelector('.ssh-connect-btn');
         const disconnectBtn = element.querySelector('.ssh-disconnect-btn');
+        const copyCmdBtn = element.querySelector('.ssh-copy-cmd-btn');
+        const copyPassBtn = element.querySelector('.ssh-copy-pass-btn');
         const filesBtn = element.querySelector('.ssh-files-btn');
         const editBtn = element.querySelector('.ssh-edit-btn');
         const deleteBtn = element.querySelector('.ssh-delete-btn');
 
         connectBtn.addEventListener('click', () => this.connectToSSH(connection.id));
         disconnectBtn.addEventListener('click', () => this.disconnectFromSSH(connection.id));
+        copyCmdBtn.addEventListener('click', () => this.copySSHCommand(connection, copyCmdBtn));
+        if (copyPassBtn) {
+            copyPassBtn.addEventListener('click', () => this.copyPassword(connection, copyPassBtn));
+        }
         filesBtn.addEventListener('click', () => this.browseFiles(connection.id));
         editBtn.addEventListener('click', () => this.editConnection(connection.id));
         deleteBtn.addEventListener('click', () => this.deleteConnection(connection.id));
@@ -411,6 +425,69 @@ class SSHPanel {
         // TODO: Implement file browser integration
         eventBus.emit('ssh:browseFiles', { connectionId });
         this.showStatus('File browser functionality coming soon', 'info');
+    }
+
+    /**
+     * Copy SSH command to clipboard
+     */
+    async copySSHCommand(connection, button) {
+        try {
+            // Build SSH command
+            const port = connection.port || 22;
+            const sshCommand = port === 22
+                ? `ssh ${connection.username}@${connection.host}`
+                : `ssh ${connection.username}@${connection.host} -p ${port}`;
+
+            // Copy to clipboard
+            await navigator.clipboard.writeText(sshCommand);
+
+            // Visual feedback
+            const originalHTML = button.innerHTML;
+            button.innerHTML = '<span class="icon">✅</span> Copied!';
+            button.classList.add('success');
+
+            setTimeout(() => {
+                button.innerHTML = originalHTML;
+                button.classList.remove('success');
+            }, 2000);
+
+            logger.debug('sshPanel', 'SSH command copied:', sshCommand);
+
+        } catch (error) {
+            this.showStatus('Failed to copy SSH command: ' + error.message, 'error');
+            logger.error('sshPanel', 'Failed to copy SSH command:', error);
+        }
+    }
+
+    /**
+     * Copy password to clipboard
+     */
+    async copyPassword(connection, button) {
+        try {
+            if (!connection.password) {
+                this.showStatus('No password available for this connection', 'error');
+                return;
+            }
+
+            // Copy to clipboard
+            await navigator.clipboard.writeText(connection.password);
+
+            // Visual feedback
+            const originalHTML = button.innerHTML;
+            button.innerHTML = '<span class="icon">✅</span> Copied!';
+            button.classList.add('success');
+
+            setTimeout(() => {
+                button.innerHTML = originalHTML;
+                button.classList.remove('success');
+            }, 2000);
+
+            logger.debug('sshPanel', 'Password copied to clipboard');
+
+        } catch (error) {
+            this.showStatus('Failed to copy password: ' + error.message, 'error');
+            logger.error('sshPanel', 'Failed to copy password:', error);
+        }
     }
 
     /**
@@ -914,6 +991,12 @@ class SSHPanel {
 
             .ssh-delete-btn:hover:not(:disabled) {
                 background: #c82333;
+            }
+
+            .ssh-action-btn.success {
+                background: #28a745;
+                border-color: #28a745;
+                color: white;
             }
 
             .ssh-no-connections {
