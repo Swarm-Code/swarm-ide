@@ -315,7 +315,7 @@ class SSHPanel {
                     <span class="icon">📋</span>
                     Copy SSH
                 </button>
-                <button class="ssh-action-btn ssh-copy-pass-btn" title="Copy Password" ${connection.authMethod !== 'password' ? 'style="display: none;"' : ''}>
+                <button class="ssh-action-btn ssh-copy-pass-btn" title="Copy Password" ${!connection.password ? 'style="display: none;"' : ''}>
                     <span class="icon">🔑</span>
                     Copy Password
                 </button>
