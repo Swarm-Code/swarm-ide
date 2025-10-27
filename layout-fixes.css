@@ -294,14 +294,23 @@ body {
    ======================================== */
 
 /* Browser views are managed by Electron BrowserView, but their containers need proper handling */
+/* CRITICAL: Browser containers MUST have lower z-index than all panels to prevent overlap */
 .browser-container {
+    z-index: 5 !important;
     position: relative;
     overflow: hidden;
 }
 
 .browser-view-container {
+    z-index: 5 !important;
     position: relative;
     overflow: hidden;
+}
+
+/* Browser toolbar should be at same level as container */
+.browser-toolbar {
+    z-index: 6 !important;
+    position: relative;
 }
 
 /* ========================================

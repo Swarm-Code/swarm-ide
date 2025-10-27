@@ -263,6 +263,10 @@ class WorkspacePanel {
         if (this.createDialogOpen) return;
         this.createDialogOpen = true;
 
+        // CRITICAL FIX: Emit overlay:shown to hide BrowserViews
+        eventBus.emit('overlay:shown', { source: 'workspace-dialog' });
+        logger.debug('workspaceLoad', 'Workspace dialog overlay shown, emitted overlay:shown event');
+
         // Create dialog overlay
         const overlay = document.createElement('div');
         overlay.className = 'workspace-dialog-overlay';
@@ -325,6 +329,10 @@ class WorkspacePanel {
         cancelBtn.onclick = () => {
             overlay.remove();
             this.createDialogOpen = false;
+
+            // CRITICAL FIX: Emit overlay:hidden to restore BrowserViews
+            eventBus.emit('overlay:hidden', { source: 'workspace-dialog' });
+            logger.debug('workspaceLoad', 'Workspace dialog overlay hidden, emitted overlay:hidden event');
         };
 
         const createBtn = document.createElement('button');
@@ -347,6 +355,10 @@ class WorkspacePanel {
             // Close dialog
             overlay.remove();
             this.createDialogOpen = false;
+
+            // CRITICAL FIX: Emit overlay:hidden to restore BrowserViews
+            eventBus.emit('overlay:hidden', { source: 'workspace-dialog' });
+            logger.debug('workspaceLoad', 'Workspace dialog overlay hidden, emitted overlay:hidden event');
 
             // Switch to new workspace
             this.switchWorkspace(workspace.id);
@@ -377,6 +389,10 @@ class WorkspacePanel {
             if (e.target === overlay) {
                 overlay.remove();
                 this.createDialogOpen = false;
+
+                // CRITICAL FIX: Emit overlay:hidden to restore BrowserViews
+                eventBus.emit('overlay:hidden', { source: 'workspace-dialog' });
+                logger.debug('workspaceLoad', 'Workspace dialog overlay hidden (clicked outside), emitted overlay:hidden event');
             }
         };
     }
@@ -417,6 +433,12 @@ class WorkspacePanel {
         this.panel.classList.add('open');
         this.isOpen = true;
         this.renderWorkspaceList();
+
+        // CRITICAL FIX: Emit workspace-panel:shown event to resize BrowserViews
+        // Workspace panel is a 350px sidebar, so browser should shrink, not hide completely
+        eventBus.emit('workspace-panel:shown', { width: 350 });
+        logger.debug('workspaceLoad', 'Workspace panel shown, emitted workspace-panel:shown event');
+
         logger.debug('workspaceLoad', 'Opened');
     }
 
@@ -426,6 +448,11 @@ class WorkspacePanel {
     close() {
         this.panel.classList.remove('open');
         this.isOpen = false;
+
+        // CRITICAL FIX: Emit workspace-panel:hidden event to restore BrowserView size
+        eventBus.emit('workspace-panel:hidden');
+        logger.debug('workspaceLoad', 'Workspace panel hidden, emitted workspace-panel:hidden event');
+
         logger.debug('workspaceLoad', 'Closed');
     }
 

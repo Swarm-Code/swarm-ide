@@ -1058,7 +1058,7 @@ class Browser {
     }
 
     /**
-     * Open/activate extension as a side panel
+     * Open/activate extension as an integrated sidebar
      */
     async openExtension(extensionId, extensionName) {
         try {
@@ -1070,18 +1070,15 @@ class Browser {
 
             logger.debug('browserNav', `Opening extension: ${extensionName} (${extensionId})`);
 
-            // Request main process to open extension as a side panel
+            // Request main process to open extension as a sidebar BrowserView
             const result = await window.electronAPI.invoke('open-extension-window', {
                 extensionId: extensionId,
                 extensionName: extensionName
             });
 
             if (result && result.success) {
-                logger.info('browserNav', `Opened extension side panel: ${extensionName}`);
-                eventBus.emit('notification:show', {
-                    type: 'info',
-                    message: `Opened ${extensionName}`
-                });
+                logger.info('browserNav', `Opened extension sidebar: ${extensionName}`);
+                // Sidebar is shown via IPC message from main process
             } else {
                 logger.error('browserNav', `Failed to open extension: ${result?.error}`);
                 eventBus.emit('notification:show', {

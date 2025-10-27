@@ -687,6 +687,38 @@ class Application {
                 logger.debug('appInit', '✓ extension:open-claude handler set');
             }
 
+            // Handle extension sidebar open/close messages from main process
+            const { ipcRenderer } = require('electron');
+
+            ipcRenderer.on('extension-sidebar-opened', (event, data) => {
+                logger.info('appInit', `Extension sidebar opened: ${data.extensionName}`);
+                const sidebar = document.getElementById('extension-sidebar');
+                const nameElement = document.getElementById('extension-name');
+                if (sidebar) {
+                    sidebar.style.display = 'flex';
+                    if (nameElement) {
+                        nameElement.textContent = data.extensionName;
+                    }
+                }
+            });
+
+            ipcRenderer.on('extension-sidebar-closed', (event) => {
+                logger.info('appInit', 'Extension sidebar closed');
+                const sidebar = document.getElementById('extension-sidebar');
+                if (sidebar) {
+                    sidebar.style.display = 'none';
+                }
+            });
+
+            // Handle close button for sidebar
+            const closeBtn = document.getElementById('extension-close-btn');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', async () => {
+                    logger.debug('appInit', 'Extension close button clicked');
+                    await window.electronAPI.invoke('close-extension-window');
+                });
+            }
+
             // CRITICAL FIX: Handle terminal restoration when workspace layout is loaded
             // Don't create new terminals - reuse existing ones from the registry
             // This preserves the PTY connection and terminal state across workspace switches

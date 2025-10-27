@@ -81,8 +81,20 @@
                 </div>
             </div>
 
-            <!-- Pane container for dynamic layout -->
-            <div id="pane-container" class="pane-container"></div>
+            <!-- Main content area with pane and extension sidebar -->
+            <div class="main-content-wrapper">
+                <!-- Pane container for dynamic layout -->
+                <div id="pane-container" class="pane-container"></div>
+
+                <!-- Extension sidebar (WebContentsView will be embedded here) -->
+                <div id="extension-sidebar" class="extension-sidebar" style="display: none;">
+                    <div class="extension-sidebar-header">
+                        <span id="extension-name">Extension</span>
+                        <button id="extension-close-btn" class="extension-close-btn">×</button>
+                    </div>
+                    <div id="extension-content" class="extension-content"></div>
+                </div>
+            </div>
         </div>
     </div>
 
