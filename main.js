@@ -1280,7 +1280,9 @@ ipcMain.handle('open-extension-window', async (event, { extensionId, extensionNa
     const centerX = mainBounds.x + (mainBounds.width - 600) / 2;
     const centerY = mainBounds.y + (mainBounds.height - 800) / 2;
 
-    // Create a popup window for the extension, positioned inside the main window
+    // Create a popup window for the extension
+    // Note: BrowserWindow instances appear as separate windows at OS level,
+    // even with parent/modal relationship. This is the industry standard approach.
     const popupWindow = new BrowserWindow({
       width: 600,
       height: 800,
@@ -1289,6 +1291,9 @@ ipcMain.handle('open-extension-window', async (event, { extensionId, extensionNa
       parent: mainWindow,
       modal: true,
       show: false,
+      resizable: true,
+      minimizable: false,
+      maximizable: false,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -1296,6 +1301,12 @@ ipcMain.handle('open-extension-window', async (event, { extensionId, extensionNa
         preload: path.join(__dirname, 'preload.js')
       }
     });
+
+    // Set window icon title
+    popupWindow.setTitle(`${extensionName}`);
+
+    // Center it more reliably
+    popupWindow.center();
 
     // Store reference to prevent garbage collection
     extensionWindows.set(extensionId, popupWindow);
