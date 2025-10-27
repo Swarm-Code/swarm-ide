@@ -3313,6 +3313,14 @@ body {
     flex: 1;
     min-width: 0;
     margin-right: 12px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.browser-extension-item-info:hover {
+    background-color: rgba(14, 99, 156, 0.15);
+    cursor: pointer;
 }
 
 .browser-extension-item-name {
