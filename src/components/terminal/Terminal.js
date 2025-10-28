@@ -140,7 +140,184 @@ class Terminal {
             }
         });
 
+        // Setup keyboard shortcuts for copy/paste
+        this.setupClipboardShortcuts();
+
+        // Setup context menu for copy/paste
+        this.setupContextMenu();
+
         logger.debug('terminal', 'Event listeners setup complete');
+    }
+
+    /**
+     * Setup keyboard shortcuts for copy/paste
+     * Ctrl+C, Ctrl+V (Windows/Linux) or Cmd+C, Cmd+V (Mac)
+     */
+    setupClipboardShortcuts() {
+        if (!this.xterm) return;
+
+        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+        const ctrlOrCmd = isMac ? 'meta' : 'ctrl';
+
+        this.xterm.attachCustomKeyEventHandler((arg) => {
+            const { key, shiftKey, ctrlKey, altKey, metaKey } = arg;
+
+            // Ctrl+C (Cmd+C on Mac) - Copy selection
+            if ((isMac ? metaKey : ctrlKey) && key === 'c') {
+                // Only copy if there's a selection
+                const selection = this.xterm.getSelection();
+                if (selection) {
+                    navigator.clipboard.writeText(selection).then(() => {
+                        logger.debug('terminal', 'Selection copied to clipboard');
+                        eventBus.emit('notification:show', {
+                            type: 'info',
+                            message: 'Copied to clipboard',
+                            duration: 2000
+                        });
+                    }).catch(err => {
+                        logger.error('terminal', 'Failed to copy to clipboard:', err);
+                    });
+                    return false; // Prevent default
+                }
+                // If no selection, let it pass through to terminal
+                return true;
+            }
+
+            // Ctrl+V (Cmd+V on Mac) - Paste from clipboard
+            if ((isMac ? metaKey : ctrlKey) && key === 'v') {
+                navigator.clipboard.readText().then((text) => {
+                    if (this.ptyId && text) {
+                        // Send pasted text to PTY
+                        if (this.connectionType === 'ssh') {
+                            window.electronAPI.sshTerminalWrite(this.ptyId, text);
+                        } else {
+                            window.electronAPI.terminalWrite(this.ptyId, text);
+                        }
+                        logger.debug('terminal', 'Text pasted from clipboard');
+                        eventBus.emit('notification:show', {
+                            type: 'info',
+                            message: 'Pasted from clipboard',
+                            duration: 2000
+                        });
+                    }
+                }).catch(err => {
+                    logger.error('terminal', 'Failed to paste from clipboard:', err);
+                });
+                return false; // Prevent default
+            }
+
+            // Ctrl+A (Cmd+A on Mac) - Select all
+            if ((isMac ? metaKey : ctrlKey) && key === 'a' && !shiftKey && !altKey) {
+                this.selectAll();
+                return false; // Prevent default
+            }
+
+            return true;
+        });
+
+        logger.debug('terminal', 'Clipboard shortcuts configured');
+    }
+
+    /**
+     * Setup context menu for copy/paste
+     */
+    setupContextMenu() {
+        if (!this.xterm) return;
+
+        // Handle right-click on terminal element
+        this.container.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            this.showContextMenu(e.clientX, e.clientY);
+        });
+
+        logger.debug('terminal', 'Context menu configured');
+    }
+
+    /**
+     * Show context menu for copy/paste
+     */
+    showContextMenu(x, y) {
+        const selection = this.xterm.getSelection();
+
+        // Create context menu items
+        const items = [
+            {
+                label: 'Copy',
+                enabled: !!selection,
+                action: () => this.copySelection()
+            },
+            {
+                label: 'Paste',
+                action: () => this.pasteFromClipboard()
+            },
+            { type: 'separator' },
+            {
+                label: 'Select All',
+                action: () => this.selectAll()
+            },
+            {
+                label: 'Clear',
+                action: () => this.clear()
+            }
+        ];
+
+        // Create and show context menu
+        const ContextMenu = require('../ContextMenu');
+        const contextMenu = new ContextMenu(items, x, y);
+        contextMenu.show();
+    }
+
+    /**
+     * Copy selection to clipboard
+     */
+    copySelection() {
+        const selection = this.xterm.getSelection();
+        if (selection) {
+            navigator.clipboard.writeText(selection).then(() => {
+                logger.debug('terminal', 'Selection copied to clipboard');
+                eventBus.emit('notification:show', {
+                    type: 'success',
+                    message: 'Copied to clipboard',
+                    duration: 2000
+                });
+            }).catch(err => {
+                logger.error('terminal', 'Failed to copy to clipboard:', err);
+                eventBus.emit('notification:show', {
+                    type: 'error',
+                    message: 'Failed to copy to clipboard',
+                    duration: 2000
+                });
+            });
+        }
+    }
+
+    /**
+     * Paste from clipboard
+     */
+    pasteFromClipboard() {
+        navigator.clipboard.readText().then((text) => {
+            if (this.ptyId && text) {
+                // Send pasted text to PTY
+                if (this.connectionType === 'ssh') {
+                    window.electronAPI.sshTerminalWrite(this.ptyId, text);
+                } else {
+                    window.electronAPI.terminalWrite(this.ptyId, text);
+                }
+                logger.debug('terminal', 'Text pasted from clipboard');
+                eventBus.emit('notification:show', {
+                    type: 'success',
+                    message: 'Pasted from clipboard',
+                    duration: 2000
+                });
+            }
+        }).catch(err => {
+            logger.error('terminal', 'Failed to paste from clipboard:', err);
+            eventBus.emit('notification:show', {
+                type: 'error',
+                message: 'Failed to paste from clipboard',
+                duration: 2000
+            });
+        });
     }
 
     /**
