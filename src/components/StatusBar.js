@@ -111,7 +111,9 @@ class StatusBar {
         // Toggle Sidebar button (leftmost in right section)
         const toggleSidebarBtn = document.createElement('button');
         toggleSidebarBtn.className = 'status-bar-btn status-bar-toggle-sidebar-btn';
-        toggleSidebarBtn.title = 'Toggle Sidebar (Ctrl+B)';
+        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+        const sidebarShortcut = isMac ? 'Cmd+B' : 'Ctrl+B';
+        toggleSidebarBtn.title = `Toggle Sidebar (${sidebarShortcut})`;
         const toggleIcon = document.createElement('img');
         toggleIcon.src = 'assets/icons/chevron-left.svg';
         toggleIcon.alt = 'Toggle Sidebar';
@@ -229,8 +231,8 @@ class StatusBar {
             this.updateWorkspaceInfo();
         });
 
-        // Listen for sidebar toggle event
-        eventBus.on('sidebar:toggle', () => {
+        // Listen for sidebar toggle event (from menu or keyboard shortcut)
+        eventBus.on('ui:toggle-sidebar', () => {
             this.toggleSidebar();
         });
     }
@@ -525,7 +527,7 @@ class StatusBar {
         eventBus.off('git:repository-changed');
         eventBus.off('workspace:activated');
         eventBus.off('workspace:created');
-        eventBus.off('sidebar:toggle');
+        eventBus.off('ui:toggle-sidebar');
     }
 }
 

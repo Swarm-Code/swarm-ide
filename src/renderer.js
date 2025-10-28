@@ -936,7 +936,7 @@ class Application {
                 // Ctrl+B / Cmd+B - Toggle Sidebar
                 if (ctrlOrCmd && e.key === 'b' && !e.shiftKey) {
                     e.preventDefault();
-                    eventBus.emit('sidebar:toggle');
+                    eventBus.emit('ui:toggle-sidebar');
                 }
 
                 // Ctrl+P / Cmd+P - Quick Open
