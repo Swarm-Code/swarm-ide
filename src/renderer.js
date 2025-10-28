@@ -933,6 +933,12 @@ class Application {
                 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
                 const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
 
+                // Ctrl+B / Cmd+B - Toggle Sidebar
+                if (ctrlOrCmd && e.key === 'b' && !e.shiftKey) {
+                    e.preventDefault();
+                    eventBus.emit('sidebar:toggle');
+                }
+
                 // Ctrl+P / Cmd+P - Quick Open
                 if (ctrlOrCmd && e.key === 'p' && !e.shiftKey) {
                     e.preventDefault();

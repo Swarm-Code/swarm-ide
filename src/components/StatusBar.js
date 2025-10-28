@@ -108,6 +108,23 @@ class StatusBar {
         this.rightSection = document.createElement('div');
         this.rightSection.className = 'status-bar-right';
 
+        // Toggle Sidebar button (leftmost in right section)
+        const toggleSidebarBtn = document.createElement('button');
+        toggleSidebarBtn.className = 'status-bar-btn status-bar-toggle-sidebar-btn';
+        toggleSidebarBtn.title = 'Toggle Sidebar (Ctrl+B)';
+        const toggleIcon = document.createElement('img');
+        toggleIcon.src = 'assets/icons/chevron-left.svg';
+        toggleIcon.alt = 'Toggle Sidebar';
+        toggleIcon.className = 'status-bar-icon';
+        const toggleText = document.createElement('span');
+        toggleText.textContent = 'Sidebar';
+        toggleText.className = 'status-bar-toggle-text';
+        toggleSidebarBtn.appendChild(toggleIcon);
+        toggleSidebarBtn.appendChild(toggleText);
+        toggleSidebarBtn.addEventListener('click', () => {
+            this.toggleSidebar();
+        });
+
         // Quick Open button
         const quickOpenBtn = document.createElement('button');
         quickOpenBtn.className = 'status-bar-btn';
@@ -156,6 +173,7 @@ class StatusBar {
             eventBus.emit('findreplace:show');
         });
 
+        this.rightSection.appendChild(toggleSidebarBtn);
         this.rightSection.appendChild(quickOpenBtn);
         this.rightSection.appendChild(searchBtn);
         this.rightSection.appendChild(replaceBtn);
@@ -209,6 +227,11 @@ class StatusBar {
 
         eventBus.on('workspace:created', () => {
             this.updateWorkspaceInfo();
+        });
+
+        // Listen for sidebar toggle event
+        eventBus.on('sidebar:toggle', () => {
+            this.toggleSidebar();
         });
     }
 
@@ -440,6 +463,54 @@ class StatusBar {
     }
 
     /**
+     * Toggle sidebar visibility
+     */
+    toggleSidebar() {
+        const sidebar = document.querySelector('.sidebar');
+        const iconSidebar = document.querySelector('.icon-sidebar');
+        const container = document.querySelector('.container');
+        
+        if (!sidebar) {
+            console.warn('[StatusBar] Sidebar element not found');
+            return;
+        }
+
+        // Check current state
+        const isHidden = sidebar.classList.contains('hidden');
+
+        if (isHidden) {
+            // Show sidebar
+            sidebar.classList.remove('hidden');
+            if (iconSidebar) {
+                iconSidebar.classList.remove('hidden');
+            }
+        } else {
+            // Hide sidebar
+            sidebar.classList.add('hidden');
+            if (iconSidebar) {
+                iconSidebar.classList.add('hidden');
+            }
+        }
+
+        // Update toggle button icon
+        const toggleBtn = this.bar.querySelector('.status-bar-toggle-sidebar-btn');
+        if (toggleBtn) {
+            const icon = toggleBtn.querySelector('.status-bar-icon');
+            if (icon) {
+                // Rotate icon based on state
+                if (isHidden) {
+                    icon.style.transform = 'rotate(0deg)';
+                } else {
+                    icon.style.transform = 'rotate(180deg)';
+                }
+            }
+        }
+
+        // Emit event for other components to react to sidebar toggle
+        eventBus.emit('sidebar:toggled', { hidden: !isHidden });
+    }
+
+    /**
      * Cleanup
      */
     destroy() {
@@ -454,6 +525,7 @@ class StatusBar {
         eventBus.off('git:repository-changed');
         eventBus.off('workspace:activated');
         eventBus.off('workspace:created');
+        eventBus.off('sidebar:toggle');
     }
 }
 
