@@ -27,7 +27,10 @@ class ContextMenu {
     createMenu() {
         this.menuElement = document.createElement('div');
         this.menuElement.className = 'context-menu';
+        // Set essential styles for positioning
         this.menuElement.style.display = 'none';
+        this.menuElement.style.position = 'fixed';
+        this.menuElement.style.zIndex = '10000';
         document.body.appendChild(this.menuElement);
     }
 

@@ -239,32 +239,34 @@ class Terminal {
     showContextMenu(x, y) {
         const selection = this.xterm.getSelection();
 
-        // Create context menu items
+        // Create context menu items with onClick instead of action
         const items = [
             {
                 label: 'Copy',
-                enabled: !!selection,
-                action: () => this.copySelection()
+                disabled: !selection,
+                onClick: () => this.copySelection()
             },
             {
                 label: 'Paste',
-                action: () => this.pasteFromClipboard()
+                onClick: () => this.pasteFromClipboard()
             },
             { type: 'separator' },
             {
                 label: 'Select All',
-                action: () => this.selectAll()
+                onClick: () => this.selectAll()
             },
             {
                 label: 'Clear',
-                action: () => this.clear()
+                onClick: () => this.clear()
             }
         ];
 
-        // Create and show context menu
+        // Create and show context menu at correct position
         const ContextMenu = require('../ContextMenu');
-        const contextMenu = new ContextMenu(items, x, y);
-        contextMenu.show();
+        const contextMenu = new ContextMenu(items);
+        
+        // Show with x, y coordinates
+        contextMenu.show(x, y);
     }
 
     /**
