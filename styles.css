@@ -7276,14 +7276,13 @@ body {
     bottom: 320px; /* Match terminal panel height */
 }
 
-/* ========================================
-   WEB APPS PANEL STYLES
+   WEB APPS - IMPROVED STYLING (matching welcome screen aesthetic)
    ======================================== */
 
 .web-apps-container {
     padding: 0;
     margin: 0;
-    border-bottom: 1px solid #2d2d30;
+    border-bottom: 1px solid rgba(14, 99, 156, 0.2);
 }
 
 .web-apps-section {
@@ -7297,16 +7296,18 @@ body {
     max-height: 0;
     overflow: hidden;
     opacity: 0;
+    padding-bottom: 0;
 }
 
 .web-apps-header {
     display: flex;
     align-items: center;
     padding: 12px 16px;
-    background-color: #252526;
-    border-bottom: 1px solid #2d2d30;
+    background: linear-gradient(90deg, rgba(37, 37, 38, 0.8) 0%, rgba(30, 30, 30, 0.8) 100%);
+    border-bottom: 1px solid rgba(14, 99, 156, 0.2);
     gap: 8px;
     user-select: none;
+    backdrop-filter: blur(2px);
 }
 
 .web-apps-collapse-btn {
@@ -7315,13 +7316,14 @@ body {
     padding: 0;
     background: none;
     border: none;
-    color: #858585;
+    color: #0e639c;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: transform 0.3s ease;
+    transition: all 0.3s ease;
     flex-shrink: 0;
+    opacity: 0.8;
 }
 
 .web-apps-section.collapsed .web-apps-collapse-btn {
@@ -7329,25 +7331,31 @@ body {
 }
 
 .web-apps-collapse-btn:hover {
-    color: #ffffff;
+    color: #0078d4;
+    opacity: 1;
 }
 
 .web-apps-title {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
-    color: #858585;
+    color: #0e639c;
     text-transform: uppercase;
     letter-spacing: 1.2px;
     flex: 1;
+    background: linear-gradient(90deg, #0e639c 0%, #0078d4 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 .web-apps-add-btn {
-    width: 20px;
-    height: 20px;
+    width: 28px;
+    height: 28px;
     padding: 0;
-    background: none;
-    border: none;
-    color: #858585;
+    background: rgba(14, 99, 156, 0.15);
+    border: 1px solid rgba(14, 99, 156, 0.3);
+    border-radius: 4px;
+    color: #0e639c;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -7357,8 +7365,10 @@ body {
 }
 
 .web-apps-add-btn:hover {
-    color: #0e639c;
-    transform: scale(1.1);
+    background: rgba(14, 99, 156, 0.25);
+    border-color: #0e639c;
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(14, 99, 156, 0.2);
 }
 
 .web-apps-add-btn:active {
@@ -7373,12 +7383,13 @@ body {
     transition: all 0.3s ease;
     max-height: 500px;
     overflow-y: auto;
+    background: rgba(30, 30, 30, 0.5);
 }
 
 .web-apps-empty {
     padding: 20px 12px;
     text-align: center;
-    color: #888;
+    color: #666;
     font-size: 12px;
     font-style: italic;
 }
@@ -7386,36 +7397,45 @@ body {
 .web-app-item {
     display: flex;
     align-items: center;
-    padding: 6px 8px;
+    padding: 10px 8px;
     cursor: pointer;
     border-radius: 4px;
     gap: 8px;
     transition: all 0.15s ease;
     user-select: none;
+    background: rgba(45, 45, 48, 0.4);
+    border: 1px solid transparent;
+    backdrop-filter: blur(2px);
 }
 
 .web-app-item:hover {
-    background-color: #2a2d2e;
+    background: rgba(14, 99, 156, 0.15);
+    border-color: rgba(14, 99, 156, 0.3);
+    transform: translateX(2px);
+    box-shadow: 0 2px 8px rgba(14, 99, 156, 0.15);
 }
 
 .web-app-item.dragging {
-    opacity: 0.5;
-    background-color: #0e639c;
+    opacity: 0.6;
+    background: rgba(14, 99, 156, 0.2);
+    border-color: #0e639c;
 }
 
 .web-app-item.drag-over {
     border-top: 2px solid #0e639c;
-    padding-top: 4px;
+    padding-top: 8px;
 }
 
 .web-app-icon {
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     border-radius: 4px;
     object-fit: contain;
     flex-shrink: 0;
-    background-color: #2d2d30;
+    background: rgba(14, 99, 156, 0.1);
+    border: 1px solid rgba(14, 99, 156, 0.2);
     padding: 2px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .web-app-name {
@@ -7424,17 +7444,34 @@ body {
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 13px;
-    color: #d4d4d4;
+    color: #e0e0e0;
+    font-weight: 500;
 }
 
 .web-app-item:hover .web-app-name {
     color: #ffffff;
 }
 
-/* Web App Dialog Styles */
+/* Web App Dialog - improved matching welcome screen */
 .modal-dialog-webapp {
-    width: 500px;
+    width: 480px;
     max-width: 90vw;
+    background: linear-gradient(135deg, rgba(37, 37, 38, 0.95) 0%, rgba(30, 30, 30, 0.95) 100%);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(14, 99, 156, 0.3);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 30px rgba(14, 99, 156, 0.2);
+}
+
+.modal-dialog-webapp .modal-header {
+    border-bottom: 1px solid rgba(14, 99, 156, 0.2);
+    background: linear-gradient(90deg, rgba(45, 45, 48, 0.6) 0%, rgba(37, 37, 38, 0.6) 100%);
+}
+
+.modal-dialog-webapp .modal-header h2 {
+    background: linear-gradient(90deg, #0e639c 0%, #0078d4 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 .modal-dialog-webapp .modal-content {
@@ -7443,59 +7480,74 @@ body {
 }
 
 .form-group {
-    margin-bottom: 16px;
+    margin-bottom: 18px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
 }
 
 .form-label {
     font-size: 12px;
-    font-weight: 600;
-    color: #858585;
+    font-weight: 700;
+    color: #0e639c;
     text-transform: uppercase;
     letter-spacing: 0.8px;
+    background: linear-gradient(90deg, #0e639c 0%, #0078d4 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 .form-input {
-    padding: 8px 12px;
-    background-color: #3c3c3c;
-    border: 1px solid #555;
+    padding: 10px 12px;
+    background: rgba(45, 45, 48, 0.7);
+    border: 1px solid rgba(14, 99, 156, 0.2);
     border-radius: 4px;
-    color: #d4d4d4;
+    color: #e0e0e0;
     font-size: 13px;
     font-family: 'Segoe UI', sans-serif;
     transition: all 0.2s ease;
+    backdrop-filter: blur(2px);
+}
+
+.form-input::placeholder {
+    color: #666;
 }
 
 .form-input:focus {
     outline: none;
     border-color: #0e639c;
-    background-color: #2d2d30;
+    background: rgba(14, 99, 156, 0.1);
+    box-shadow: 0 0 0 3px rgba(14, 99, 156, 0.15);
 }
 
 .form-input.input-error {
     border-color: #f48771;
-    background-color: #3c2d2e;
+    background: rgba(244, 135, 113, 0.08);
 }
 
 .form-help {
     font-size: 11px;
     color: #888;
+    font-style: italic;
 }
 
 .form-error {
     font-size: 11px;
     color: #f48771;
-    font-weight: 500;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
 }
 
 .icon-section {
     margin: 20px 0;
     padding: 16px;
-    background-color: #252526;
-    border-radius: 4px;
-    border: 1px solid #3e3e42;
+    background: rgba(14, 99, 156, 0.08);
+    border-radius: 6px;
+    border: 1px solid rgba(14, 99, 156, 0.2);
+    backdrop-filter: blur(2px);
 }
 
 .icon-upload-container {
@@ -7506,24 +7558,31 @@ body {
 }
 
 .icon-preview {
-    width: 64px;
-    height: 64px;
-    border: 2px dashed #3e3e42;
-    border-radius: 4px;
+    width: 80px;
+    height: 80px;
+    border: 2px dashed rgba(14, 99, 156, 0.4);
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
-    background-color: #1e1e1e;
-    color: #888;
+    background: rgba(14, 99, 156, 0.05);
+    color: #666;
     font-size: 12px;
     text-align: center;
     padding: 8px;
+    transition: all 0.2s ease;
+}
+
+.icon-preview:hover {
+    border-color: rgba(14, 99, 156, 0.6);
+    background: rgba(14, 99, 156, 0.1);
 }
 
 .icon-preview img {
     max-width: 100%;
     max-height: 100%;
-    border-radius: 2px;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .icon-button-group {
@@ -7538,34 +7597,42 @@ body {
 
 .modal-button-group {
     display: flex;
-    gap: 8px;
+    gap: 12px;
     justify-content: flex-end;
-    margin-top: 24px;
+    margin-top: 28px;
     padding-top: 16px;
-    border-top: 1px solid #3e3e42;
+    border-top: 1px solid rgba(14, 99, 156, 0.2);
 }
 
 .modal-button {
-    padding: 8px 16px;
-    border: 1px solid #3e3e42;
+    padding: 10px 18px;
+    border: 1px solid rgba(14, 99, 156, 0.3);
     border-radius: 4px;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 700;
     cursor: pointer;
     transition: all 0.2s ease;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    backdrop-filter: blur(2px);
 }
 
 .modal-button-primary {
-    background-color: #0e639c;
+    background: linear-gradient(135deg, #0e639c 0%, #1177bb 100%);
     color: #ffffff;
     border-color: #0e639c;
+    box-shadow: 0 2px 8px rgba(14, 99, 156, 0.3);
 }
 
 .modal-button-primary:hover:not(:disabled) {
-    background-color: #1177bb;
+    background: linear-gradient(135deg, #1177bb 0%, #0e639c 100%);
     border-color: #1177bb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(14, 99, 156, 0.4);
+}
+
+.modal-button-primary:active:not(:disabled) {
+    transform: translateY(0);
 }
 
 .modal-button-primary:disabled {
@@ -7574,16 +7641,45 @@ body {
 }
 
 .modal-button-secondary {
-    background-color: #3c3c3c;
-    color: #d4d4d4;
-    border-color: #3e3e42;
+    background: rgba(45, 45, 48, 0.6);
+    color: #e0e0e0;
+    border-color: rgba(14, 99, 156, 0.2);
 }
 
 .modal-button-secondary:hover {
-    background-color: #4a4a4a;
-    border-color: #555;
+    background: rgba(14, 99, 156, 0.15);
+    border-color: rgba(14, 99, 156, 0.4);
+    transform: translateY(-1px);
 }
 
 .modal-button-secondary:active {
-    background-color: #2d2d30;
+    background: rgba(14, 99, 156, 0.1);
+    transform: translateY(0);
 }
+
+/* Scrollbar styling for web apps list */
+.web-apps-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.web-apps-list::-webkit-scrollbar-track {
+    background: rgba(14, 99, 156, 0.05);
+    border-radius: 4px;
+}
+
+.web-apps-list::-webkit-scrollbar-thumb {
+    background: rgba(14, 99, 156, 0.3);
+    border-radius: 4px;
+    transition: background 0.2s ease;
+}
+
+.web-apps-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(14, 99, 156, 0.5);
+}
+
+/* Modal backdrop enhancement */
+.modal-backdrop {
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+}
+
