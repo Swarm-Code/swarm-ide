@@ -224,6 +224,9 @@ class Terminal {
     setupContextMenu() {
         if (!this.xterm) return;
 
+        // Store reference to current context menu
+        this._currentContextMenu = null;
+
         // Handle right-click on terminal element
         this.container.addEventListener('contextmenu', (e) => {
             e.preventDefault();
@@ -239,34 +242,65 @@ class Terminal {
     showContextMenu(x, y) {
         const selection = this.xterm.getSelection();
 
+        // Destroy previous context menu if it exists
+        if (this._currentContextMenu) {
+            this._currentContextMenu.destroy();
+            this._currentContextMenu = null;
+        }
+
         // Create context menu items with onClick instead of action
         const items = [
             {
                 label: 'Copy',
                 disabled: !selection,
-                onClick: () => this.copySelection()
+                onClick: () => {
+                    this.copySelection();
+                    this.closeContextMenu();
+                }
             },
             {
                 label: 'Paste',
-                onClick: () => this.pasteFromClipboard()
+                onClick: () => {
+                    this.pasteFromClipboard();
+                    this.closeContextMenu();
+                }
             },
             { type: 'separator' },
             {
                 label: 'Select All',
-                onClick: () => this.selectAll()
+                onClick: () => {
+                    this.selectAll();
+                    this.closeContextMenu();
+                }
             },
             {
                 label: 'Clear',
-                onClick: () => this.clear()
+                onClick: () => {
+                    this.clear();
+                    this.closeContextMenu();
+                }
             }
         ];
 
         // Create and show context menu at correct position
         const ContextMenu = require('../ContextMenu');
-        const contextMenu = new ContextMenu(items);
+        this._currentContextMenu = new ContextMenu(items);
         
         // Show with x, y coordinates
-        contextMenu.show(x, y);
+        this._currentContextMenu.show(x, y);
+        
+        logger.debug('terminal', 'Context menu shown at', x, y);
+    }
+
+    /**
+     * Close current context menu
+     */
+    closeContextMenu() {
+        if (this._currentContextMenu) {
+            this._currentContextMenu.destroy();
+            this._currentContextMenu = null;
+            logger.debug('terminal', 'Context menu closed');
+        }
     }
 
     /**

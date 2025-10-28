@@ -12,6 +12,9 @@
  */
 
 class ContextMenu {
+    // Static registry to track all active menus
+    static activeMenus = new Set();
+
     constructor(actions = []) {
         this.actions = actions;
         this.menuElement = null;
@@ -19,6 +22,9 @@ class ContextMenu {
 
         this.createMenu();
         this.setupEventListeners();
+        
+        // Register this menu
+        ContextMenu.activeMenus.add(this);
     }
 
     /**
@@ -38,26 +44,50 @@ class ContextMenu {
      * Setup global event listeners
      */
     setupEventListeners() {
-        // Close menu on click outside
-        document.addEventListener('click', (e) => {
-            if (this.isVisible && !this.menuElement.contains(e.target)) {
+        // Close all menus on click outside
+        this._handleOutsideClick = (e) => {
+            if (this.isVisible && this.menuElement && !this.menuElement.contains(e.target)) {
                 this.hide();
             }
-        });
+        };
 
         // Close menu on Escape key
-        document.addEventListener('keydown', (e) => {
+        this._handleEscapeKey = (e) => {
             if (e.key === 'Escape' && this.isVisible) {
                 this.hide();
             }
-        });
+        };
 
         // Close menu on scroll
-        document.addEventListener('scroll', () => {
+        this._handleScroll = () => {
             if (this.isVisible) {
                 this.hide();
             }
-        }, true);
+        };
+    }
+
+    /**
+     * Attach event listeners when menu is shown
+     */
+    attachListeners() {
+        if (!this._listenersAttached) {
+            document.addEventListener('click', this._handleOutsideClick);
+            document.addEventListener('keydown', this._handleEscapeKey);
+            document.addEventListener('scroll', this._handleScroll, true);
+            this._listenersAttached = true;
+        }
+    }
+
+    /**
+     * Detach event listeners when menu is hidden
+     */
+    detachListeners() {
+        if (this._listenersAttached) {
+            document.removeEventListener('click', this._handleOutsideClick);
+            document.removeEventListener('keydown', this._handleEscapeKey);
+            document.removeEventListener('scroll', this._handleScroll, true);
+            this._listenersAttached = false;
+        }
     }
 
     /**
@@ -68,6 +98,10 @@ class ContextMenu {
      */
     show(x, y, actions = null) {
         console.log('[ContextMenu] show() called at:', x, y, 'with', actions ? actions.length : 0, 'actions');
+        
+        // Close all other menus first
+        ContextMenu.closeAllMenus();
+        
         if (actions) {
             this.actions = actions;
         }
@@ -84,7 +118,22 @@ class ContextMenu {
         this.adjustPosition();
 
         this.isVisible = true;
+        
+        // Attach event listeners
+        this.attachListeners();
+        
         console.log('[ContextMenu] Menu displayed successfully');
+    }
+
+    /**
+     * Close all active context menus (static method)
+     */
+    static closeAllMenus() {
+        ContextMenu.activeMenus.forEach(menu => {
+            if (menu.isVisible) {
+                menu.hide();
+            }
+        });
     }
 
     /**
@@ -93,6 +142,8 @@ class ContextMenu {
     hide() {
         this.menuElement.style.display = 'none';
         this.isVisible = false;
+        // Detach event listeners
+        this.detachListeners();
     }
 
     /**
@@ -145,7 +196,13 @@ class ContextMenu {
             item.addEventListener('click', (e) => {
                 console.log('[ContextMenu] Menu item clicked:', action.label);
                 e.stopPropagation();
-                action.onClick();
+                e.preventDefault();
+                // Execute action and then hide
+                try {
+                    action.onClick();
+                } catch (error) {
+                    console.error('[ContextMenu] Error executing action:', error);
+                }
                 this.hide();
             });
         }
@@ -178,9 +235,17 @@ class ContextMenu {
      * Destroy menu
      */
     destroy() {
+        // Detach listeners first
+        this.detachListeners();
+        
+        // Remove from active menus registry
+        ContextMenu.activeMenus.delete(this);
+        
+        // Remove from DOM
         if (this.menuElement && this.menuElement.parentNode) {
             this.menuElement.parentNode.removeChild(this.menuElement);
         }
+        
         this.menuElement = null;
         this.isVisible = false;
     }
