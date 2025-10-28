@@ -10,7 +10,6 @@
  * - Fallback to defaults if file doesn't exist
  */
 
-const fs = require('fs').promises;
 const path = require('path');
 const logger = require('../utils/Logger');
 
@@ -38,6 +37,71 @@ class WebAppsStore {
     }
 
     /**
+     * Get file system access via Electron API
+     */
+    getFS() {
+        if (typeof window !== 'undefined' && window.electronAPI) {
+            return window.electronAPI;
+        }
+        // Fallback to Node.js fs if available (main process)
+        try {
+            return require('fs').promises;
+        } catch (e) {
+            throw new Error('File system access not available');
+        }
+    }
+
+    /**
+     * Read file using available API
+     */
+    async readFileContent(filePath) {
+        if (typeof window !== 'undefined' && window.electronAPI) {
+            const result = await window.electronAPI.readFile(filePath);
+            if (result.success) {
+                return result.content;
+            }
+            throw new Error(result.error || 'Failed to read file');
+        }
+        // Fallback to Node.js
+        const fs = require('fs').promises;
+        return await fs.readFile(filePath, 'utf-8');
+    }
+
+    /**
+     * Write file using available API
+     */
+    async writeFileContent(filePath, content) {
+        if (typeof window !== 'undefined' && window.electronAPI) {
+            const result = await window.electronAPI.saveFile(filePath, content);
+            if (result.success) {
+                return;
+            }
+            throw new Error(result.error || 'Failed to save file');
+        }
+        // Fallback to Node.js
+        const fs = require('fs').promises;
+        return await fs.writeFile(filePath, content, 'utf-8');
+    }
+
+    /**
+     * Create directory using available API
+     */
+    async createDirectory(dirPath) {
+        if (typeof window !== 'undefined' && window.electronAPI) {
+            // Use readDirectory as a check, if it fails, we'll create
+            try {
+                await window.electronAPI.readDirectory(dirPath);
+            } catch (e) {
+                logger.warn('webApps', 'Directory does not exist, will be created on save');
+            }
+            return;
+        }
+        // Fallback to Node.js
+        const fs = require('fs').promises;
+        return await fs.mkdir(dirPath, { recursive: true });
+    }
+
+    /**
      * Initialize store - called once on first access
      * Determines config directory and loads existing data
      */
@@ -46,7 +110,15 @@ class WebAppsStore {
 
         try {
             // Get home directory
-            const homeDir = process.env.HOME || process.env.USERPROFILE;
+            let homeDir;
+            if (typeof window !== 'undefined' && window.electronAPI) {
+                // In renderer process, use Electron API
+                homeDir = await window.electronAPI.getHomeDir();
+            } else {
+                // In main process, use environment variable
+                homeDir = process.env.HOME || process.env.USERPROFILE;
+            }
+
             if (!homeDir) {
                 throw new Error('Could not determine home directory');
             }
@@ -56,7 +128,7 @@ class WebAppsStore {
 
             // Ensure config directory exists
             try {
-                await fs.mkdir(this.configDir, { recursive: true });
+                await this.createDirectory(this.configDir);
                 logger.debug('webApps', '✓ Config directory ensured:', this.configDir);
             } catch (err) {
                 logger.warn('webApps', 'Could not create config directory:', err.message);
@@ -79,7 +151,7 @@ class WebAppsStore {
     async load() {
         try {
             // Try to read existing file
-            const fileContent = await fs.readFile(this.filePath, 'utf-8');
+            const fileContent = await this.readFileContent(this.filePath);
             const parsed = JSON.parse(fileContent);
 
             // Validate structure
@@ -92,7 +164,7 @@ class WebAppsStore {
             logger.warn('webApps', 'Invalid structure in web-apps.json, using defaults');
             await this.save();
         } catch (error) {
-            if (error.code === 'ENOENT') {
+            if (error.code === 'ENOENT' || error.message?.includes('ENOENT')) {
                 // File doesn't exist, create with defaults
                 logger.debug('webApps', 'web-apps.json not found, creating with defaults');
                 await this.save();
@@ -109,7 +181,7 @@ class WebAppsStore {
     async save() {
         try {
             const json = JSON.stringify(this.data, null, 2);
-            await fs.writeFile(this.filePath, json, 'utf-8');
+            await this.writeFileContent(this.filePath, json);
             logger.debug('webApps', '✓ Web apps saved to file');
         } catch (error) {
             logger.error('webApps', 'Failed to save web-apps.json:', error.message);

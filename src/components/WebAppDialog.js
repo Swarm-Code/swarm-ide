@@ -46,12 +46,242 @@ class WebAppDialog {
     }
 
     /**
+     * Inject CSS styles for the modal
+     */
+    injectStyles() {
+        // Check if styles already injected
+        if (document.getElementById('webapp-modal-styles')) {
+            return;
+        }
+
+        const style = document.createElement('style');
+        style.id = 'webapp-modal-styles';
+        style.textContent = `
+            .modal-dialog {
+                position: relative;
+                background: var(--bg-primary, #1e1e1e);
+                border: 1px solid var(--border-color, #3e3e3e);
+                border-radius: 8px;
+                padding: 0;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+                max-width: 500px;
+                width: 90%;
+                max-height: 90vh;
+                overflow-y: auto;
+                z-index: 10001;
+            }
+
+            .modal-dialog-webapp {
+                min-width: 450px;
+            }
+
+            .modal-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 20px;
+                border-bottom: 1px solid var(--border-color, #3e3e3e);
+                background: var(--bg-secondary, #252526);
+            }
+
+            .modal-header h2 {
+                margin: 0;
+                font-size: 16px;
+                font-weight: 600;
+                color: var(--text-primary, #cccccc);
+            }
+
+            .modal-close-btn {
+                background: none;
+                border: none;
+                color: var(--text-primary, #cccccc);
+                font-size: 24px;
+                cursor: pointer;
+                padding: 0;
+                width: 32px;
+                height: 32px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: color 0.2s ease;
+            }
+
+            .modal-close-btn:hover {
+                color: var(--text-secondary, #999999);
+            }
+
+            .modal-content {
+                padding: 20px;
+            }
+
+            .form-group {
+                margin-bottom: 20px;
+            }
+
+            .form-label,
+            label {
+                display: block;
+                font-size: 13px;
+                font-weight: 600;
+                margin-bottom: 8px;
+                color: var(--text-primary, #cccccc);
+            }
+
+            .form-input {
+                width: 100%;
+                padding: 8px 12px;
+                background: var(--bg-secondary, #252525);
+                border: 1px solid var(--border-color, #3e3e3e);
+                color: var(--text-primary, #cccccc);
+                border-radius: 4px;
+                font-family: inherit;
+                font-size: 13px;
+                box-sizing: border-box;
+                transition: border-color 0.2s ease;
+            }
+
+            .form-input:focus {
+                outline: none;
+                border-color: var(--accent-color, #007acc);
+                box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.2);
+            }
+
+            .form-input.input-error {
+                border-color: #f48771;
+            }
+
+            .form-help {
+                display: block;
+                font-size: 11px;
+                color: var(--text-secondary, #999999);
+                margin-top: 4px;
+            }
+
+            .form-error {
+                display: block;
+                font-size: 11px;
+                color: #f48771;
+                margin-top: 4px;
+            }
+
+            .icon-section {
+                margin-bottom: 20px;
+                padding: 12px;
+                background: var(--bg-secondary, #252525);
+                border-radius: 4px;
+                border: 1px solid var(--border-color, #3e3e3e);
+            }
+
+            .icon-upload-container {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .icon-preview {
+                width: 80px;
+                height: 80px;
+                border: 2px dashed var(--border-color, #3e3e3e);
+                border-radius: 4px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: var(--bg-primary, #1e1e1e);
+                margin-bottom: 8px;
+            }
+
+            .icon-preview img {
+                max-width: 100%;
+                max-height: 100%;
+                border-radius: 2px;
+            }
+
+            .icon-url-group {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .icon-button-group {
+                display: flex;
+                gap: 8px;
+            }
+
+            .modal-button-group {
+                display: flex;
+                gap: 8px;
+                justify-content: flex-end;
+                padding-top: 12px;
+                border-top: 1px solid var(--border-color, #3e3e3e);
+                margin-top: 20px;
+            }
+
+            .modal-button {
+                padding: 8px 16px;
+                border: none;
+                border-radius: 4px;
+                font-size: 13px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s ease;
+            }
+
+            .modal-button-primary {
+                background: var(--accent-color, #007acc);
+                color: white;
+            }
+
+            .modal-button-primary:hover:not(:disabled) {
+                background: #1177bb;
+            }
+
+            .modal-button-primary:disabled {
+                background: var(--accent-color, #007acc);
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+
+            .modal-button-secondary {
+                background: var(--bg-secondary, #252525);
+                color: var(--text-primary, #cccccc);
+                border: 1px solid var(--border-color, #3e3e3e);
+            }
+
+            .modal-button-secondary:hover:not(:disabled) {
+                background: var(--border-color, #3e3e3e);
+                border-color: var(--text-primary, #cccccc);
+            }
+
+            .modal-button-secondary:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    /**
      * Render the dialog
      */
     render() {
+        // Inject CSS styles if not already present
+        this.injectStyles();
+
         // Create backdrop
         const backdrop = document.createElement('div');
         backdrop.className = 'modal-backdrop';
+        backdrop.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        `;
         backdrop.addEventListener('click', (e) => {
             if (e.target === backdrop) {
                 this.close();
@@ -61,6 +291,18 @@ class WebAppDialog {
         // Create dialog container
         this.dialog = document.createElement('div');
         this.dialog.className = 'modal-dialog modal-dialog-webapp';
+        this.dialog.style.cssText = `
+            max-width: 500px;
+            width: 90%;
+            background: var(--bg-primary, #1e1e1e);
+            border: 1px solid var(--border-color, #3e3e3e);
+            border-radius: 8px;
+            padding: 0;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            max-height: 90vh;
+            overflow-y: auto;
+            z-index: 10001;
+        `;
 
         // Title
         const title = document.createElement('div');
@@ -192,13 +434,13 @@ class WebAppDialog {
         section.className = 'icon-section';
 
         const label = document.createElement('label');
-        label.textContent = 'Icon';
+        label.textContent = 'Icon (Optional)';
         label.className = 'form-label';
 
         const container = document.createElement('div');
         container.className = 'icon-upload-container';
 
-        // Icon preview
+        // Icon preview - positioned at top
         const preview = document.createElement('div');
         preview.className = 'icon-preview';
         preview.id = 'icon-preview';
@@ -210,10 +452,13 @@ class WebAppDialog {
             };
             preview.appendChild(img);
         } else {
-            preview.textContent = 'No icon';
+            const emptyIcon = document.createElement('div');
+            emptyIcon.style.cssText = 'font-size: 32px; color: #0e639c; opacity: 0.5;';
+            emptyIcon.textContent = '📷';
+            preview.appendChild(emptyIcon);
         }
 
-        // Upload input
+        // Upload input (hidden)
         const uploadInput = document.createElement('input');
         uploadInput.type = 'file';
         uploadInput.id = 'icon-upload';
@@ -221,18 +466,39 @@ class WebAppDialog {
         uploadInput.style.display = 'none';
         uploadInput.addEventListener('change', (e) => this.handleIconUpload(e));
 
-        // Upload button
+        // Icon URL input group
+        const urlGroup = document.createElement('div');
+        urlGroup.className = 'icon-url-group';
+
+        const urlLabel = document.createElement('label');
+        urlLabel.htmlFor = 'icon-url-input';
+        urlLabel.style.cssText = 'font-size: 11px; color: #888; margin-bottom: 4px; display: block;';
+        urlLabel.textContent = 'Or paste icon URL:';
+
+        const urlInput = document.createElement('input');
+        urlInput.id = 'icon-url-input';
+        urlInput.type = 'text';
+        urlInput.className = 'form-input';
+        urlInput.placeholder = 'https://example.com/icon.png';
+        urlInput.style.cssText = 'margin-bottom: 8px;';
+        urlInput.addEventListener('change', () => this.fetchIconFromUrl(urlInput.value));
+
+        urlGroup.appendChild(urlLabel);
+        urlGroup.appendChild(urlInput);
+
+        // Buttons
         const uploadBtn = document.createElement('button');
         uploadBtn.type = 'button';
         uploadBtn.className = 'modal-button modal-button-secondary';
-        uploadBtn.textContent = 'Upload Icon';
+        uploadBtn.textContent = 'Upload File';
+        uploadBtn.style.cssText = 'flex: 1;';
         uploadBtn.addEventListener('click', () => uploadInput.click());
 
-        // Fetch favicon button
         const fetchBtn = document.createElement('button');
         fetchBtn.type = 'button';
         fetchBtn.className = 'modal-button modal-button-secondary';
         fetchBtn.textContent = 'Auto-Fetch';
+        fetchBtn.style.cssText = 'flex: 1;';
         fetchBtn.addEventListener('click', () => this.fetchFavicon());
 
         const buttonGroup = document.createElement('div');
@@ -242,6 +508,7 @@ class WebAppDialog {
 
         container.appendChild(preview);
         container.appendChild(uploadInput);
+        container.appendChild(urlGroup);
         container.appendChild(buttonGroup);
 
         section.appendChild(label);
@@ -272,12 +539,76 @@ class WebAppDialog {
     }
 
     /**
+     * Fetch icon from a pasted URL
+     */
+    async fetchIconFromUrl(url) {
+        if (!url || url.trim().length === 0) {
+            return; // User cleared the field
+        }
+
+        try {
+            const trimmedUrl = url.trim();
+            
+            // Validate it's a real URL
+            try {
+                new URL(trimmedUrl);
+            } catch (e) {
+                await modal.alert('Invalid URL', 'Please enter a valid URL (e.g., https://example.com/icon.png)');
+                return;
+            }
+
+            // Show loading state
+            const preview = document.getElementById('icon-preview');
+            const originalContent = preview.innerHTML;
+            preview.innerHTML = '<div style="color: #0e639c; font-size: 12px;">Loading...</div>';
+
+            // Fetch the image
+            const response = await fetch(trimmedUrl);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const blob = await response.blob();
+            
+            // Validate it's an image
+            if (!blob.type.startsWith('image/')) {
+                throw new Error('URL does not point to an image');
+            }
+
+            // Convert to base64
+            const reader = new FileReader();
+            reader.onload = () => {
+                this.formData.icon = reader.result;
+                this.formData.customIcon = true;
+                this.updateIconPreview(reader.result);
+                logger.debug('webApps', 'Icon loaded from URL');
+            };
+            reader.onerror = () => {
+                preview.innerHTML = originalContent;
+                logger.error('webApps', 'Error reading icon');
+            };
+            reader.readAsDataURL(blob);
+
+        } catch (error) {
+            logger.error('webApps', 'Error loading icon from URL:', error.message);
+            const preview = document.getElementById('icon-preview');
+            const emptyIcon = document.createElement('div');
+            emptyIcon.style.cssText = 'font-size: 32px; color: #f48771; opacity: 0.5;';
+            emptyIcon.textContent = '❌';
+            preview.innerHTML = '';
+            preview.appendChild(emptyIcon);
+            
+            await modal.alert('Failed to Load Icon', `Could not load image: ${error.message}`);
+        }
+    }
+
+    /**
      * Fetch favicon from URL
      */
     async fetchFavicon() {
         const urlValue = this.formData.url.trim();
         if (!urlValue) {
-            await modal.alert('No URL', 'Please enter a URL first');
+            await modal.alert('No URL', 'Please enter a website URL first to auto-fetch its favicon');
             return;
         }
 
@@ -293,7 +624,7 @@ class WebAppDialog {
                 this.updateIconPreview(icon);
                 logger.debug('webApps', 'Favicon fetched successfully');
             } else {
-                await modal.alert('Not Found', 'Could not find favicon for this URL. Please upload one manually.');
+                await modal.alert('Not Found', 'Could not find favicon. Try uploading your own or pasting an icon URL.');
             }
         } catch (error) {
             logger.error('webApps', 'Error fetching favicon:', error.message);

@@ -21,14 +21,15 @@ class Browser {
     static instances = new Map(); // Maps instanceId -> { browser, createdAt, paneId, tabId, browserViewTabs: [] }
     static instanceCounter = 0;
 
-    constructor(container, paneId, tabId, profileId = null) {
+    constructor(container, paneId, tabId, profileId = null, initialUrl = null) {
         this.container = container;
         this.paneId = paneId;
         this.tabId = tabId;
         this.profileId = profileId; // Browser profile for cookie isolation
         this.tabs = [];
         this.activeTabId = null;
-        this.currentUrl = 'https://google.com';
+        // Use initial URL if provided, otherwise default to Google
+        this.currentUrl = initialUrl || 'https://google.com';
         this.canGoBack = false;
         this.canGoForward = false;
         this.resizeObserver = null;
@@ -50,6 +51,7 @@ class Browser {
             instanceId: this.instanceId,
             paneId: this.paneId,
             tabId: this.tabId,
+            initialUrl: this.currentUrl,
             totalInstances: Browser.instances.size
         });
 

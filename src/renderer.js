@@ -1256,8 +1256,8 @@ class Application {
         const profileId = activeProfile ? activeProfile.id : null;
 
         // Create Browser instance with the webapp URL
-        logger.debug('appInit', 'Creating Browser instance for web app:', app.name);
-        const browser = new Browser(browserContainer, activePane.id, tabId, profileId);
+        logger.debug('appInit', 'Creating Browser instance for web app:', app.name, 'URL:', app.url);
+        const browser = new Browser(browserContainer, activePane.id, tabId, profileId, app.url);
 
         // Store reference for cleanup
         browserContainer._browserInstance = browser;
@@ -1265,7 +1265,7 @@ class Application {
 
         // Track browser in active workspace
         this.workspaceManager.trackBrowserInActiveWorkspace(browser.instanceId);
-        logger.debug('appInit', 'Web app tracked in workspace:', browser.instanceId);
+        logger.debug('appInit', 'Web app tracked in workspace:', browser.instanceId, 'with URL:', app.url);
 
         logger.debug('appInit', '✓ Web app opened in pane successfully');
         logger.debug('appInit', '========================================');
