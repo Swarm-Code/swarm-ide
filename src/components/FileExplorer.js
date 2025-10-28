@@ -15,6 +15,7 @@ const fileTypes = require('../utils/FileTypes');
 const pathUtils = require('../utils/PathUtils');
 const fileStateTracker = require('../modules/FileStateTracker');
 const logger = require('../utils/Logger');
+const WebAppsPanel = require('./WebAppsPanel');
 
 class FileExplorer {
     constructor(container, fileSystemService, config) {
@@ -27,6 +28,7 @@ class FileExplorer {
         this.lastSelectedPath = null; // For shift-click selection
         this.contextMenu = null; // Context menu element
         this.clipboard = { items: [], operation: null }; // Clipboard for copy/cut/paste
+        this.webAppsPanel = null; // Web Apps panel instance
 
         // SSH connection context
         this.sshContext = {
@@ -57,11 +59,25 @@ class FileExplorer {
     /**
      * Initialize the component
      */
-    init() {
+    async init() {
         console.log('[FileExplorer] ========================================');
         console.log('[FileExplorer] INIT CALLED - FileExplorer is being initialized');
         console.log('[FileExplorer] ========================================');
         logger.info('sshFileExplorer', '🔧 FileExplorer init() CALLED');
+        
+        // Initialize Web Apps Panel
+        try {
+            const webAppsContainer = document.getElementById('web-apps-container');
+            if (webAppsContainer) {
+                this.webAppsPanel = new WebAppsPanel(webAppsContainer);
+                logger.info('sshFileExplorer', '✓ WebAppsPanel initialized');
+            } else {
+                logger.warn('sshFileExplorer', 'web-apps-container element not found');
+            }
+        } catch (error) {
+            logger.error('sshFileExplorer', 'Failed to initialize WebAppsPanel:', error.message);
+        }
+
         this.setupEventListeners();
         this.renderEmpty();
         console.log('[FileExplorer] ✅ Init complete, event listeners set up');

@@ -674,6 +674,28 @@ class Application {
                 await this.openFileInPane(data.paneId, data.filePath);
             });
 
+            // Handle web app open request
+            eventBus.on('webapp:open', async (app) => {
+                logger.debug('appInit', 'Opening web app:', app.name);
+                await this.openWebAppInPane(app);
+            });
+
+            // Handle web app add request
+            eventBus.on('webapp:add', async (data) => {
+                logger.debug('appInit', 'Opening add web app dialog');
+                const WebAppDialog = require('./components/WebAppDialog');
+                const dialog = new WebAppDialog(null);
+                // Dialog will auto-show and handle submission
+            });
+
+            // Handle web app edit request
+            eventBus.on('webapp:edit', async (app) => {
+                logger.debug('appInit', 'Opening edit web app dialog');
+                const WebAppDialog = require('./components/WebAppDialog');
+                const dialog = new WebAppDialog(app);
+                // Dialog will auto-show and handle submission
+            });
+
             // Handle Ctrl+E - Open Claude extension
             logger.debug('appInit', 'Setting up extension:open-claude handler...');
             if (window.electronAPI && window.electronAPI.onExtensionEvent) {
@@ -939,6 +961,12 @@ class Application {
                     eventBus.emit('ui:toggle-sidebar');
                 }
 
+                // Ctrl+Alt+A / Cmd+Option+A - Add Web App
+                if (ctrlOrCmd && e.altKey && e.key === 'a') {
+                    e.preventDefault();
+                    eventBus.emit('webapp:add', {});
+                }
+
                 // Ctrl+P / Cmd+P - Quick Open
                 if (ctrlOrCmd && e.key === 'p' && !e.shiftKey) {
                     e.preventDefault();
@@ -1178,6 +1206,68 @@ class Application {
         logger.debug('appInit', 'Browser tracked in workspace:', browser.instanceId);
 
         logger.debug('appInit', '✓ Browser opened in pane successfully');
+        logger.debug('appInit', '========================================');
+    }
+
+    /**
+     * Open a web app in a pane as a tab
+     */
+    async openWebAppInPane(app) {
+        logger.debug('appInit', '========== OPENING WEB APP IN PANE ==========');
+        logger.debug('appInit', 'App name:', app.name);
+        logger.debug('appInit', 'App URL:', app.url);
+
+        // Get active pane or use root pane
+        let activePane = this.paneManager?.getActivePane();
+        if (!activePane) {
+            logger.warn('appInit', 'No active pane, using root pane');
+            activePane = this.paneManager?.rootPane;
+        }
+
+        if (!activePane) {
+            logger.error('appInit', 'No pane available for web app');
+            return;
+        }
+
+        logger.debug('appInit', 'Opening web app in pane:', activePane.id);
+
+        // Create browser container for the web app
+        const browserContainer = document.createElement('div');
+        browserContainer.className = 'browser-pane-container';
+        browserContainer.dataset.browserUrl = app.url;
+        browserContainer.dataset.webappId = app.id; // Store webapp ID for reference
+        browserContainer.style.cssText = 'position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; width: 100%; height: 100%;';
+
+        // Use app name as tab title
+        logger.debug('appInit', 'Adding web app tab to pane with title:', app.name);
+
+        // Add as a tab to the pane using webapp:// protocol
+        const tabId = this.paneManager.addTab(
+            activePane.id,
+            `webapp://${app.id}`, // Use webapp ID as unique identifier
+            app.name, // Use app name as title
+            browserContainer,
+            'browser', // Use browser as content type
+            null
+        );
+
+        // Get active profile for cookie isolation
+        const activeProfile = this.browserProfileManager.getActiveProfile();
+        const profileId = activeProfile ? activeProfile.id : null;
+
+        // Create Browser instance with the webapp URL
+        logger.debug('appInit', 'Creating Browser instance for web app:', app.name);
+        const browser = new Browser(browserContainer, activePane.id, tabId, profileId);
+
+        // Store reference for cleanup
+        browserContainer._browserInstance = browser;
+        browserContainer._webappData = app; // Store webapp data
+
+        // Track browser in active workspace
+        this.workspaceManager.trackBrowserInActiveWorkspace(browser.instanceId);
+        logger.debug('appInit', 'Web app tracked in workspace:', browser.instanceId);
+
+        logger.debug('appInit', '✓ Web app opened in pane successfully');
         logger.debug('appInit', '========================================');
     }
 
