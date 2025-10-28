@@ -12,8 +12,18 @@
 
 const fs = require('fs').promises;
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
 const logger = require('../utils/Logger');
+
+/**
+ * Generate a UUID v4 string (simple implementation)
+ */
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
 
 class WebAppsStore {
     constructor() {
@@ -131,7 +141,7 @@ class WebAppsStore {
      */
     async add(appData) {
         const app = {
-            id: uuidv4(),
+            id: generateUUID(),
             name: appData.name.trim(),
             url: appData.url.trim(),
             icon: appData.icon || null,
