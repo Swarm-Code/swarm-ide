@@ -1,16 +1,20 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, WebContentsView } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
 import Store from 'electron-store';
 import os from 'os';
 import pty from 'node-pty';
+import { lspServerManager } from './lsp-server-manager.mjs';
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const store = new Store();
+
+// Browser management
+const browsers = new Map(); // browserId -> WebContentsView
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -290,6 +294,276 @@ ipcMain.handle('terminal:kill', (event, { terminalId }) => {
   return { success: false, error: 'Terminal not found' };
 });
 
+// Browser IPC Handlers
+ipcMain.handle('browser:create', (event, { browserId, url, workspaceId }) => {
+  try {
+    const view = new WebContentsView({
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+      }
+    });
+
+    // Load the URL
+    view.webContents.loadURL(url).catch(err => {
+      console.error('Error loading URL:', err);
+      // Try to load error page or about:blank
+      view.webContents.loadURL('about:blank');
+    });
+
+    browsers.set(browserId, view);
+
+    // Navigation events - send to renderer
+    view.webContents.on('did-navigate', (event, url) => {
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      if (mainWindow) {
+        mainWindow.webContents.send('browser:navigation', { 
+          browserId, 
+          url,
+          canGoBack: view.webContents.canGoBack(),
+          canGoForward: view.webContents.canGoForward()
+        });
+      }
+    });
+
+    view.webContents.on('did-navigate-in-page', (event, url) => {
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      if (mainWindow) {
+        mainWindow.webContents.send('browser:navigation', { 
+          browserId, 
+          url,
+          canGoBack: view.webContents.canGoBack(),
+          canGoForward: view.webContents.canGoForward()
+        });
+      }
+    });
+
+    view.webContents.on('page-title-updated', (event, title) => {
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      if (mainWindow) {
+        mainWindow.webContents.send('browser:title', { browserId, title });
+      }
+    });
+
+    view.webContents.on('did-start-loading', () => {
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      if (mainWindow) {
+        mainWindow.webContents.send('browser:loading', { browserId, isLoading: true });
+      }
+    });
+
+    view.webContents.on('did-stop-loading', () => {
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      if (mainWindow) {
+        mainWindow.webContents.send('browser:loading', { browserId, isLoading: false });
+      }
+    });
+
+    return { success: true, browserId };
+  } catch (error) {
+    console.error('Error creating browser:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Set browser bounds (position and size)
+ipcMain.handle('browser:setBounds', (event, { browserId, bounds }) => {
+  try {
+    const view = browsers.get(browserId);
+    if (!view) {
+      return { success: false, error: 'Browser not found' };
+    }
+
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (!mainWindow) {
+      return { success: false, error: 'Main window not found' };
+    }
+
+    // Check if contentView API is available (Electron 30+)
+    if (!mainWindow.contentView) {
+      return { success: false, error: 'WebContentsView requires Electron 30+. Please upgrade Electron.' };
+    }
+
+    // Check if view is already added to window
+    const contentView = mainWindow.contentView;
+    if (!contentView.children.includes(view)) {
+      contentView.addChildView(view);
+    }
+
+    // Set bounds
+    view.setBounds({
+      x: Math.round(bounds.x),
+      y: Math.round(bounds.y),
+      width: Math.round(bounds.width),
+      height: Math.round(bounds.height)
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error setting browser bounds:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Hide browser (remove from window)
+ipcMain.handle('browser:hide', (event, { browserId }) => {
+  try {
+    const view = browsers.get(browserId);
+    if (!view) {
+      return { success: false, error: 'Browser not found' };
+    }
+
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (!mainWindow) {
+      return { success: false, error: 'Main window not found' };
+    }
+
+    // Check if contentView API is available
+    if (!mainWindow.contentView) {
+      return { success: false, error: 'WebContentsView requires Electron 30+' };
+    }
+
+    const contentView = mainWindow.contentView;
+    if (contentView.children.includes(view)) {
+      contentView.removeChildView(view);
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error hiding browser:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Navigate browser to URL
+ipcMain.handle('browser:navigate', (event, { browserId, url }) => {
+  try {
+    const view = browsers.get(browserId);
+    if (!view) {
+      return { success: false, error: 'Browser not found' };
+    }
+
+    view.webContents.loadURL(url).catch(err => {
+      console.error('Error navigating:', err);
+      // Send error to renderer
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      if (mainWindow) {
+        mainWindow.webContents.send('browser:error', { 
+          browserId, 
+          error: err.message 
+        });
+      }
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error navigating browser:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Go back
+ipcMain.handle('browser:goBack', (event, { browserId }) => {
+  try {
+    const view = browsers.get(browserId);
+    if (!view) {
+      return { success: false, error: 'Browser not found' };
+    }
+
+    if (view.webContents.canGoBack()) {
+      view.webContents.goBack();
+      return { success: true };
+    }
+    
+    return { success: false, error: 'Cannot go back' };
+  } catch (error) {
+    console.error('Error going back:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Go forward
+ipcMain.handle('browser:goForward', (event, { browserId }) => {
+  try {
+    const view = browsers.get(browserId);
+    if (!view) {
+      return { success: false, error: 'Browser not found' };
+    }
+
+    if (view.webContents.canGoForward()) {
+      view.webContents.goForward();
+      return { success: true };
+    }
+    
+    return { success: false, error: 'Cannot go forward' };
+  } catch (error) {
+    console.error('Error going forward:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Reload
+ipcMain.handle('browser:reload', (event, { browserId }) => {
+  try {
+    const view = browsers.get(browserId);
+    if (!view) {
+      return { success: false, error: 'Browser not found' };
+    }
+
+    view.webContents.reload();
+    return { success: true };
+  } catch (error) {
+    console.error('Error reloading browser:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Stop loading
+ipcMain.handle('browser:stop', (event, { browserId }) => {
+  try {
+    const view = browsers.get(browserId);
+    if (!view) {
+      return { success: false, error: 'Browser not found' };
+    }
+
+    view.webContents.stop();
+    return { success: true };
+  } catch (error) {
+    console.error('Error stopping browser:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Destroy browser
+ipcMain.handle('browser:destroy', (event, { browserId }) => {
+  try {
+    const view = browsers.get(browserId);
+    if (!view) {
+      return { success: false, error: 'Browser not found' };
+    }
+
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (mainWindow && mainWindow.contentView) {
+      const contentView = mainWindow.contentView;
+      if (contentView.children.includes(view)) {
+        contentView.removeChildView(view);
+      }
+    }
+
+    // Close the webContents
+    if (!view.webContents.isDestroyed()) {
+      view.webContents.close();
+    }
+
+    browsers.delete(browserId);
+    return { success: true };
+  } catch (error) {
+    console.error('Error destroying browser:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 app.whenReady().then(() => {
   createWindow();
 
@@ -299,5 +573,29 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', function () {
+  // Clean up LSP servers
+  lspServerManager.stopAll();
+  
+  // Clean up browsers
+  for (const [browserId, view] of browsers.entries()) {
+    if (!view.webContents.isDestroyed()) {
+      view.webContents.close();
+    }
+    browsers.delete(browserId);
+  }
+  
   if (process.platform !== 'darwin') app.quit();
+});
+
+// LSP IPC Handlers
+ipcMain.handle('lsp:startServer', (event, { languageId, serverConfig }) => {
+  return lspServerManager.startServer(languageId, serverConfig);
+});
+
+ipcMain.handle('lsp:sendMessage', (event, { languageId, message }) => {
+  return lspServerManager.sendMessage(languageId, message);
+});
+
+ipcMain.handle('lsp:stopServer', (event, { languageId }) => {
+  return lspServerManager.stopServer(languageId);
 });
