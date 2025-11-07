@@ -9,14 +9,12 @@ function getInitialState() {
   return {
     layout: {
       type: 'pane',
-      paneType: 'editor', // 'editor', 'terminal', or 'browser'
+      paneType: 'editor', // 'editor' or 'terminal' (browsers are tabs in editor panes)
       id: 'pane-1',
-      tabs: [],
+      tabs: [], // Unified tabs: can be type 'editor' or 'browser'
       activeTabId: null,
       terminalIds: [], // Array of terminal IDs for terminal panes
       activeTerminalId: null, // Active terminal in this pane
-      browserIds: [], // Array of browser IDs for browser panes
-      activeBrowserId: null, // Active browser in this pane
     },
     activePaneId: 'pane-1',
     nextPaneId: 2,
@@ -83,9 +81,9 @@ function createEditorStore() {
         return;
       }
 
-      // Check if file already open in this pane (only if it's an editor pane)
+      // Check if file already open in this pane
       if (pane.paneType === 'editor') {
-        const existingTab = pane.tabs.find((t) => t.path === filePath);
+        const existingTab = pane.tabs.find((t) => t.type === 'editor' && t.path === filePath);
         if (existingTab) {
           update((state) => {
             const targetPane = findPaneById(state.layout, state.activePaneId);
@@ -143,6 +141,7 @@ function createEditorStore() {
               // New pane is already 'editor' type by default
               const newTab = {
                 id: `tab-${state.nextTabId}`,
+                type: 'editor',
                 path: filePath,
                 name: fileName,
                 content: content,
@@ -165,53 +164,12 @@ function createEditorStore() {
           }
         }
         
-        // If active pane is a browser pane with browsers, split it
-        if (targetPane.paneType === 'browser' && targetPane.browserIds.length > 0) {
-          console.log('[editorStore.openFile] ✅ Splitting browser pane (has browsers)');
-          const result = splitPaneInLayout(
-            state.layout,
-            state.activePaneId,
-            'vertical',
-            state.nextPaneId
-          );
-          
-          if (result) {
-            const newPane = findPaneById(result.layout, result.newPaneId);
-            if (newPane) {
-              // New pane is already 'editor' type by default
-              const newTab = {
-                id: `tab-${state.nextTabId}`,
-                path: filePath,
-                name: fileName,
-                content: content,
-                isDirty: false,
-              };
-              
-              newPane.tabs = [newTab];
-              newPane.activeTabId = newTab.id;
-              
-              console.log('[editorStore.openFile] ✅ Created new tab:', newTab.id, 'in new pane:', newPane.id);
-              
-              return {
-                ...state,
-                layout: result.layout,
-                activePaneId: result.newPaneId,
-                nextPaneId: state.nextPaneId + 1,
-                nextTabId: state.nextTabId + 1,
-              };
-            }
-          }
-        }
-        
-        // If active pane is empty terminal or browser, convert it to editor
-        if ((targetPane.paneType === 'terminal' && targetPane.terminalIds.length === 0) ||
-            (targetPane.paneType === 'browser' && targetPane.browserIds.length === 0)) {
-          console.log('[editorStore.openFile] ✅ Converting empty', targetPane.paneType, 'pane to editor');
+        // If active pane is empty terminal, convert it to editor
+        if (targetPane.paneType === 'terminal' && targetPane.terminalIds.length === 0) {
+          console.log('[editorStore.openFile] ✅ Converting empty terminal pane to editor');
           targetPane.paneType = 'editor';
           targetPane.terminalIds = [];
           targetPane.activeTerminalId = null;
-          targetPane.browserIds = [];
-          targetPane.activeBrowserId = null;
           targetPane.tabs = [];
           targetPane.activeTabId = null;
         }
@@ -224,6 +182,7 @@ function createEditorStore() {
 
         const newTab = {
           id: `tab-${state.nextTabId}`,
+          type: 'editor',
           path: filePath,
           name: fileName,
           content: content,
@@ -404,48 +363,42 @@ function createEditorStore() {
       return state;
     }),
 
-    // Add browser to active pane or create new pane
-    addBrowser: (browserId) => update((state) => {
+    // Add browser as a tab in active pane
+    addBrowser: (browserId, url = 'https://www.google.com') => update((state) => {
       console.log('[editorStore.addBrowser] Called with browserId:', browserId);
-      console.log('[editorStore.addBrowser] Current state:', {
-        activePaneId: state.activePaneId,
-        layoutType: state.layout.type,
-        layoutPaneType: state.layout.paneType
-      });
       
       const pane = findPaneById(state.layout, state.activePaneId);
       console.log('[editorStore.addBrowser] Active pane:', {
         id: pane?.id,
         type: pane?.paneType,
-        tabsCount: pane?.tabs?.length,
-        browserIdsCount: pane?.browserIds?.length,
-        terminalIdsCount: pane?.terminalIds?.length
+        tabsCount: pane?.tabs?.length
       });
       
-      // If active pane is a browser pane, just add the browser to it
-      if (pane && pane.paneType === 'browser') {
-        console.log('[editorStore.addBrowser] ✅ Adding to existing browser pane');
-
-        if (!pane.browserIds.includes(browserId)) {
-          pane.browserIds.push(browserId);
-          pane.activeBrowserId = browserId;
-        }
+      if (!pane) return state;
+      
+      // If active pane is editor, add browser tab to it
+      if (pane.paneType === 'editor') {
+        console.log('[editorStore.addBrowser] ✅ Adding browser tab to editor pane');
+        const newTab = {
+          id: `tab-${state.nextTabId}`,
+          type: 'browser',
+          browserId: browserId,
+          url: url,
+          title: 'New Tab',
+        };
         
-        // Remove from old location AFTER adding to new location
-        const existingPane = findPaneByBrowserId(state.layout, browserId);
-        if (existingPane && existingPane.id !== pane.id) {
-          existingPane.browserIds = existingPane.browserIds.filter(id => id !== browserId);
-          if (existingPane.activeBrowserId === browserId && existingPane.browserIds.length > 0) {
-            existingPane.activeBrowserId = existingPane.browserIds[existingPane.browserIds.length - 1];
-          }
-        }
-        return state;
+        pane.tabs.push(newTab);
+        pane.activeTabId = newTab.id;
+        
+        return {
+          ...state,
+          nextTabId: state.nextTabId + 1,
+        };
       }
       
-      // If active pane is an editor with content, split it
-      if (pane && pane.paneType === 'editor' && pane.tabs.length > 0) {
-        console.log('[editorStore.addBrowser] ✅ Splitting editor pane (has content)');
-        // Split vertically and add browser to new pane
+      // If active pane is terminal, split and add browser tab to new editor pane
+      if (pane.paneType === 'terminal') {
+        console.log('[editorStore.addBrowser] ✅ Splitting terminal, adding browser tab to new pane');
         const result = splitPaneInLayout(
           state.layout,
           state.activePaneId,
@@ -456,20 +409,16 @@ function createEditorStore() {
         if (result) {
           const newPane = findPaneById(result.layout, result.newPaneId);
           if (newPane) {
-            newPane.paneType = 'browser';
-            newPane.browserIds = [browserId];
-            newPane.activeBrowserId = browserId;
-            newPane.tabs = [];
-            newPane.activeTabId = null;
-          }
-          
-          // Remove from old location AFTER adding to new location
-          const existingPane = findPaneByBrowserId(result.layout, browserId);
-          if (existingPane && existingPane.id !== newPane.id) {
-            existingPane.browserIds = existingPane.browserIds.filter(id => id !== browserId);
-            if (existingPane.activeBrowserId === browserId && existingPane.browserIds.length > 0) {
-              existingPane.activeBrowserId = existingPane.browserIds[existingPane.browserIds.length - 1];
-            }
+            const newTab = {
+              id: `tab-${state.nextTabId}`,
+              type: 'browser',
+              browserId: browserId,
+              url: url,
+              title: 'New Tab',
+            };
+            
+            newPane.tabs = [newTab];
+            newPane.activeTabId = newTab.id;
           }
           
           return {
@@ -477,109 +426,11 @@ function createEditorStore() {
             layout: result.layout,
             activePaneId: result.newPaneId,
             nextPaneId: state.nextPaneId + 1,
+            nextTabId: state.nextTabId + 1,
           };
-        }
-      } else if (pane && pane.paneType === 'editor' && pane.tabs.length === 0) {
-        console.log('[editorStore.addBrowser] ✅ Converting empty editor pane to browser');
-        // Convert empty editor pane to browser pane
-        pane.paneType = 'browser';
-        pane.browserIds = [browserId];
-        pane.activeBrowserId = browserId;
-        pane.tabs = [];
-        pane.activeTabId = null;
-        
-        // Remove from old location AFTER adding to new location
-        const existingPane = findPaneByBrowserId(state.layout, browserId);
-        if (existingPane && existingPane.id !== pane.id) {
-          existingPane.browserIds = existingPane.browserIds.filter(id => id !== browserId);
-          if (existingPane.activeBrowserId === browserId && existingPane.browserIds.length > 0) {
-            existingPane.activeBrowserId = existingPane.browserIds[existingPane.browserIds.length - 1];
-          }
         }
       }
       
-      return state;
-    }),
-
-    // Set active browser in a browser pane
-    setActiveBrowserInPane: (paneId, browserId) => update((state) => {
-      const pane = findPaneById(state.layout, paneId);
-      if (pane && pane.paneType === 'browser' && pane.browserIds.includes(browserId)) {
-        pane.activeBrowserId = browserId;
-        state.activePaneId = paneId;
-      }
-      return state;
-    }),
-
-    // Remove browser from pane
-    removeBrowser: (browserId) => update((state) => {
-      const pane = findPaneByBrowserId(state.layout, browserId);
-      if (!pane) return state;
-
-      // Remove browser from the pane's browserIds
-      pane.browserIds = pane.browserIds.filter(id => id !== browserId);
-
-      // If no more browsers in pane
-      if (pane.browserIds.length === 0) {
-        // If it's the only pane, convert back to editor
-        if (state.layout.type === 'pane' && state.layout.id === pane.id) {
-          pane.paneType = 'editor';
-          pane.activeBrowserId = null;
-          return state;
-        }
-
-        // Otherwise close the pane
-        const result = closePaneInLayout(state.layout, pane.id);
-        if (result) {
-          return {
-            ...state,
-            layout: result.layout,
-            activePaneId: result.newActivePaneId,
-          };
-        }
-      } else {
-        // Still have browsers, update active browser
-        if (pane.activeBrowserId === browserId) {
-          pane.activeBrowserId = pane.browserIds[pane.browserIds.length - 1];
-        }
-      }
-
-      return state;
-    }),
-
-    // Close browser tab (remove from pane)
-    closeBrowserTab: (paneId, browserId) => update((state) => {
-      const pane = findPaneById(state.layout, paneId);
-      if (!pane || pane.paneType !== 'browser') return state;
-
-      // Remove browser from the pane's browserIds
-      pane.browserIds = pane.browserIds.filter(id => id !== browserId);
-
-      // If no more browsers in pane
-      if (pane.browserIds.length === 0) {
-        // If it's the only pane, convert back to editor
-        if (state.layout.type === 'pane' && state.layout.id === pane.id) {
-          pane.paneType = 'editor';
-          pane.activeBrowserId = null;
-          return state;
-        }
-
-        // Otherwise close the pane
-        const result = closePaneInLayout(state.layout, pane.id);
-        if (result) {
-          return {
-            ...state,
-            layout: result.layout,
-            activePaneId: result.newActivePaneId,
-          };
-        }
-      } else {
-        // Still have browsers, update active browser
-        if (pane.activeBrowserId === browserId) {
-          pane.activeBrowserId = pane.browserIds[pane.browserIds.length - 1];
-        }
-      }
-
       return state;
     }),
 
@@ -762,21 +613,6 @@ function findPaneByTerminalId(layout, terminalId) {
   return null;
 }
 
-// Helper: Find pane by browser ID in layout tree
-function findPaneByBrowserId(layout, browserId) {
-  if (layout.type === 'pane' && layout.paneType === 'browser' && layout.browserIds.includes(browserId)) {
-    return layout;
-  }
-
-  if (layout.type === 'split') {
-    const leftResult = findPaneByBrowserId(layout.left, browserId);
-    if (leftResult) return leftResult;
-    return findPaneByBrowserId(layout.right, browserId);
-  }
-
-  return null;
-}
-
 // Helper: Split pane in layout tree
 function splitPaneInLayout(layout, paneId, direction, nextPaneId) {
   if (layout.type === 'pane' && layout.id === paneId) {
@@ -795,8 +631,6 @@ function splitPaneInLayout(layout, paneId, direction, nextPaneId) {
           activeTabId: null,
           terminalIds: [],
           activeTerminalId: null,
-          browserIds: [],
-          activeBrowserId: null,
         },
         splitRatio: 0.5, // 50/50 split
       },
