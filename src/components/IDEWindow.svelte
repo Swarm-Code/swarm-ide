@@ -128,56 +128,56 @@
     
     console.log('[IDEWindow] positionBrowsers() called - activeWorkspaceId:', activeWorkspaceId);
     
-    // For each browser in current workspace
-    for (const browser of workspaceBrowsers) {
-      // Find target pane - look for the CONTENT area, not the whole pane
-      const canvasPanes = document.querySelectorAll('[data-browser-location="canvas-pane"]');
-      let targetContainer = null;
+    // Find all browser content areas in the DOM
+    const canvasPanes = document.querySelectorAll('[data-browser-location="canvas-pane"]');
+    
+    for (const container of canvasPanes) {
+      const browserId = container.getAttribute('data-active-browser');
+      if (!browserId) continue;
       
-      for (const pane of canvasPanes) {
-        const paneActiveBrowser = pane.getAttribute('data-active-browser');
-        if (paneActiveBrowser === browser.id) {
-          targetContainer = pane;
-          console.log('[IDEWindow] Found target container for browser:', browser.id);
-          break;
-        }
-      }
+      // Check if this browser belongs to current workspace
+      const browser = allBrowsers.find(b => b.id === browserId && b.workspaceId === activeWorkspaceId);
+      if (!browser) continue;
       
-      if (targetContainer) {
-        const rect = targetContainer.getBoundingClientRect();
+      const rect = container.getBoundingClientRect();
+      
+      console.log('[IDEWindow] Browser content container rect for', browserId, ':', {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height
+      });
+      
+      // Call Electron to position WebContentsView
+      try {
+        const bounds = {
+          x: Math.round(rect.left),
+          y: Math.round(rect.top),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height)
+        };
         
-        console.log('[IDEWindow] Browser content container rect for', browser.id, ':', {
-          left: rect.left,
-          top: rect.top,
-          right: rect.right,
-          bottom: rect.bottom,
-          width: rect.width,
-          height: rect.height
+        await window.electronAPI.browserSetBounds({
+          browserId: browserId,
+          bounds
         });
         
-        // Call Electron to position WebContentsView
-        try {
-          const bounds = {
-            x: Math.round(rect.left),
-            y: Math.round(rect.top),
-            width: Math.round(rect.width),
-            height: Math.round(rect.height)
-          };
-          
-          await window.electronAPI.browserSetBounds({
-            browserId: browser.id,
-            bounds
-          });
-          
-          console.log('[IDEWindow] ✅ Positioned browser', browser.id, 'with bounds:', bounds);
-        } catch (error) {
-          console.error('[IDEWindow] ❌ Error positioning browser:', error);
-        }
-      } else {
-        // Hide browser if not in any pane
+        console.log('[IDEWindow] ✅ Positioned browser', browserId, 'with bounds:', bounds);
+      } catch (error) {
+        console.error('[IDEWindow] ❌ Error positioning browser:', error);
+      }
+    }
+    
+    // Hide browsers not currently visible
+    for (const browser of workspaceBrowsers) {
+      const isVisible = Array.from(canvasPanes).some(
+        pane => pane.getAttribute('data-active-browser') === browser.id
+      );
+      
+      if (!isVisible) {
         try {
           await window.electronAPI.browserHide({ browserId: browser.id });
-          console.log('[IDEWindow] Hiding browser', browser.id, '- no target container');
+          console.log('[IDEWindow] Hiding browser', browser.id, '- not visible');
         } catch (error) {
           console.error('[IDEWindow] Error hiding browser:', error);
         }
