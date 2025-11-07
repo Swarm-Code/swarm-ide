@@ -1,13 +1,21 @@
 <script>
   import { appStore } from '../stores/appStore.js';
+  import { editorStore } from '../stores/editorStore.js';
+  import { browserStore } from '../stores/browserStore.js';
+  import { workspaceStore } from '../stores/workspaceStore.js';
 
   export let terminalVisible = false;
   export let onToggleTerminal = null;
 
   let activePanel = 'explorer';
+  let activeWorkspaceId = null;
 
   appStore.subscribe((state) => {
     activePanel = state.activePanel;
+  });
+
+  workspaceStore.subscribe((state) => {
+    activeWorkspaceId = state.activeWorkspaceId;
   });
 
   function handlePanelClick(panel) {
@@ -18,6 +26,25 @@
     if (onToggleTerminal) {
       onToggleTerminal();
     }
+  }
+
+  function handleBrowserClick() {
+    console.log('[ActivityBar.handleBrowserClick] Creating browser...');
+    console.log('[ActivityBar.handleBrowserClick] activeWorkspaceId:', activeWorkspaceId);
+    
+    // Create a new browser instance
+    const browserId = `browser-${Date.now()}`;
+    const workspaceId = activeWorkspaceId;
+    
+    console.log('[ActivityBar.handleBrowserClick] browserId:', browserId);
+    
+    // Add to browser store
+    browserStore.addBrowser(browserId, 'https://www.google.com', workspaceId);
+    
+    // Add browser pane to editor canvas
+    editorStore.addBrowser(browserId);
+    
+    console.log('[ActivityBar.handleBrowserClick] ✅ Browser creation complete');
   }
 </script>
 
@@ -34,6 +61,21 @@
         stroke-linejoin="round"
         stroke-width="2"
         d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+      />
+    </svg>
+  </button>
+  
+  <button
+    class="activity-button"
+    on:click={handleBrowserClick}
+    title="New Browser"
+  >
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"
       />
     </svg>
   </button>

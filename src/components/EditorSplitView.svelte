@@ -2,6 +2,7 @@
   import { editorStore } from '../stores/editorStore.js';
   import EditorPane from './EditorPane.svelte';
   import TerminalPane from './TerminalPane.svelte';
+  import BrowserPane from './BrowserPane.svelte';
 
   export let layout;
   export let activePaneId;
@@ -45,7 +46,10 @@
   function renderLayout(node) {
     if (node.type === 'pane') {
       // Choose component based on pane type
-      const component = node.paneType === 'terminal' ? TerminalPane : EditorPane;
+      let component = EditorPane;
+      if (node.paneType === 'terminal') component = TerminalPane;
+      else if (node.paneType === 'browser') component = BrowserPane;
+      
       return {
         type: 'pane',
         component,

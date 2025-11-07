@@ -3,6 +3,7 @@
   import { appStore } from '../stores/appStore.js';
   import { workspaceStore } from '../stores/workspaceStore.js';
   import { terminalStore } from '../stores/terminalStore.js';
+  import { browserStore } from '../stores/browserStore.js';
   import { editorStore } from '../stores/editorStore.js';
   import { activeWorkspacePath } from '../stores/workspaceStore.js';
   import ActivityBar from './ActivityBar.svelte';
@@ -10,14 +11,17 @@
   import FileExplorer from './FileExplorer.svelte';
   import EditorCanvas from './EditorCanvas.svelte';
   import TerminalPanel from './TerminalPanel.svelte';
+  import DiagnosticsPanel from './DiagnosticsPanel.svelte';
   import Terminal from './Terminal.svelte';
 
   let currentProject = null;
   let sidebarVisible = true;
   let terminalVisible = false;
+  let diagnosticsVisible = false;
   let activeWorkspaceId = null;
   let workspaces = [];
   let allTerminals = [];
+  let allBrowsers = [];
   let currentWorkspacePath = null;
   let activeTerminalId = null;
   let editorLayout = null;
@@ -25,6 +29,10 @@
   terminalStore.subscribe((state) => {
     allTerminals = state.terminals;
     activeTerminalId = state.activeTerminalId;
+  });
+
+  browserStore.subscribe((state) => {
+    allBrowsers = state.browsers;
   });
 
   editorStore.subscribe((state) => {
@@ -37,6 +45,9 @@
 
   // Filter terminals for current workspace only
   $: workspaceTerminals = allTerminals.filter(t => t.workspaceId === activeWorkspaceId);
+  
+  // Filter browsers for current workspace only
+  $: workspaceBrowsers = allBrowsers.filter(b => b.workspaceId === activeWorkspaceId);
 
   // Position terminals into their display areas
   async function positionTerminals() {
@@ -106,10 +117,87 @@
     });
   }
 
+  // Position browsers into their display areas
+  async function positionBrowsers() {
+    // Wait for DOM to settle after layout changes
+    await tick();
+    // Give extra time for CSS transitions and layout reflow
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    if (!window.electronAPI) return;
+    
+    console.log('[IDEWindow] positionBrowsers() called - activeWorkspaceId:', activeWorkspaceId);
+    
+    // For each browser in current workspace
+    for (const browser of workspaceBrowsers) {
+      // Find target pane - look for the CONTENT area, not the whole pane
+      const canvasPanes = document.querySelectorAll('[data-browser-location="canvas-pane"]');
+      let targetContainer = null;
+      
+      for (const pane of canvasPanes) {
+        const paneActiveBrowser = pane.getAttribute('data-active-browser');
+        if (paneActiveBrowser === browser.id) {
+          targetContainer = pane;
+          console.log('[IDEWindow] Found target container for browser:', browser.id);
+          break;
+        }
+      }
+      
+      if (targetContainer) {
+        const rect = targetContainer.getBoundingClientRect();
+        
+        console.log('[IDEWindow] Browser content container rect for', browser.id, ':', {
+          left: rect.left,
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+          width: rect.width,
+          height: rect.height
+        });
+        
+        // Call Electron to position WebContentsView
+        try {
+          const bounds = {
+            x: Math.round(rect.left),
+            y: Math.round(rect.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height)
+          };
+          
+          await window.electronAPI.browserSetBounds({
+            browserId: browser.id,
+            bounds
+          });
+          
+          console.log('[IDEWindow] ✅ Positioned browser', browser.id, 'with bounds:', bounds);
+        } catch (error) {
+          console.error('[IDEWindow] ❌ Error positioning browser:', error);
+        }
+      } else {
+        // Hide browser if not in any pane
+        try {
+          await window.electronAPI.browserHide({ browserId: browser.id });
+          console.log('[IDEWindow] Hiding browser', browser.id, '- no target container');
+        } catch (error) {
+          console.error('[IDEWindow] Error hiding browser:', error);
+        }
+      }
+    }
+  }
+
   // Reposition on state changes
   $: if (workspaceTerminals || activeTerminalId || editorLayout || terminalVisible || activeWorkspaceId) {
     positionTerminals();
   }
+
+  // Reposition browsers on state changes
+  // This runs whenever any of these dependencies change
+  $: if (workspaceBrowsers.length >= 0 || editorLayout || terminalVisible !== undefined || activeWorkspaceId) {
+    positionBrowsers();
+  }
+  
+  // ALSO reposition browsers on window resize
+  // This is already handled in onMount with addEventListener
 
   appStore.subscribe((state) => {
     currentProject = state.currentProject;
@@ -145,14 +233,21 @@
       event.preventDefault();
       terminalVisible = !terminalVisible;
     }
+    // Ctrl+Shift+M to toggle diagnostics
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'M') {
+      event.preventDefault();
+      diagnosticsVisible = !diagnosticsVisible;
+    }
   }
 
   onMount(async () => {
     window.addEventListener('keydown', handleKeydown);
     window.addEventListener('resize', positionTerminals);
+    window.addEventListener('resize', positionBrowsers);
     
     // Initial positioning
     positionTerminals();
+    positionBrowsers();
     
     // Load saved workspaces
     if (window.electronAPI) {
@@ -202,6 +297,7 @@
   onDestroy(() => {
     window.removeEventListener('keydown', handleKeydown);
     window.removeEventListener('resize', positionTerminals);
+    window.removeEventListener('resize', positionBrowsers);
   });
 </script>
 
@@ -231,11 +327,32 @@
       </div>
     {/if}
     <div class="main-area">
-      <div class="editor-area" style="height: {terminalVisible ? '60%' : '100%'}">
+      <div class="editor-area" style="height: {terminalVisible || diagnosticsVisible ? '60%' : '100%'}">
         <EditorCanvas />
       </div>
-      <div class="terminal-area" class:hidden={!terminalVisible}>
-        <TerminalPanel />
+      <div class="bottom-panel-container">
+        <div class="bottom-panel-tabs" class:hidden={!terminalVisible && !diagnosticsVisible}>
+          <button 
+            class="panel-tab" 
+            class:active={terminalVisible && !diagnosticsVisible}
+            on:click={() => { terminalVisible = true; diagnosticsVisible = false; }}
+          >
+            Terminal
+          </button>
+          <button 
+            class="panel-tab" 
+            class:active={diagnosticsVisible}
+            on:click={() => { diagnosticsVisible = true; terminalVisible = false; }}
+          >
+            Problems
+          </button>
+        </div>
+        <div class="terminal-area" class:hidden={!terminalVisible || diagnosticsVisible}>
+          <TerminalPanel />
+        </div>
+        <div class="diagnostics-area" class:hidden={!diagnosticsVisible}>
+          <DiagnosticsPanel />
+        </div>
       </div>
     </div>
   </div>
@@ -336,13 +453,53 @@
     transition: height var(--transition-fast);
   }
 
-  .terminal-area {
+  .bottom-panel-container {
     flex: 1;
+    display: flex;
+    flex-direction: column;
     border-top: 1px solid var(--color-border);
+  }
+
+  .bottom-panel-tabs {
+    display: flex;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs);
+    background-color: var(--color-surface-secondary);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .bottom-panel-tabs.hidden {
+    display: none;
+  }
+
+  .panel-tab {
+    padding: var(--spacing-xs) var(--spacing-md);
+    background-color: transparent;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+  }
+
+  .panel-tab:hover {
+    background-color: var(--color-surface-hover);
+    color: var(--color-text-primary);
+  }
+
+  .panel-tab.active {
+    background-color: var(--color-accent);
+    color: white;
+  }
+
+  .terminal-area,
+  .diagnostics-area {
+    flex: 1;
     overflow: hidden;
   }
 
-  .terminal-area.hidden {
+  .terminal-area.hidden,
+  .diagnostics-area.hidden {
     display: none;
   }
 </style>

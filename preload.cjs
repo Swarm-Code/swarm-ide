@@ -20,4 +20,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   terminalKill: (opts) => ipcRenderer.invoke('terminal:kill', opts),
   onTerminalData: (callback) => ipcRenderer.on('terminal:data', (event, data) => callback(data)),
   onTerminalExit: (callback) => ipcRenderer.on('terminal:exit', (event, data) => callback(data)),
+  // LSP APIs
+  lspStartServer: (opts) => ipcRenderer.invoke('lsp:startServer', opts),
+  lspSendMessage: (opts) => ipcRenderer.invoke('lsp:sendMessage', opts),
+  lspStopServer: (opts) => ipcRenderer.invoke('lsp:stopServer', opts),
+  onLspMessage: (callback) => ipcRenderer.on('lsp:message', (event, data) => callback(data)),
+  // Browser APIs
+  browserCreate: (opts) => ipcRenderer.invoke('browser:create', opts),
+  browserSetBounds: (opts) => ipcRenderer.invoke('browser:setBounds', opts),
+  browserHide: (opts) => ipcRenderer.invoke('browser:hide', opts),
+  browserNavigate: (opts) => ipcRenderer.invoke('browser:navigate', opts),
+  browserGoBack: (opts) => ipcRenderer.invoke('browser:goBack', opts),
+  browserGoForward: (opts) => ipcRenderer.invoke('browser:goForward', opts),
+  browserReload: (opts) => ipcRenderer.invoke('browser:reload', opts),
+  browserStop: (opts) => ipcRenderer.invoke('browser:stop', opts),
+  browserDestroy: (opts) => ipcRenderer.invoke('browser:destroy', opts),
+  onBrowserNavigation: (callback) => ipcRenderer.on('browser:navigation', (event, data) => callback(data)),
+  onBrowserTitle: (callback) => ipcRenderer.on('browser:title', (event, data) => callback(data)),
+  onBrowserLoading: (callback) => ipcRenderer.on('browser:loading', (event, data) => callback(data)),
+  onBrowserError: (callback) => ipcRenderer.on('browser:error', (event, data) => callback(data)),
 });

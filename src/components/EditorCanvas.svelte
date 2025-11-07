@@ -14,8 +14,16 @@
   // Listen for file selection in explorer
   fileExplorerStore.subscribe((state) => {
     if (state.selectedFile && !state.selectedFile.isDirectory) {
+      console.log('[EditorCanvas] File selected:', {
+        path: state.selectedFile.path,
+        name: state.selectedFile.name
+      });
+      console.log('[EditorCanvas] Calling editorStore.openFile...');
+      
       // Open file in active pane
       editorStore.openFile(state.selectedFile.path, state.selectedFile.name);
+      
+      console.log('[EditorCanvas] editorStore.openFile returned');
     }
   });
 </script>
