@@ -1,0 +1,8 @@
+@import './styles/reset.css';
+@import './styles/variables.css';
+
+#app {
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}

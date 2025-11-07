@@ -1,0 +1,87 @@
+<script>
+  import { editorStore } from '../stores/editorStore.js';
+  import { fileExplorerStore } from '../stores/fileExplorerStore.js';
+  import EditorSplitView from './EditorSplitView.svelte';
+
+  let layout = null;
+  let activePaneId = null;
+
+  editorStore.subscribe((state) => {
+    layout = state.layout;
+    activePaneId = state.activePaneId;
+  });
+
+  // Listen for file selection in explorer
+  fileExplorerStore.subscribe((state) => {
+    if (state.selectedFile && !state.selectedFile.isDirectory) {
+      // Open file in active pane
+      editorStore.openFile(state.selectedFile.path, state.selectedFile.name);
+    }
+  });
+</script>
+
+<div class="editor-canvas">
+  {#if layout}
+    <EditorSplitView {layout} {activePaneId} />
+  {:else}
+    <div class="empty-editor">
+      <div class="empty-content">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+          />
+        </svg>
+        <h2>Welcome to SwarmIDE</h2>
+        <p>Select a file from the explorer to start editing</p>
+      </div>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .editor-canvas {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--color-background);
+    overflow: hidden;
+  }
+
+  .empty-editor {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .empty-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-3xl);
+    text-align: center;
+  }
+
+  .empty-content svg {
+    width: 64px;
+    height: 64px;
+    color: var(--color-text-tertiary);
+  }
+
+  .empty-content h2 {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+  }
+
+  .empty-content p {
+    font-size: var(--font-size-base);
+    color: var(--color-text-secondary);
+  }
+</style>
