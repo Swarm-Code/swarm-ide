@@ -37,6 +37,7 @@
     "@tiptap/starter-kit": "^3.10.2",
     "@xterm/addon-fit": "^0.10.0",
     "electron-store": "^11.0.2",
+    "marked": "^17.0.0",
     "monaco-editor": "^0.54.0",
     "monaco-languageclient": "^10.2.0",
     "node-pty": "^1.0.0",

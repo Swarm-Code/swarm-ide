@@ -13,11 +13,13 @@
   import TerminalPanel from './TerminalPanel.svelte';
   import DiagnosticsPanel from './DiagnosticsPanel.svelte';
   import Terminal from './Terminal.svelte';
+  import ChatPanel from './ChatPanel.svelte';
 
   let currentProject = null;
-  let sidebarVisible = true;
+  let explorerVisible = true; // Local state like terminal
   let terminalVisible = false;
   let diagnosticsVisible = false;
+  let chatVisible = true; // Chat panel visible by default
   let activeWorkspaceId = null;
   let workspaces = [];
   let allTerminals = [];
@@ -121,8 +123,9 @@
   async function positionBrowsers() {
     // Wait for DOM to settle after layout changes
     await tick();
-    // Give extra time for CSS transitions and layout reflow
-    await new Promise(resolve => setTimeout(resolve, 50));
+    // Give extra time for CSS transitions (150ms) and layout reflow
+    // Using 200ms to ensure transition completes before measuring
+    await new Promise(resolve => setTimeout(resolve, 200));
     
     if (!window.electronAPI) return;
     
@@ -141,11 +144,15 @@
       
       const rect = container.getBoundingClientRect();
       
-      console.log('[IDEWindow] Browser content container rect for', browserId, ':', {
+      console.log('[IDEWindow] 🎯 Browser content container rect for', browserId, ':', {
         left: rect.left,
         top: rect.top,
         width: rect.width,
-        height: rect.height
+        height: rect.height,
+        right: rect.right,
+        bottom: rect.bottom,
+        windowWidth: window.innerWidth,
+        windowHeight: window.innerHeight
       });
       
       // Call Electron to position WebContentsView
@@ -168,16 +175,23 @@
       }
     }
     
-    // Hide browsers not currently visible
-    for (const browser of workspaceBrowsers) {
+    // Hide browsers not currently visible OR from other workspaces
+    // This ensures persistence across workspace switches (like terminals)
+    for (const browser of allBrowsers) {
+      const isInCurrentWorkspace = browser.workspaceId === activeWorkspaceId;
       const isVisible = Array.from(canvasPanes).some(
         pane => pane.getAttribute('data-active-browser') === browser.id
       );
       
-      if (!isVisible) {
+      // Hide if: wrong workspace OR (correct workspace but not visible in any pane)
+      if (!isInCurrentWorkspace || !isVisible) {
         try {
           await window.electronAPI.browserHide({ browserId: browser.id });
-          console.log('[IDEWindow] Hiding browser', browser.id, '- not visible');
+          if (!isInCurrentWorkspace) {
+            console.log('[IDEWindow] Hiding browser', browser.id, '- different workspace');
+          } else {
+            console.log('[IDEWindow] Hiding browser', browser.id, '- not visible');
+          }
         } catch (error) {
           console.error('[IDEWindow] Error hiding browser:', error);
         }
@@ -186,13 +200,13 @@
   }
 
   // Reposition on state changes
-  $: if (workspaceTerminals || activeTerminalId || editorLayout || terminalVisible || activeWorkspaceId) {
+  $: if (workspaceTerminals || activeTerminalId || editorLayout || terminalVisible || activeWorkspaceId || explorerVisible !== undefined) {
     positionTerminals();
   }
 
   // Reposition browsers on state changes
   // This runs whenever any of these dependencies change
-  $: if (workspaceBrowsers.length >= 0 || editorLayout || terminalVisible !== undefined || activeWorkspaceId) {
+  $: if (workspaceBrowsers.length >= 0 || editorLayout || terminalVisible !== undefined || activeWorkspaceId || explorerVisible !== undefined) {
     positionBrowsers();
   }
   
@@ -201,7 +215,6 @@
 
   appStore.subscribe((state) => {
     currentProject = state.currentProject;
-    sidebarVisible = state.sidebarVisible;
   });
 
   workspaceStore.subscribe((state) => {
@@ -223,10 +236,10 @@
   }
 
   function handleKeydown(event) {
-    // Ctrl+B (Windows/Linux) or Cmd+B (Mac)
+    // Ctrl+B (Windows/Linux) or Cmd+B (Mac) to toggle explorer
     if ((event.ctrlKey || event.metaKey) && event.key === 'b') {
       event.preventDefault();
-      appStore.toggleSidebar();
+      explorerVisible = !explorerVisible;
     }
     // Ctrl+` (backtick) to toggle terminal
     if ((event.ctrlKey || event.metaKey) && event.key === '`') {
@@ -240,10 +253,31 @@
     }
   }
 
+  let resizeObserver;
+  let editorAreaElement;
+
   onMount(async () => {
     window.addEventListener('keydown', handleKeydown);
     window.addEventListener('resize', positionTerminals);
     window.addEventListener('resize', positionBrowsers);
+    
+    // Watch .editor-area for size changes (handles terminal open/close transitions)
+    editorAreaElement = document.querySelector('.editor-area');
+    if (editorAreaElement) {
+      resizeObserver = new ResizeObserver(() => {
+        console.log('[IDEWindow] ResizeObserver detected .editor-area size change, repositioning browsers');
+        positionBrowsers();
+      });
+      resizeObserver.observe(editorAreaElement);
+    }
+    
+    // Listen for overlay close signal to reposition browsers
+    if (window.electronAPI) {
+      window.electronAPI.onBrowsersRepositionAfterOverlay(() => {
+        console.log('[IDEWindow] Overlay closed, repositioning browsers');
+        positionBrowsers();
+      });
+    }
     
     // Initial positioning
     positionTerminals();
@@ -298,19 +332,24 @@
     window.removeEventListener('keydown', handleKeydown);
     window.removeEventListener('resize', positionTerminals);
     window.removeEventListener('resize', positionBrowsers);
+    
+    // Cleanup ResizeObserver
+    if (resizeObserver) {
+      resizeObserver.disconnect();
+    }
   });
 </script>
 
 <div class="ide-window">
   <div class="ide-header">
     <WorkspaceSwitcher />
-    <button class="close-button" on:click={handleCloseProject}>
+    <button class="chat-toggle-button" on:click={() => chatVisible = !chatVisible} title={chatVisible ? 'Hide Chat' : 'Show Chat'}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
         <path
           stroke-linecap="round"
           stroke-linejoin="round"
           stroke-width="2"
-          d="M6 18L18 6M6 6l12 12"
+          d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
         />
       </svg>
     </button>
@@ -321,11 +360,9 @@
       {terminalVisible} 
       onToggleTerminal={() => terminalVisible = !terminalVisible}
     />
-    {#if sidebarVisible}
-      <div class="sidebar">
-        <FileExplorer projectPath={workspacePath} />
-      </div>
-    {/if}
+    <div class="sidebar" class:hidden={!explorerVisible}>
+      <FileExplorer projectPath={workspacePath} />
+    </div>
     <div class="main-area">
       <div class="editor-area" style="height: {terminalVisible || diagnosticsVisible ? '60%' : '100%'}">
         <EditorCanvas />
@@ -354,6 +391,9 @@
           <DiagnosticsPanel />
         </div>
       </div>
+    </div>
+    <div class="chat-sidebar" class:hidden={!chatVisible}>
+      <ChatPanel />
     </div>
   </div>
 
@@ -406,7 +446,7 @@
     height: 44px;
   }
 
-  .close-button {
+  .chat-toggle-button {
     width: 32px;
     height: 32px;
     display: flex;
@@ -415,14 +455,17 @@
     border-radius: var(--radius-sm);
     transition: all var(--transition-fast);
     color: var(--color-text-secondary);
+    background: transparent;
+    border: none;
+    cursor: pointer;
   }
 
-  .close-button:hover {
+  .chat-toggle-button:hover {
     background-color: var(--color-surface-hover);
     color: var(--color-text-primary);
   }
 
-  .close-button svg {
+  .chat-toggle-button svg {
     width: 18px;
     height: 18px;
   }
@@ -438,6 +481,10 @@
     background-color: var(--color-surface-secondary);
     border-right: 1px solid var(--color-border);
     overflow-y: auto;
+  }
+
+  .sidebar.hidden {
+    display: none;
   }
 
   .main-area {
@@ -500,6 +547,16 @@
 
   .terminal-area.hidden,
   .diagnostics-area.hidden {
+    display: none;
+  }
+
+  .chat-sidebar {
+    width: 350px;
+    background-color: var(--color-background);
+    overflow: hidden;
+  }
+
+  .chat-sidebar.hidden {
     display: none;
   }
 </style>

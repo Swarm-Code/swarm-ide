@@ -7,6 +7,7 @@ function createAppStore() {
     theme: 'light',
     activePanel: 'explorer', // 'explorer', 'git', 'search'
     sidebarVisible: true, // sidebar visibility
+    overlayVisible: false, // tracks if any overlay (workspace switcher, modals) is open
   });
 
   return {
@@ -28,6 +29,10 @@ function createAppStore() {
     setSidebarVisible: (visible) => update((state) => ({ 
       ...state, 
       sidebarVisible: visible 
+    })),
+    setOverlayVisible: (visible) => update((state) => ({
+      ...state,
+      overlayVisible: visible
     })),
   };
 }

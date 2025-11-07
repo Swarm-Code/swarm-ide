@@ -11,7 +11,7 @@ function getInitialState() {
       type: 'pane',
       paneType: 'editor', // 'editor' or 'terminal' (browsers are tabs in editor panes)
       id: 'pane-1',
-      tabs: [], // Unified tabs: can be type 'editor' or 'browser'
+      tabs: [], // Unified tabs: can be type 'editor', 'browser', or 'terminal'
       activeTabId: null,
       terminalIds: [], // Array of terminal IDs for terminal panes
       activeTerminalId: null, // Active terminal in this pane
@@ -575,6 +575,97 @@ function createEditorStore() {
       if (layout.type === 'split') {
         layout.splitRatio = ratio;
       }
+      return { ...state };
+    }),
+
+    // Add terminal as a tab in editor pane (like browsers)
+    addTerminalTab: (paneId, terminalId) => update((state) => {
+      const pane = findPaneById(state.layout, paneId);
+      if (!pane || pane.paneType !== 'editor') return state;
+
+      // Check if terminal already exists as a tab in this pane
+      const existingTab = pane.tabs.find(t => t.type === 'terminal' && t.terminalId === terminalId);
+      if (existingTab) {
+        pane.activeTabId = existingTab.id;
+        state.activePaneId = pane.id;
+        return { ...state };
+      }
+
+      // Remove terminal from any existing pane (bottom panel or other pane)
+      const existingPane = findPaneByTerminalId(state.layout, terminalId);
+      if (existingPane) {
+        existingPane.terminalIds = existingPane.terminalIds.filter(id => id !== terminalId);
+        if (existingPane.activeTerminalId === terminalId && existingPane.terminalIds.length > 0) {
+          existingPane.activeTerminalId = existingPane.terminalIds[existingPane.terminalIds.length - 1];
+        }
+      }
+
+      // Also remove from other editor pane tabs
+      const allPanes = [];
+      function collectPanes(node) {
+        if (node.type === 'pane') {
+          allPanes.push(node);
+        } else if (node.type === 'split') {
+          collectPanes(node.left);
+          collectPanes(node.right);
+        }
+      }
+      collectPanes(state.layout);
+      
+      for (const otherPane of allPanes) {
+        if (otherPane.id !== pane.id && otherPane.paneType === 'editor') {
+          otherPane.tabs = otherPane.tabs.filter(t => !(t.type === 'terminal' && t.terminalId === terminalId));
+        }
+      }
+
+      // Create new terminal tab
+      const newTab = {
+        id: `tab-${state.nextTabId}`,
+        type: 'terminal',
+        terminalId: terminalId,
+        title: 'Terminal',
+      };
+      
+      pane.tabs.push(newTab);
+      pane.activeTabId = newTab.id;
+      state.activePaneId = pane.id;
+
+      return {
+        ...state,
+        nextTabId: state.nextTabId + 1,
+      };
+    }),
+
+    // Convert an editor pane to a terminal pane (for backward compatibility)
+    convertPaneToTerminal: (paneId, terminalId) => update((state) => {
+      const pane = findPaneById(state.layout, paneId);
+      if (!pane || pane.paneType !== 'editor') return state;
+
+      // If pane has tabs, add terminal as a tab instead
+      if (pane.tabs.length > 0) {
+        // Call addTerminalTab instead
+        return state;
+      }
+
+      // Remove terminal from any existing pane (bottom panel or other pane)
+      const existingPane = findPaneByTerminalId(state.layout, terminalId);
+      if (existingPane) {
+        existingPane.terminalIds = existingPane.terminalIds.filter(id => id !== terminalId);
+        if (existingPane.activeTerminalId === terminalId && existingPane.terminalIds.length > 0) {
+          existingPane.activeTerminalId = existingPane.terminalIds[existingPane.terminalIds.length - 1];
+        }
+      }
+
+      // Convert the pane to terminal type
+      pane.paneType = 'terminal';
+      pane.terminalIds = [terminalId];
+      pane.activeTerminalId = terminalId;
+      pane.tabs = [];
+      pane.activeTabId = null;
+      
+      // Set this as the active pane
+      state.activePaneId = pane.id;
+
       return { ...state };
     }),
 

@@ -39,4 +39,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onBrowserTitle: (callback) => ipcRenderer.on('browser:title', (event, data) => callback(data)),
   onBrowserLoading: (callback) => ipcRenderer.on('browser:loading', (event, data) => callback(data)),
   onBrowserError: (callback) => ipcRenderer.on('browser:error', (event, data) => callback(data)),
+  // Overlay management
+  browsersHideForOverlay: () => ipcRenderer.invoke('browsers:hideForOverlay'),
+  browsersShowAfterOverlay: () => ipcRenderer.invoke('browsers:showAfterOverlay'),
+  onBrowsersRepositionAfterOverlay: (callback) => ipcRenderer.on('browsers:repositionAfterOverlay', () => callback()),
 });

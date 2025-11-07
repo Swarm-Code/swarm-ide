@@ -385,14 +385,41 @@ ipcMain.handle('browser:setBounds', (event, { browserId, bounds }) => {
       return { success: false, error: 'WebContentsView requires Electron 30+. Please upgrade Electron.' };
     }
 
-    // Check if view is already added to window
+    // Add view at index 0 to keep it BELOW main window's webContents
+    // This allows DOM elements (dropdowns, modals) to render ABOVE the browser
     const contentView = mainWindow.contentView;
+    
+    console.log('[browser:setBounds] 🔍 BEFORE adding view:');
+    console.log('[browser:setBounds]   contentView.children.length:', contentView.children.length);
+    console.log('[browser:setBounds]   children types:', contentView.children.map((child, i) => {
+      return `[${i}] ${child.constructor.name}`;
+    }).join(', '));
+    
     if (!contentView.children.includes(view)) {
-      contentView.addChildView(view);
+      console.log('[browser:setBounds] ➕ Adding NEW view at index 0');
+      contentView.addChildView(view, 0);
+    } else {
+      // If already added, move it to index 0 to ensure correct z-order
+      console.log('[browser:setBounds] ♻️ View already exists, re-ordering to index 0');
+      contentView.removeChildView(view);
+      contentView.addChildView(view, 0);
     }
+    
+    console.log('[browser:setBounds] 🔍 AFTER adding view:');
+    console.log('[browser:setBounds]   contentView.children.length:', contentView.children.length);
+    console.log('[browser:setBounds]   children types:', contentView.children.map((child, i) => {
+      return `[${i}] ${child.constructor.name}`;
+    }).join(', '));
 
     // Set bounds
     view.setBounds({
+      x: Math.round(bounds.x),
+      y: Math.round(bounds.y),
+      width: Math.round(bounds.width),
+      height: Math.round(bounds.height)
+    });
+    
+    console.log('[browser:setBounds] ✅ Set bounds:', {
       x: Math.round(bounds.x),
       y: Math.round(bounds.y),
       width: Math.round(bounds.width),
@@ -560,6 +587,58 @@ ipcMain.handle('browser:destroy', (event, { browserId }) => {
     return { success: true };
   } catch (error) {
     console.error('Error destroying browser:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Overlay management - hide/show all browsers
+let hiddenBrowsersForOverlay = new Set();
+
+ipcMain.handle('browsers:hideForOverlay', async () => {
+  try {
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (!mainWindow || !mainWindow.contentView) {
+      return { success: false, error: 'Main window not found' };
+    }
+
+    console.log('[browsers:hideForOverlay] 🙈 Hiding browsers for overlay');
+    hiddenBrowsersForOverlay.clear();
+
+    const contentView = mainWindow.contentView;
+    
+    // Wait 350ms for blur animation to complete before hiding
+    await new Promise(resolve => setTimeout(resolve, 350));
+    
+    // Hide all browser views currently visible
+    for (const [browserId, view] of browsers.entries()) {
+      if (contentView.children.includes(view)) {
+        contentView.removeChildView(view);
+        hiddenBrowsersForOverlay.add(browserId);
+        console.log('[browsers:hideForOverlay] Hidden browser:', browserId);
+      }
+    }
+
+    return { success: true, hiddenCount: hiddenBrowsersForOverlay.size };
+  } catch (error) {
+    console.error('Error hiding browsers for overlay:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('browsers:showAfterOverlay', async () => {
+  try {
+    console.log('[browsers:showAfterOverlay] 👁️ Showing browsers after overlay, count:', hiddenBrowsersForOverlay.size);
+    
+    // Trigger browser repositioning by sending message to renderer
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (mainWindow) {
+      mainWindow.webContents.send('browsers:repositionAfterOverlay');
+    }
+
+    hiddenBrowsersForOverlay.clear();
+    return { success: true };
+  } catch (error) {
+    console.error('Error showing browsers after overlay:', error);
     return { success: false, error: error.message };
   }
 });

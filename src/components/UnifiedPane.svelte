@@ -2,6 +2,8 @@
   import { onMount, onDestroy } from 'svelte';
   import { editorStore } from '../stores/editorStore.js';
   import { browserStore } from '../stores/browserStore.js';
+  import { terminalStore } from '../stores/terminalStore.js';
+  import { appStore } from '../stores/appStore.js';
   import EditorTab from './EditorTab.svelte';
   import MonacoEditor from './MonacoEditor.svelte';
 
@@ -11,9 +13,14 @@
   let allBrowsers = [];
   const createdBrowsers = new Set();
   let dragOverIndex = null;
+  let overlayVisible = false;
 
   browserStore.subscribe((state) => {
     allBrowsers = state.browsers;
+  });
+
+  appStore.subscribe((state) => {
+    overlayVisible = state.overlayVisible;
   });
 
   // Create browser instances for browser tabs
@@ -106,6 +113,9 @@
         window.electronAPI.browserDestroy({ browserId: tab.browserId });
         createdBrowsers.delete(tab.browserId);
         browserStore.removeBrowser(tab.browserId);
+      } else if (tab.type === 'terminal') {
+        // Remove terminal completely (kill the process)
+        terminalStore.removeTerminal(tab.terminalId);
       }
       editorStore.closeTab(pane.id, event.detail.tabId);
     }
@@ -147,6 +157,15 @@
       } else {
         editorStore.moveTab(fromPaneId, pane.id, tabId, toIndex);
       }
+      return;
+    }
+
+    // Handle terminal drops - add as tab
+    const terminalData = event.dataTransfer.getData('application/x-terminal-tab');
+    if (terminalData) {
+      const { terminalId } = JSON.parse(terminalData);
+      // Add terminal as a tab (like browsers and editors)
+      editorStore.addTerminalTab(pane.id, terminalId);
     }
   }
 
@@ -160,6 +179,15 @@
       if (fromPaneId !== pane.id) {
         editorStore.moveTab(fromPaneId, pane.id, tabId);
       }
+      return;
+    }
+
+    // Handle terminal drops - add as tab
+    const terminalData = event.dataTransfer.getData('application/x-terminal-tab');
+    if (terminalData) {
+      const { terminalId } = JSON.parse(terminalData);
+      // Add terminal as a tab (like browsers and editors)
+      editorStore.addTerminalTab(pane.id, terminalId);
     }
   }
 
@@ -247,7 +275,7 @@
           <EditorTab
             tab={{
               id: tab.id,
-              name: tab.type === 'browser' ? tab.title : tab.name,
+              name: tab.type === 'browser' ? tab.title : (tab.type === 'terminal' ? tab.title : tab.name),
               path: tab.path,
               isDirty: tab.isDirty
             }}
@@ -320,6 +348,18 @@
           data-active-browser={activeTab.browserId}
         >
           <!-- WebContentsView renders here -->
+          {#if overlayVisible}
+            <div class="browser-blur-overlay"></div>
+          {/if}
+        </div>
+      {:else if activeTab.type === 'terminal'}
+        <div 
+          class="terminal-content" 
+          data-terminal-location="canvas-pane" 
+          data-pane-id={pane.id}
+          data-active-terminal={activeTab.terminalId}
+        >
+          <!-- Terminal renders here via IDEWindow positioning -->
         </div>
       {/if}
     {:else}
@@ -475,6 +515,53 @@
     width: 100%;
     height: 100%;
     position: relative;
+    /* Strict containment - prevents browser from overflowing */
+    contain: strict;
+    overflow: hidden;
+    /* DEBUG: Visible border to see actual .browser-content bounds */
+    border: 3px solid lime;
+    box-sizing: border-box;
+  }
+
+  .terminal-content {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .browser-blur-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, 
+      rgba(140, 140, 140, 0.06) 0%, 
+      rgba(160, 160, 160, 0.1) 100%);
+    backdrop-filter: blur(16px);
+    z-index: 10;
+    pointer-events: none;
+    animation: blurOverlayFadeIn 350ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  @keyframes blurOverlayFadeIn {
+    0% {
+      opacity: 0;
+      backdrop-filter: blur(0px);
+    }
+    30% {
+      opacity: 0.2;
+      backdrop-filter: blur(3px);
+    }
+    60% {
+      opacity: 0.6;
+      backdrop-filter: blur(8px);
+    }
+    100% {
+      opacity: 1;
+      backdrop-filter: blur(16px);
+    }
   }
 
   .empty-pane {
