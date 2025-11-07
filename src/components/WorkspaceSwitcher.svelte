@@ -1,5 +1,6 @@
 <script>
   import { workspaceStore } from '../stores/workspaceStore.js';
+  import { appStore } from '../stores/appStore.js';
 
   let workspaces = [];
   let activeWorkspaceId = null;
@@ -11,6 +12,21 @@
     workspaces = state.workspaces;
     activeWorkspaceId = state.activeWorkspaceId;
   });
+
+  // Notify appStore when overlay state changes
+  $: {
+    const overlayVisible = showDropdown || showCreateModal;
+    appStore.setOverlayVisible(overlayVisible);
+    
+    // Notify main process to hide/show browsers
+    if (window.electronAPI) {
+      if (overlayVisible) {
+        window.electronAPI.browsersHideForOverlay();
+      } else {
+        window.electronAPI.browsersShowAfterOverlay();
+      }
+    }
+  }
 
   $: activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
   
@@ -255,6 +271,19 @@
     box-shadow: var(--shadow-lg);
     z-index: 1000;
     overflow: hidden;
+    animation: dropdownFadeIn 200ms ease-out;
+    backdrop-filter: blur(10px);
+  }
+
+  @keyframes dropdownFadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .dropdown-header {
@@ -406,6 +435,19 @@
     border: none;
     padding: 0;
     text-align: left;
+    animation: overlayFadeIn 200ms ease-out;
+    backdrop-filter: blur(8px);
+  }
+
+  @keyframes overlayFadeIn {
+    from {
+      opacity: 0;
+      backdrop-filter: blur(0px);
+    }
+    to {
+      opacity: 1;
+      backdrop-filter: blur(8px);
+    }
   }
 
   .modal {
@@ -414,6 +456,18 @@
     padding: var(--spacing-xl);
     min-width: 400px;
     box-shadow: var(--shadow-xl);
+    animation: modalSlideIn 250ms ease-out;
+  }
+
+  @keyframes modalSlideIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95) translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
   }
 
   .modal h2 {

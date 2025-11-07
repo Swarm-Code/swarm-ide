@@ -32,8 +32,20 @@
     const terminalIds = [];
     
     function traverse(node) {
-      if (node.type === 'pane' && node.paneType === 'terminal' && node.terminalIds) {
-        terminalIds.push(...node.terminalIds);
+      if (node.type === 'pane') {
+        // Check terminal panes (old style)
+        if (node.paneType === 'terminal' && node.terminalIds) {
+          console.log('[TerminalPanel] Found terminal pane:', node.terminalIds);
+          terminalIds.push(...node.terminalIds);
+        }
+        // Check editor panes for terminal tabs (new unified style)
+        if (node.paneType === 'editor' && node.tabs) {
+          const terminalTabs = node.tabs.filter(t => t.type === 'terminal');
+          if (terminalTabs.length > 0) {
+            console.log('[TerminalPanel] Found terminal tabs in editor pane:', terminalTabs.map(t => t.terminalId));
+          }
+          terminalIds.push(...terminalTabs.map(t => t.terminalId));
+        }
       } else if (node.type === 'split') {
         traverse(node.left);
         traverse(node.right);
@@ -41,6 +53,7 @@
     }
     
     if (layout) traverse(layout);
+    console.log('[TerminalPanel] All terminals in canvas:', Array.from(new Set(terminalIds)));
     return new Set(terminalIds);
   }
 
@@ -49,6 +62,7 @@
   $: visibleTerminals = allTerminals.filter(t => 
     t.workspaceId === activeWorkspaceId && !terminalsInCanvas.has(t.id)
   );
+  $: console.log('[TerminalPanel] visibleTerminals:', visibleTerminals.map(t => t.id));
 
   function handleNewTerminal() {
     const terminalId = `terminal-${Date.now()}`;
