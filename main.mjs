@@ -367,6 +367,9 @@ ipcMain.handle('browser:create', (event, { browserId, url, workspaceId }) => {
   }
 });
 
+// Track previous bounds to avoid redundant updates
+const browserBounds = new Map(); // browserId -> bounds
+
 // Set browser bounds (position and size)
 ipcMain.handle('browser:setBounds', (event, { browserId, bounds }) => {
   try {
@@ -385,6 +388,44 @@ ipcMain.handle('browser:setBounds', (event, { browserId, bounds }) => {
       return { success: false, error: 'WebContentsView requires Electron 30+. Please upgrade Electron.' };
     }
 
+    // 🔧 FIX 1: Check if bounds have actually changed
+    const oldBounds = browserBounds.get(browserId);
+    if (oldBounds && 
+        oldBounds.x === bounds.x && 
+        oldBounds.y === bounds.y && 
+        oldBounds.width === bounds.width && 
+        oldBounds.height === bounds.height) {
+      console.log('[browser:setBounds] ⏭️ Skipping - bounds unchanged for', browserId);
+      return { success: true };
+    }
+
+    // Store new bounds for future comparison
+    browserBounds.set(browserId, bounds);
+
+    // 🔧 CRITICAL FIX: Validate and clamp bounds to window dimensions
+    // WebContentsView.setBounds() accepts absolute window-relative coordinates
+    // and does NOT validate against window boundaries
+    // We must ensure bounds never exceed the window
+    const windowBounds = mainWindow.getContentBounds();
+    
+    const clampedBounds = {
+      x: Math.max(0, Math.min(bounds.x, windowBounds.width)),
+      y: Math.max(0, Math.min(bounds.y, windowBounds.height)),
+      width: Math.max(0, Math.min(bounds.width, windowBounds.width - bounds.x)),
+      height: Math.max(0, Math.min(bounds.height, windowBounds.height - bounds.y))
+    };
+    
+    // Log if clamping was necessary
+    if (clampedBounds.x !== bounds.x || 
+        clampedBounds.y !== bounds.y || 
+        clampedBounds.width !== bounds.width || 
+        clampedBounds.height !== bounds.height) {
+      console.log('[browser:setBounds] 🔒 Bounds clamped to window dimensions:');
+      console.log('[browser:setBounds]   Window:', windowBounds);
+      console.log('[browser:setBounds]   Original bounds:', bounds);
+      console.log('[browser:setBounds]   Clamped bounds:', clampedBounds);
+    }
+
     // Add view at index 0 to keep it BELOW main window's webContents
     // This allows DOM elements (dropdowns, modals) to render ABOVE the browser
     const contentView = mainWindow.contentView;
@@ -395,14 +436,14 @@ ipcMain.handle('browser:setBounds', (event, { browserId, bounds }) => {
       return `[${i}] ${child.constructor.name}`;
     }).join(', '));
     
+    // 🔧 FIX 2: Only add view if not already present - REMOVE the re-order cycle
     if (!contentView.children.includes(view)) {
       console.log('[browser:setBounds] ➕ Adding NEW view at index 0');
       contentView.addChildView(view, 0);
     } else {
-      // If already added, move it to index 0 to ensure correct z-order
-      console.log('[browser:setBounds] ♻️ View already exists, re-ordering to index 0');
-      contentView.removeChildView(view);
-      contentView.addChildView(view, 0);
+      // View already exists - do NOT remove/re-add every time
+      // Just update bounds to keep it in place
+      console.log('[browser:setBounds] ✓ View already exists, keeping in place (no re-order)');
     }
     
     console.log('[browser:setBounds] 🔍 AFTER adding view:');
@@ -411,20 +452,17 @@ ipcMain.handle('browser:setBounds', (event, { browserId, bounds }) => {
       return `[${i}] ${child.constructor.name}`;
     }).join(', '));
 
-    // Set bounds
-    view.setBounds({
-      x: Math.round(bounds.x),
-      y: Math.round(bounds.y),
-      width: Math.round(bounds.width),
-      height: Math.round(bounds.height)
-    });
+    // Set bounds (using clamped values to ensure they fit in window)
+    const roundedBounds = {
+      x: Math.round(clampedBounds.x),
+      y: Math.round(clampedBounds.y),
+      width: Math.round(clampedBounds.width),
+      height: Math.round(clampedBounds.height)
+    };
     
-    console.log('[browser:setBounds] ✅ Set bounds:', {
-      x: Math.round(bounds.x),
-      y: Math.round(bounds.y),
-      width: Math.round(bounds.width),
-      height: Math.round(bounds.height)
-    });
+    view.setBounds(roundedBounds);
+    
+    console.log('[browser:setBounds] ✅ Set bounds:', roundedBounds);
 
     return { success: true };
   } catch (error) {
@@ -455,6 +493,9 @@ ipcMain.handle('browser:hide', (event, { browserId }) => {
     if (contentView.children.includes(view)) {
       contentView.removeChildView(view);
     }
+
+    // Clear cached bounds when hiding - will force re-add with new bounds when shown
+    browserBounds.delete(browserId);
 
     return { success: true };
   } catch (error) {
@@ -583,6 +624,9 @@ ipcMain.handle('browser:destroy', (event, { browserId }) => {
       view.webContents.close();
     }
 
+    // Clean up cached bounds
+    browserBounds.delete(browserId);
+    
     browsers.delete(browserId);
     return { success: true };
   } catch (error) {

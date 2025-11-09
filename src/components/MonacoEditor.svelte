@@ -10,12 +10,14 @@
   export let onChange = null;
   export let readOnly = false;
   export let filePath = null; // File path for LSP
+  export let scrollSync = null; // { onEditorScroll: (percent) => void }
 
   let editorContainer;
   let editor;
   let currentContent = content;
   let lspInitialized = false;
   let currentLanguage = language;
+  let isScrolling = false;
 
   async function initializeLsp() {
     if (!hasLspSupport(language)) {
@@ -94,6 +96,23 @@
     };
     mediaQuery.addEventListener('change', handleThemeChange);
 
+    // Listen for scroll changes
+    editor.onDidScrollChange((e) => {
+      if (!scrollSync || isScrolling) return;
+      
+      const model = editor.getModel();
+      if (!model) return;
+      
+      const visibleRange = editor.getVisibleRanges()[0];
+      if (!visibleRange) return;
+      
+      const totalLines = model.getLineCount();
+      const topLine = visibleRange.startLineNumber;
+      const scrollPercent = (topLine - 1) / Math.max(1, totalLines - 1);
+      
+      scrollSync.onEditorScroll?.(scrollPercent);
+    });
+
     // Initialize LSP if supported
     await initializeLsp();
 
@@ -101,6 +120,24 @@
       mediaQuery.removeEventListener('change', handleThemeChange);
     };
   });
+
+  // Export method to scroll editor from outside
+  export function scrollToPercent(percent) {
+    if (!editor) return;
+    
+    const model = editor.getModel();
+    if (!model) return;
+    
+    isScrolling = true;
+    const totalLines = model.getLineCount();
+    const targetLine = Math.max(1, Math.floor(percent * totalLines));
+    
+    editor.revealLineInCenter(targetLine);
+    
+    setTimeout(() => {
+      isScrolling = false;
+    }, 100);
+  }
 
   onDestroy(() => {
     // Notify LSP of document close

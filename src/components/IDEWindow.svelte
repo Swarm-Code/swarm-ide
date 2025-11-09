@@ -121,82 +121,128 @@
 
   // Position browsers into their display areas
   async function positionBrowsers() {
-    // Wait for DOM to settle after layout changes
-    await tick();
-    // Give extra time for CSS transitions (150ms) and layout reflow
-    // Using 200ms to ensure transition completes before measuring
-    await new Promise(resolve => setTimeout(resolve, 200));
+    // 🔧 FIX 3: Debounce rapid calls (e.g., from multiple event listeners)
+    if (positionBrowsersTimeout) {
+      clearTimeout(positionBrowsersTimeout);
+    }
     
-    if (!window.electronAPI) return;
-    
-    console.log('[IDEWindow] positionBrowsers() called - activeWorkspaceId:', activeWorkspaceId);
-    
-    // Find all browser content areas in the DOM
-    const canvasPanes = document.querySelectorAll('[data-browser-location="canvas-pane"]');
-    
-    for (const container of canvasPanes) {
-      const browserId = container.getAttribute('data-active-browser');
-      if (!browserId) continue;
+    positionBrowsersTimeout = setTimeout(async () => {
+      // Wait for DOM to settle after layout changes
+      await tick();
+      // Give extra time for CSS transitions (150ms) and layout reflow
+      // Using 200ms to ensure transition completes before measuring
+      await new Promise(resolve => setTimeout(resolve, 200));
       
-      // Check if this browser belongs to current workspace
-      const browser = allBrowsers.find(b => b.id === browserId && b.workspaceId === activeWorkspaceId);
-      if (!browser) continue;
+      if (!window.electronAPI) return;
       
-      const rect = container.getBoundingClientRect();
+      console.log('[IDEWindow] positionBrowsers() called - activeWorkspaceId:', activeWorkspaceId);
       
-      console.log('[IDEWindow] 🎯 Browser content container rect for', browserId, ':', {
-        left: rect.left,
-        top: rect.top,
-        width: rect.width,
-        height: rect.height,
-        right: rect.right,
-        bottom: rect.bottom,
-        windowWidth: window.innerWidth,
-        windowHeight: window.innerHeight
-      });
+      // Find all browser content areas in the DOM
+      const canvasPanes = document.querySelectorAll('[data-browser-location="canvas-pane"]');
       
-      // Call Electron to position WebContentsView
-      try {
+      for (const container of canvasPanes) {
+        const browserId = container.getAttribute('data-active-browser');
+        if (!browserId) continue;
+        
+        // Check if this browser belongs to current workspace
+        const browser = allBrowsers.find(b => b.id === browserId && b.workspaceId === activeWorkspaceId);
+        if (!browser) continue;
+        
+        const rect = container.getBoundingClientRect();
+        
+        // 🔧 CRITICAL FIX: Clamp WebContentsView bounds to window dimensions
+        // WebContentsView uses window-relative coordinates and is NOT constrained by CSS
+        // We must ensure it never exceeds window boundaries
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+        
         const bounds = {
-          x: Math.round(rect.left),
-          y: Math.round(rect.top),
-          width: Math.round(rect.width),
-          height: Math.round(rect.height)
+          x: Math.round(Math.max(0, rect.left)),
+          y: Math.round(Math.max(0, rect.top)),
+          // Clamp width: can't exceed remaining space after x offset
+          width: Math.round(Math.max(0, Math.min(rect.width, windowWidth - rect.left))),
+          // Clamp height: can't exceed remaining space after y offset
+          height: Math.round(Math.max(0, Math.min(rect.height, windowHeight - rect.top)))
         };
         
-        await window.electronAPI.browserSetBounds({
-          browserId: browserId,
-          bounds
+        // 🔧 FIX 4: Check if bounds have actually changed before sending to Electron
+        const cachedBounds = cachedBrowserBounds.get(browserId);
+        if (cachedBounds && 
+            cachedBounds.x === bounds.x && 
+            cachedBounds.y === bounds.y && 
+            cachedBounds.width === bounds.width && 
+            cachedBounds.height === bounds.height) {
+          console.log('[IDEWindow] ⏭️ Skipping browser', browserId, '- bounds unchanged');
+          continue;
+        }
+        
+        console.log('[IDEWindow] 🎯 Browser content container rect for', browserId, ':', {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+          right: rect.right,
+          bottom: rect.bottom,
+          windowWidth: windowWidth,
+          windowHeight: windowHeight
         });
         
-        console.log('[IDEWindow] ✅ Positioned browser', browserId, 'with bounds:', bounds);
-      } catch (error) {
-        console.error('[IDEWindow] ❌ Error positioning browser:', error);
-      }
-    }
-    
-    // Hide browsers not currently visible OR from other workspaces
-    // This ensures persistence across workspace switches (like terminals)
-    for (const browser of allBrowsers) {
-      const isInCurrentWorkspace = browser.workspaceId === activeWorkspaceId;
-      const isVisible = Array.from(canvasPanes).some(
-        pane => pane.getAttribute('data-active-browser') === browser.id
-      );
-      
-      // Hide if: wrong workspace OR (correct workspace but not visible in any pane)
-      if (!isInCurrentWorkspace || !isVisible) {
-        try {
-          await window.electronAPI.browserHide({ browserId: browser.id });
-          if (!isInCurrentWorkspace) {
-            console.log('[IDEWindow] Hiding browser', browser.id, '- different workspace');
-          } else {
-            console.log('[IDEWindow] Hiding browser', browser.id, '- not visible');
+        // Log clamping details
+        console.log('[IDEWindow] 🔒 Bounds clamping applied:', {
+          original: {
+            x: Math.round(rect.left),
+            y: Math.round(rect.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height)
+          },
+          clamped: bounds,
+          validation: {
+            'x + width ≤ windowWidth': `${bounds.x} + ${bounds.width} ≤ ${windowWidth} = ${bounds.x + bounds.width <= windowWidth}`,
+            'y + height ≤ windowHeight': `${bounds.y} + ${bounds.height} ≤ ${windowHeight} = ${bounds.y + bounds.height <= windowHeight}`
           }
+        });
+        
+        // Call Electron to position WebContentsView
+        try {
+          await window.electronAPI.browserSetBounds({
+            browserId: browserId,
+            bounds
+          });
+          
+          // Cache the bounds we just sent
+          cachedBrowserBounds.set(browserId, bounds);
+          
+          console.log('[IDEWindow] ✅ Positioned browser', browserId, 'with bounds:', bounds);
         } catch (error) {
-          console.error('[IDEWindow] Error hiding browser:', error);
+          console.error('[IDEWindow] ❌ Error positioning browser:', error);
         }
       }
-    }
+      
+      // Hide browsers not currently visible OR from other workspaces
+      // This ensures persistence across workspace switches (like terminals)
+      for (const browser of allBrowsers) {
+        const isInCurrentWorkspace = browser.workspaceId === activeWorkspaceId;
+        const isVisible = Array.from(canvasPanes).some(
+          pane => pane.getAttribute('data-active-browser') === browser.id
+        );
+        
+        // Hide if: wrong workspace OR (correct workspace but not visible in any pane)
+        if (!isInCurrentWorkspace || !isVisible) {
+          try {
+            await window.electronAPI.browserHide({ browserId: browser.id });
+            // Clear cached bounds when hiding
+            cachedBrowserBounds.delete(browser.id);
+            if (!isInCurrentWorkspace) {
+              console.log('[IDEWindow] Hiding browser', browser.id, '- different workspace');
+            } else {
+              console.log('[IDEWindow] Hiding browser', browser.id, '- not visible');
+            }
+          } catch (error) {
+            console.error('[IDEWindow] Error hiding browser:', error);
+          }
+        }
+      }
+    }, 100); // 100ms debounce delay
   }
 
   // Reposition on state changes
@@ -206,7 +252,8 @@
 
   // Reposition browsers on state changes
   // This runs whenever any of these dependencies change
-  $: if (workspaceBrowsers.length >= 0 || editorLayout || terminalVisible !== undefined || activeWorkspaceId || explorerVisible !== undefined) {
+  // 🔧 FIX 5: Fixed always-true condition (workspaceBrowsers.length >= 0 is always true)
+  $: if (workspaceBrowsers && workspaceBrowsers.length > 0 || editorLayout || terminalVisible !== undefined || activeWorkspaceId || explorerVisible !== undefined) {
     positionBrowsers();
   }
   
@@ -255,6 +302,8 @@
 
   let resizeObserver;
   let editorAreaElement;
+  let cachedBrowserBounds = new Map(); // browserId -> bounds (for deduplication)
+  let positionBrowsersTimeout = null; // Debounce timer
 
   onMount(async () => {
     window.addEventListener('keydown', handleKeydown);
