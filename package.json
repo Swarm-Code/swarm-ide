@@ -1,6 +1,6 @@
 {
   "name": "swarm-ide",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "Swarm IDE - AI-Powered Desktop Development Environment",
   "productName": "Swarm IDE",
   "main": "main.mjs",
