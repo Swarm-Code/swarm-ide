@@ -91,7 +91,7 @@ function createWindow() {
 
   // Always load from dist folder (production build)
   mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
-  mainWindow.webContents.openDevTools();
+  // mainWindow.webContents.openDevTools(); // Disabled for production
 }
 
 // IPC Handlers
