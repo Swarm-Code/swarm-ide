@@ -1,0 +1,159 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      
+      - name: Install dependencies
+        run: bun install
+      
+      - name: Build application
+        run: bun run build
+      
+      - name: Build macOS DMG
+        if: matrix.os == 'macos-latest'
+        run: bun run dist:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Build Linux packages
+        if: matrix.os == 'ubuntu-latest'
+        run: bun run dist:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload macOS artifacts
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v3
+        with:
+          name: macos-release
+          path: |
+            release/*.dmg
+            release/*.dmg.blockmap
+      
+      - name: Upload Linux artifacts
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-release
+          path: |
+            release/*.AppImage
+            release/*.deb
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            release/*.dmg
+            release/*.AppImage
+            release/*.deb
+          body: |
+            # Swarm IDE v${{ github.ref_name }}
+            
+            ## First Stable Release
+            
+            This is the first stable release of Swarm IDE - an AI-powered desktop development environment built with Electron and Svelte.
+            
+            ### Platform Support
+            
+            - **macOS**: Full support for both Intel and Apple Silicon (M1/M2/M3)
+            - **Linux**: AppImage (universal) and Debian packages available
+            
+            ### Features Included
+            
+            #### Editor
+            - Monaco Editor with 100+ language syntax highlighting
+            - Language Server Protocol (LSP) support
+            - Multi-file editing with tab management
+            - Split view and multi-canvas workspace system
+            - Real-time syntax validation
+            
+            #### Development Tools
+            - Integrated terminal with full PTY support
+            - Built-in browser with DevTools
+            - File explorer and project management
+            - Diagnostics panel
+            - Markdown preview with Mermaid diagrams
+            
+            #### AI Integration
+            - Chat panel for AI-assisted development
+            - Context-aware code suggestions
+            - Rich text editing with TipTap
+            
+            #### Workspace Management
+            - Multi-canvas support for context organization
+            - Recent projects tracking
+            - Session restoration
+            - Project-specific settings
+            
+            ### Coming Soon: Mind Feature
+            
+            The next major feature in development is **Mind** - an intelligent note-taking and knowledge management system integrated directly into your workspace. Mind will allow you to:
+            
+            - Capture thoughts and ideas without leaving your IDE
+            - Link notes to specific code contexts
+            - Build a personal knowledge graph
+            - AI-powered note organization and retrieval
+            - Markdown-based with rich formatting
+            
+            Mind files are stored in `.swarm/mind/` within your project workspace.
+            
+            ### Installation
+            
+            #### macOS
+            Download the appropriate DMG for your architecture:
+            - Apple Silicon (M1/M2/M3): `Swarm-IDE-${{ github.ref_name }}-arm64.dmg`
+            - Intel: `Swarm-IDE-${{ github.ref_name }}.dmg`
+            
+            Open the DMG and drag Swarm IDE to Applications.
+            
+            #### Linux
+            **AppImage (Recommended):**
+            ```bash
+            chmod +x Swarm-IDE-${{ github.ref_name }}.AppImage
+            ./Swarm-IDE-${{ github.ref_name }}.AppImage
+            ```
+            
+            **Debian/Ubuntu:**
+            ```bash
+            sudo dpkg -i swarm-ide_${{ github.ref_name }}_amd64.deb
+            ```
+            
+            ### License
+            
+            Dual License:
+            - **Non-Commercial**: Free for personal, educational, and open source projects
+            - **Commercial**: Contact luis@swarmcode.ai for licensing
+            
+            ### Support
+            
+            - Report issues: [GitHub Issues](https://github.com/Swarm-Code/swarm-ide/issues)
+            - Contact: luis@swarmcode.ai
+            - Website: swarmcode.ai
+            
+            ---
+            
+            Built with Electron, Svelte, and Bun by the Swarm-Code Team.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
