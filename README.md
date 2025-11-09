@@ -44,32 +44,59 @@ Swarm IDE is a modern desktop code editor built with Electron and Svelte, featur
 
 ## Installation
 
-### macOS
+### Download Pre-built Binaries
 
-Download the appropriate DMG file:
-- Apple Silicon: `Swarm IDE-2.0.3-arm64.dmg`
-- Intel: `Swarm IDE-2.0.3.dmg`
+Visit the [Releases](https://github.com/Swarm-Code/swarm-ide/releases) page to download the latest version for your platform.
+
+#### macOS
+- Apple Silicon (M1/M2/M3): `Swarm-IDE-2.0.3-arm64.dmg`
+- Intel: `Swarm-IDE-2.0.3.dmg`
 
 Open the DMG and drag Swarm IDE to your Applications folder.
 
+#### Linux
+- AppImage: `Swarm-IDE-2.0.3.AppImage` (works on all distributions)
+- Debian/Ubuntu: `swarm-ide_2.0.3_amd64.deb`
+
+**AppImage:**
+```bash
+chmod +x Swarm-IDE-2.0.3.AppImage
+./Swarm-IDE-2.0.3.AppImage
+```
+
+**Debian/Ubuntu:**
+```bash
+sudo dpkg -i swarm-ide_2.0.3_amd64.deb
+```
+
 ### Building from Source
 
-Requirements:
-- Bun (JavaScript runtime)
-- Node.js 18+
+**Requirements:**
+- [Bun](https://bun.sh) (recommended) or Node.js 18+
+
+**Note:** This project uses Bun as the primary package manager and runtime.
 
 ```bash
+# Install Bun (if not already installed)
+curl -fsSL https://bun.sh/install | bash
+
+# Clone the repository
+git clone https://github.com/Swarm-Code/swarm-ide.git
+cd swarm-ide
+
 # Install dependencies
 bun install
-
-# Build the application
-bun run build
 
 # Run in development mode
 bun run electron:dev
 
-# Create distribution package
-bun run dist:mac
+# Build the application
+bun run build
+
+# Create distribution packages
+bun run dist:mac      # macOS only
+bun run dist:linux    # Linux only
+bun run dist:all      # All platforms
 ```
 
 ## Development

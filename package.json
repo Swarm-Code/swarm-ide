@@ -19,7 +19,9 @@
     "format": "prettier --write \"src/**/*.{js,svelte,css}\"",
     "pack": "electron-builder --dir",
     "dist": "bun run build && electron-builder",
-    "dist:mac": "bun run build && electron-builder --mac"
+    "dist:mac": "bun run build && electron-builder --mac",
+    "dist:linux": "bun run build && electron-builder --linux",
+    "dist:all": "bun run build && electron-builder --mac --linux"
   },
   "keywords": ["ide", "editor", "ai", "development"],
   "author": "Swarm-Code Team <luis@swarmcode.ai>",
