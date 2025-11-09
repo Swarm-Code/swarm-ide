@@ -1,0 +1,59 @@
+<svg width="400" height="300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .pixel-block { fill: #00ff00; }
+      .text { 
+        fill: #00ff00; 
+        font-family: 'Courier New', monospace; 
+        font-size: 16px;
+        font-weight: bold;
+      }
+      .text-small { 
+        fill: #00ff00; 
+        font-family: 'Courier New', monospace; 
+        font-size: 12px;
+      }
+    </style>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="400" height="300" fill="#000000"/>
+  
+  <!-- ASCII Art Pattern -->
+  <!-- Line 1: █   █ -->
+  <rect class="pixel-block" x="20" y="20" width="20" height="20"/>
+  <rect class="pixel-block" x="80" y="20" width="20" height="20"/>
+  
+  <!-- Line 2: █████ -->
+  <rect class="pixel-block" x="20" y="45" width="20" height="20"/>
+  <rect class="pixel-block" x="40" y="45" width="20" height="20"/>
+  <rect class="pixel-block" x="60" y="45" width="20" height="20"/>
+  <rect class="pixel-block" x="80" y="45" width="20" height="20"/>
+  <rect class="pixel-block" x="100" y="45" width="20" height="20"/>
+  
+  <!-- Line 3: █ █ █ -->
+  <rect class="pixel-block" x="20" y="70" width="20" height="20"/>
+  <rect class="pixel-block" x="60" y="70" width="20" height="20"/>
+  <rect class="pixel-block" x="100" y="70" width="20" height="20"/>
+  
+  <!-- Line 4: ███████ -->
+  <rect class="pixel-block" x="10" y="95" width="20" height="20"/>
+  <rect class="pixel-block" x="30" y="95" width="20" height="20"/>
+  <rect class="pixel-block" x="50" y="95" width="20" height="20"/>
+  <rect class="pixel-block" x="70" y="95" width="20" height="20"/>
+  <rect class="pixel-block" x="90" y="95" width="20" height="20"/>
+  <rect class="pixel-block" x="110" y="95" width="20" height="20"/>
+  <rect class="pixel-block" x="130" y="95" width="20" height="20"/>
+  
+  <!-- Line 5: █ █ -->
+  <rect class="pixel-block" x="40" y="120" width="20" height="20"/>
+  <rect class="pixel-block" x="80" y="120" width="20" height="20"/>
+  
+  <!-- Text Content -->
+  <text class="text" x="140" y="35">Swarm IDE</text>
+  <text class="text-small" x="140" y="55">v2.0.3</text>
+  <text class="text-small" x="140" y="75">20250929 · anthropic</text>
+  
+  <!-- Bottom text -->
+  <text class="text-small" x="20" y="180" style="fill: #888;">Desktop IDE powered by AI</text>
+</svg>

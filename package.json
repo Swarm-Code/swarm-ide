@@ -1,7 +1,8 @@
 {
-  "name": "swarmide",
-  "version": "1.0.0",
-  "description": "Electron IDE with Svelte",
+  "name": "swarm-ide",
+  "version": "2.0.3",
+  "description": "Swarm IDE - AI-Powered Desktop Development Environment",
+  "productName": "Swarm IDE",
   "main": "main.mjs",
   "type": "module",
   "bin": {
@@ -15,16 +16,55 @@
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
     "postinstall": "electron-rebuild",
     "lint": "eslint . --ext .js,.svelte",
-    "format": "prettier --write \"src/**/*.{js,svelte,css}\""
+    "format": "prettier --write \"src/**/*.{js,svelte,css}\"",
+    "pack": "electron-builder --dir",
+    "dist": "bun run build && electron-builder",
+    "dist:mac": "bun run build && electron-builder --mac"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": ["ide", "editor", "ai", "development"],
+  "author": "Swarm-Code Team <luis@swarmcode.ai>",
+  "license": "SEE LICENSE IN LICENSE",
+  "build": {
+    "appId": "com.swarm.ide",
+    "productName": "Swarm IDE",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "main.mjs",
+      "preload.cjs",
+      "lsp-server-manager.mjs",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ]
+    },
+    "dmg": {
+      "title": "Swarm IDE"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Development"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  },
   "devDependencies": {
+    "@electron/packager": "^19.0.1",
     "@fontsource/press-start-2p": "^5.2.7",
     "@sveltejs/vite-plugin-svelte": "^3.0.1",
     "concurrently": "^8.2.2",
     "electron": "^30.0.0",
+    "electron-builder": "^26.0.12",
     "electron-rebuild": "^3.2.9",
     "eslint": "^8.56.0",
     "eslint-plugin-svelte": "^2.35.1",
