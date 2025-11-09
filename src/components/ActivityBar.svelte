@@ -2,10 +2,8 @@
   import { appStore } from '../stores/appStore.js';
   import { editorStore } from '../stores/editorStore.js';
   import { browserStore } from '../stores/browserStore.js';
+  import { terminalStore } from '../stores/terminalStore.js';
   import { workspaceStore } from '../stores/workspaceStore.js';
-
-  export let terminalVisible = false;
-  export let onToggleTerminal = null;
 
   let activePanel = 'explorer';
   let activeWorkspaceId = null;
@@ -23,9 +21,22 @@
   }
 
   function handleTerminalClick() {
-    if (onToggleTerminal) {
-      onToggleTerminal();
-    }
+    console.log('[ActivityBar.handleTerminalClick] Creating terminal in canvas...');
+    console.log('[ActivityBar.handleTerminalClick] activeWorkspaceId:', activeWorkspaceId);
+    
+    // Create a new terminal instance
+    const terminalId = `terminal-${Date.now()}`;
+    const workspaceId = activeWorkspaceId;
+    
+    console.log('[ActivityBar.handleTerminalClick] terminalId:', terminalId);
+    
+    // Add to terminal store
+    terminalStore.addTerminal(terminalId, workspaceId);
+    
+    // Add terminal tab to active editor pane (like browsers)
+    editorStore.addTerminalTab(editorStore.getActivePaneId(), terminalId);
+    
+    console.log('[ActivityBar.handleTerminalClick] ✅ Terminal creation complete');
   }
 
   function handleBrowserClick() {
@@ -82,9 +93,8 @@
   
   <button
     class="activity-button"
-    class:active={terminalVisible}
     on:click={handleTerminalClick}
-    title="Terminal"
+    title="New Terminal"
   >
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
       <path

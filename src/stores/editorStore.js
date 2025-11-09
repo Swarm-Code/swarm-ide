@@ -581,6 +581,15 @@ function createEditorStore() {
       activePaneId: paneId,
     })),
 
+    // Get active pane ID
+    getActivePaneId: () => {
+      let activePaneId = null;
+      subscribe((state) => {
+        activePaneId = state.activePaneId;
+      })();
+      return activePaneId;
+    },
+
     // Mark tab as dirty (unsaved changes)
     setTabDirty: (paneId, tabId, isDirty) => update((state) => {
       const pane = findPaneById(state.layout, paneId);

@@ -268,6 +268,10 @@
 
   async function handleUrlEnter(event) {
     if (event.key === 'Enter' && activeBrowser && activeTab?.type === 'browser' && window.electronAPI) {
+      // Prevent default behavior (newline insertion, form submission)
+      event.preventDefault();
+      event.stopPropagation();
+      
       let url = urlInput.trim();
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         if (url.includes('.') && !url.includes(' ')) {
