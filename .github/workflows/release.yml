@@ -56,7 +56,6 @@ jobs:
           name: linux-release
           path: |
             release/*.AppImage
-            release/*.deb
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -65,7 +64,6 @@ jobs:
           files: |
             release/*.dmg
             release/*.AppImage
-            release/*.deb
           body: |
             # Swarm IDE v${{ github.ref_name }}
             

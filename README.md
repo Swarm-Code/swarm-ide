@@ -55,18 +55,11 @@ Visit the [Releases](https://github.com/Swarm-Code/swarm-ide/releases) page to d
 Open the DMG and drag Swarm IDE to your Applications folder.
 
 #### Linux
-- AppImage: `Swarm-IDE-2.0.3.AppImage` (works on all distributions)
-- Debian/Ubuntu: `swarm-ide_2.0.3_amd64.deb`
+- AppImage: `Swarm-IDE-2.0.3.AppImage` (single executable, works on all distributions)
 
-**AppImage:**
 ```bash
 chmod +x Swarm-IDE-2.0.3.AppImage
 ./Swarm-IDE-2.0.3.AppImage
-```
-
-**Debian/Ubuntu:**
-```bash
-sudo dpkg -i swarm-ide_2.0.3_amd64.deb
 ```
 
 ### Building from Source

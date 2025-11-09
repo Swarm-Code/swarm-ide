@@ -53,7 +53,7 @@
       "title": "Swarm IDE"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": ["AppImage"],
       "category": "Development"
     },
     "win": {
