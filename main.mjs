@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, WebContentsView } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, WebContentsView, Menu, shell } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
@@ -358,6 +358,148 @@ ipcMain.handle('browser:create', (event, { browserId, url, workspaceId }) => {
       if (mainWindow) {
         mainWindow.webContents.send('browser:loading', { browserId, isLoading: false });
       }
+    });
+
+    // Add context menu with DevTools support
+    view.webContents.on('context-menu', (event, params) => {
+      const menuTemplate = [];
+
+      // Link-specific items
+      if (params.linkURL) {
+        menuTemplate.push(
+          {
+            label: 'Open Link in New Tab',
+            click: () => {
+              shell.openExternal(params.linkURL);
+            }
+          },
+          {
+            label: 'Copy Link Address',
+            click: () => {
+              // Note: clipboard requires importing from electron
+              const { clipboard } = require('electron');
+              clipboard.writeText(params.linkURL);
+            }
+          },
+          { type: 'separator' }
+        );
+      }
+
+      // Image-specific items
+      if (params.mediaType === 'image') {
+        menuTemplate.push(
+          {
+            label: 'Open Image in New Tab',
+            click: () => {
+              shell.openExternal(params.srcURL);
+            }
+          },
+          {
+            label: 'Copy Image Address',
+            click: () => {
+              const { clipboard } = require('electron');
+              clipboard.writeText(params.srcURL);
+            }
+          },
+          { type: 'separator' }
+        );
+      }
+
+      // Editable field items
+      if (params.isEditable) {
+        menuTemplate.push(
+          {
+            label: 'Undo',
+            role: 'undo'
+          },
+          {
+            label: 'Redo',
+            role: 'redo'
+          },
+          { type: 'separator' },
+          {
+            label: 'Cut',
+            role: 'cut'
+          },
+          {
+            label: 'Copy',
+            role: 'copy'
+          },
+          {
+            label: 'Paste',
+            role: 'paste'
+          },
+          {
+            label: 'Select All',
+            role: 'selectAll'
+          },
+          { type: 'separator' }
+        );
+      } else if (params.selectionText) {
+        // Text selected but not in editable field
+        menuTemplate.push(
+          {
+            label: 'Copy',
+            role: 'copy'
+          },
+          { type: 'separator' }
+        );
+      }
+
+      // Standard browser actions
+      menuTemplate.push(
+        {
+          label: 'Back',
+          enabled: view.webContents.canGoBack(),
+          click: () => {
+            view.webContents.goBack();
+          }
+        },
+        {
+          label: 'Forward',
+          enabled: view.webContents.canGoForward(),
+          click: () => {
+            view.webContents.goForward();
+          }
+        },
+        {
+          label: 'Reload',
+          click: () => {
+            view.webContents.reload();
+          }
+        },
+        { type: 'separator' }
+      );
+
+      // DevTools items
+      menuTemplate.push(
+        {
+          label: 'Inspect Element',
+          click: () => {
+            view.webContents.inspectElement(params.x, params.y);
+          }
+        },
+        {
+          label: 'Open DevTools',
+          click: () => {
+            view.webContents.openDevTools();
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'View Page Source',
+          click: () => {
+            view.webContents.executeJavaScript(`
+              const newWindow = window.open('', '_blank');
+              newWindow.document.write('<pre>' + document.documentElement.outerHTML.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>');
+              newWindow.document.close();
+            `);
+          }
+        }
+      );
+
+      const menu = Menu.buildFromTemplate(menuTemplate);
+      menu.popup();
     });
 
     return { success: true, browserId };
