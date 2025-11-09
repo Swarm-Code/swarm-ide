@@ -3,3 +3,7 @@ dist
 .DS_Store
 *.log
 release/
+
+# Documentation files (keep only README.md)
+*.md
+!README.md
