@@ -656,8 +656,6 @@
     /* Strict containment - prevents browser from overflowing */
     contain: strict;
     overflow: hidden;
-    /* DEBUG: Visible border to see actual .browser-content bounds */
-    border: 3px solid lime;
     box-sizing: border-box;
   }
 
