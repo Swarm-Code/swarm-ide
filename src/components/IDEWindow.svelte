@@ -312,10 +312,18 @@
       event.preventDefault();
       explorerVisible = !explorerVisible;
     }
-    // Ctrl+` (backtick) to toggle terminal
+    // Ctrl+` (backtick) to create new terminal in canvas
     if ((event.ctrlKey || event.metaKey) && event.key === '`') {
       event.preventDefault();
-      terminalVisible = !terminalVisible;
+      // Create terminal directly in active pane (like clicking terminal button)
+      const terminalId = `terminal-${Date.now()}`;
+      terminalStore.addTerminal(terminalId, activeWorkspaceId);
+      editorStore.addTerminalTab(currentState.activePaneId, terminalId);
+    }
+    // Prevent Ctrl+R and Ctrl+Shift+R from reloading the Electron app
+    if ((event.ctrlKey || event.metaKey) && event.key === 'r') {
+      event.preventDefault();
+      console.log('[IDEWindow] Prevented Ctrl+R reload');
     }
     // Ctrl+Shift+M to toggle diagnostics
     if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'M') {
@@ -441,30 +449,7 @@
       <div class="editor-area" style="height: {terminalVisible || diagnosticsVisible ? '60%' : '100%'}">
         <EditorCanvas />
       </div>
-      <div class="bottom-panel-container">
-        <div class="bottom-panel-tabs" class:hidden={!terminalVisible && !diagnosticsVisible}>
-          <button 
-            class="panel-tab" 
-            class:active={terminalVisible && !diagnosticsVisible}
-            on:click={() => { terminalVisible = true; diagnosticsVisible = false; }}
-          >
-            Terminal
-          </button>
-          <button 
-            class="panel-tab" 
-            class:active={diagnosticsVisible}
-            on:click={() => { diagnosticsVisible = true; terminalVisible = false; }}
-          >
-            Problems
-          </button>
-        </div>
-        <div class="terminal-area" class:hidden={!terminalVisible || diagnosticsVisible}>
-          <TerminalPanel />
-        </div>
-        <div class="diagnostics-area" class:hidden={!diagnosticsVisible}>
-          <DiagnosticsPanel />
-        </div>
-      </div>
+      <!-- Bottom panel removed - terminals now only in canvas -->
     </div>
     <div class="chat-sidebar" class:hidden={!chatVisible}>
       <ChatPanel />
