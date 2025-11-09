@@ -37,6 +37,30 @@
     }
   }
   
+  // Export method to blur terminal (release keyboard focus)
+  export function blur() {
+    if (!terminal) return;
+    
+    try {
+      terminal.blur();
+      console.log(`[Terminal ${terminalId}] Blurred - keyboard focus released`);
+    } catch (error) {
+      console.error(`[Terminal ${terminalId}] Error blurring:`, error);
+    }
+  }
+  
+  // Export method to focus terminal (gain keyboard focus)
+  export function focus() {
+    if (!terminal) return;
+    
+    try {
+      terminal.focus();
+      console.log(`[Terminal ${terminalId}] Focused - keyboard focus gained`);
+    } catch (error) {
+      console.error(`[Terminal ${terminalId}] Error focusing:`, error);
+    }
+  }
+  
   // Export method to clear terminal history
   export function clearHistory() {
     if (!terminal) return;
@@ -179,7 +203,7 @@
   }
 
   .terminal-wrapper :global(.xterm) {
-    padding: 8px;
+    padding: 4px;
   }
 
   .terminal-wrapper :global(.xterm-viewport) {

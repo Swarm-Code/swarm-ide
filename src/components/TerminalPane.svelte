@@ -75,6 +75,7 @@
 <div
   class="terminal-pane"
   class:active={isActive}
+  data-pane-id={pane.id}
   on:click={handlePaneClick}
   on:dragover={handleDragOver}
   on:drop={handleDrop}
