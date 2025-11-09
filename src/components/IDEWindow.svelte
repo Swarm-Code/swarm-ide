@@ -114,11 +114,11 @@
         if (wasHidden) {
           const terminalComponent = terminalComponents.get(terminalId);
           if (terminalComponent && terminalComponent.refresh) {
-            // Use setTimeout to ensure DOM has updated
-            setTimeout(() => {
+            // Use requestAnimationFrame for instant refresh after paint
+            requestAnimationFrame(() => {
               terminalComponent.refresh();
               console.log('[IDEWindow] Refreshed terminal', terminalId, 'after becoming visible');
-            }, 50);
+            });
           }
         }
       } else {
@@ -134,7 +134,7 @@
 
   // Position browsers into their display areas
   async function positionBrowsers() {
-    // 🔧 FIX 3: Debounce rapid calls (e.g., from multiple event listeners)
+    // 🔧 Debounce rapid calls but keep it snappy (one frame = 16ms)
     if (positionBrowsersTimeout) {
       clearTimeout(positionBrowsersTimeout);
     }
@@ -142,9 +142,8 @@
     positionBrowsersTimeout = setTimeout(async () => {
       // Wait for DOM to settle after layout changes
       await tick();
-      // Give extra time for CSS transitions (150ms) and layout reflow
-      // Using 200ms to ensure transition completes before measuring
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // Use requestAnimationFrame for instant positioning after next paint
+      await new Promise(resolve => requestAnimationFrame(resolve));
       
       if (!window.electronAPI) return;
       
@@ -267,7 +266,7 @@
           }
         }
       }
-    }, 100); // 100ms debounce delay
+    }, 16); // 16ms debounce (one frame) for snappy updates
   }
 
   // Reposition on state changes
