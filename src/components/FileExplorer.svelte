@@ -14,6 +14,7 @@
   let contextMenuVisible = false;
   let contextMenuX = 0;
   let contextMenuY = 0;
+  let isDragOver = false; // Track drag over state for external files
 
   fileExplorerStore.subscribe((state) => {
     fileTree = state.fileTree;
@@ -94,6 +95,85 @@
     closeContextMenu();
   }
 
+  // Drag and drop handlers for root-level drops
+  function handleExplorerDragEnter(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    isDragOver = true;
+  }
+
+  function handleExplorerDragOver(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'copy';
+  }
+
+  function handleExplorerDragLeave(event) {
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX;
+    const y = event.clientY;
+    if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) {
+      isDragOver = false;
+    }
+  }
+
+  async function handleExplorerDrop(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    isDragOver = false;
+
+    if (!window.electronAPI || !currentWorkspacePath) return;
+
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length === 0) return;
+
+    try {
+      const existingContents = await window.electronAPI.readDirectory(currentWorkspacePath);
+      const existingNames = new Set(existingContents.map(f => f.name));
+
+      for (const file of files) {
+        const fileName = file.name;
+        let destinationPath = `${currentWorkspacePath}/${fileName}`;
+        let finalFileName = fileName;
+
+        if (existingNames.has(fileName)) {
+          let counter = 1;
+          const nameParts = fileName.split('.');
+          const hasExtension = nameParts.length > 1;
+          const ext = hasExtension ? nameParts.pop() : '';
+          const baseName = nameParts.join('.');
+
+          while (existingNames.has(finalFileName)) {
+            if (hasExtension) {
+              finalFileName = `${baseName} (${counter}).${ext}`;
+            } else {
+              finalFileName = `${fileName} (${counter})`;
+            }
+            counter++;
+          }
+          destinationPath = `${currentWorkspacePath}/${finalFileName}`;
+          existingNames.add(finalFileName);
+        }
+
+        const result = await window.electronAPI.copyPath({
+          sourcePath: file.path,
+          destinationPath: destinationPath
+        });
+
+        if (!result.success) {
+          console.error('Copy failed:', result.error);
+          alert(`Failed to copy ${fileName}: ${result.error}`);
+        }
+      }
+
+      await loadDirectory(currentWorkspacePath);
+    } catch (error) {
+      console.error('Drop error:', error);
+      alert(`Failed to copy files: ${error.message}`);
+    }
+  }
+
   $: explorerContextMenuItems = [
     {
       label: 'Go to Parent Folder',
@@ -104,7 +184,17 @@
 </script>
 
 <!-- svelte-ignore a11y-no-static-element-interactions -->
-<div class="file-explorer" on:contextmenu={handleContextMenu} role="tree" tabindex="-1">
+<div
+  class="file-explorer"
+  class:drag-over={isDragOver}
+  on:contextmenu={handleContextMenu}
+  on:dragenter={handleExplorerDragEnter}
+  on:dragover={handleExplorerDragOver}
+  on:dragleave={handleExplorerDragLeave}
+  on:drop={handleExplorerDrop}
+  role="tree"
+  tabindex="-1"
+>
   <div class="file-list">
     {#if fileTree.length === 0}
       <div class="empty-state">
@@ -132,6 +222,13 @@
     display: flex;
     flex-direction: column;
     background-color: var(--color-surface);
+    transition: all var(--transition-fast);
+  }
+
+  .file-explorer.drag-over {
+    background-color: var(--color-accent);
+    opacity: 0.3;
+    border: 3px dashed var(--color-accent);
   }
 
   .file-list {

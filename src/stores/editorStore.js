@@ -1,6 +1,21 @@
 import { writable, derived } from 'svelte/store';
 import { workspaceStore } from './workspaceStore.js';
 
+// Media file extensions
+const IMAGE_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico', '.apng'
+]);
+
+const VIDEO_EXTENSIONS = new Set([
+  '.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv', '.m4v'
+]);
+
+function isMediaFile(filename) {
+  if (!filename) return false;
+  const ext = filename.substring(filename.lastIndexOf('.')).toLowerCase();
+  return IMAGE_EXTENSIONS.has(ext) || VIDEO_EXTENSIONS.has(ext);
+}
+
 // Editor state per workspace
 const workspaceEditorStates = new Map();
 
@@ -98,9 +113,16 @@ function createEditorStore() {
 
       // Load file contents
       let content = '';
-      if (window.electronAPI) {
+
+      // Check if this is a media file (image or video)
+      const isMedia = isMediaFile(fileName);
+
+      if (isMedia) {
+        // Media files don't need content - MediaViewer uses file:// URLs directly
+        content = '';
+      } else if (window.electronAPI) {
         const result = await window.electronAPI.readFile(filePath);
-        
+
         // Handle new response format
         if (result && result.error) {
           // Show error message in the editor
@@ -146,6 +168,7 @@ function createEditorStore() {
                 name: fileName,
                 content: content,
                 isDirty: false,
+                previewMode: 'off', // 'off', 'split', 'preview'
               };
               
               newPane.tabs = [newTab];
@@ -187,6 +210,7 @@ function createEditorStore() {
           name: fileName,
           content: content,
           isDirty: false,
+          previewMode: 'off', // 'off', 'split', 'preview'
         };
 
         targetPane.tabs.push(newTab);
@@ -565,6 +589,19 @@ function createEditorStore() {
       const tab = pane.tabs.find((t) => t.id === tabId);
       if (tab) {
         tab.isDirty = isDirty;
+      }
+
+      return { ...state };
+    }),
+
+    // Set markdown preview mode for a tab ('off', 'split', 'preview')
+    setPreviewMode: (paneId, tabId, mode) => update((state) => {
+      const pane = findPaneById(state.layout, paneId);
+      if (!pane || pane.paneType === 'terminal') return state;
+
+      const tab = pane.tabs.find((t) => t.id === tabId);
+      if (tab && tab.type === 'editor') {
+        tab.previewMode = mode; // 'off', 'split', 'preview'
       }
 
       return { ...state };

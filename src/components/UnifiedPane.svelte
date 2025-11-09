@@ -6,6 +6,8 @@
   import { appStore } from '../stores/appStore.js';
   import EditorTab from './EditorTab.svelte';
   import MonacoEditor from './MonacoEditor.svelte';
+  import MediaViewer from './MediaViewer.svelte';
+  import MarkdownPreview from './MarkdownPreview.svelte';
 
   export let pane;
   export let isActive = false;
@@ -191,6 +193,21 @@
     }
   }
 
+  // Media file detection
+  const IMAGE_EXTENSIONS = new Set([
+    '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico', '.apng'
+  ]);
+
+  const VIDEO_EXTENSIONS = new Set([
+    '.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv', '.m4v'
+  ]);
+
+  function isMediaFile(filename) {
+    if (!filename) return false;
+    const ext = filename.substring(filename.lastIndexOf('.')).toLowerCase();
+    return IMAGE_EXTENSIONS.has(ext) || VIDEO_EXTENSIONS.has(ext);
+  }
+
   function getLanguageFromFilename(filename) {
     const ext = filename?.split('.').pop()?.toLowerCase() || '';
     const languageMap = {
@@ -207,8 +224,41 @@
   function handleEditorChange(newContent) {
     if (activeTab && activeTab.type === 'editor') {
       editorStore.setTabDirty(pane.id, activeTab.id, true);
+      // Update content for live preview
+      activeTab.content = newContent;
     }
   }
+
+  function isMarkdownFile(filename) {
+    return filename?.toLowerCase().endsWith('.md');
+  }
+
+  function cyclePreviewMode() {
+    if (activeTab && activeTab.type === 'editor') {
+      const currentMode = activeTab.previewMode || 'off';
+      const modes = ['off', 'split', 'preview'];
+      const currentIndex = modes.indexOf(currentMode);
+      const nextMode = modes[(currentIndex + 1) % modes.length];
+      editorStore.setPreviewMode(pane.id, activeTab.id, nextMode);
+    }
+  }
+
+  // Scroll synchronization for split view
+  let monacoEditor;
+  let markdownPreview;
+  
+  const scrollSync = {
+    onEditorScroll: (percent) => {
+      if (markdownPreview?.scrollToPercent) {
+        markdownPreview.scrollToPercent(percent);
+      }
+    },
+    onPreviewScroll: (percent) => {
+      if (monacoEditor?.scrollToPercent) {
+        monacoEditor.scrollToPercent(percent);
+      }
+    }
+  };
 
   // Browser navigation
   let urlInput = '';
@@ -288,6 +338,32 @@
       {/each}
     </div>
     <div class="tab-actions">
+      {#if activeTab && activeTab.type === 'editor' && isMarkdownFile(activeTab.name)}
+        <button 
+          class="action-button preview-mode-button" 
+          class:active={activeTab.previewMode !== 'off'}
+          on:click={cyclePreviewMode} 
+          title={activeTab.previewMode === 'off' ? 'Show split view' : activeTab.previewMode === 'split' ? 'Preview only' : 'Hide preview'}
+        >
+          {#if activeTab.previewMode === 'off'}
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M1 8s3-5 7-5 7 5 7 5-3 5-7 5-7-5-7-5z" />
+              <circle cx="8" cy="8" r="2" stroke-width="1.5" />
+            </svg>
+          {:else if activeTab.previewMode === 'split'}
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
+              <rect x="2" y="2" width="5" height="12" stroke-width="1.5" />
+              <rect x="9" y="2" width="5" height="12" stroke-width="1.5" />
+            </svg>
+          {:else}
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
+              <rect x="2" y="2" width="12" height="12" stroke-width="1.5" />
+              <line x1="4" y1="6" x2="12" y2="6" stroke-width="1.5" />
+              <line x1="4" y1="9" x2="10" y2="9" stroke-width="1.5" />
+            </svg>
+          {/if}
+        </button>
+      {/if}
       <button class="action-button" on:click={handleSplitHorizontal} title="Split horizontally">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
           <rect x="2" y="2" width="12" height="12" stroke-width="1.5" />
@@ -333,12 +409,45 @@
     {#if activeTab}
       {#if activeTab.type === 'editor'}
         {#key activeTab.id}
-          <MonacoEditor
-            content={activeTab.content || ''}
-            language={getLanguageFromFilename(activeTab.name)}
-            onChange={handleEditorChange}
-            readOnly={false}
-          />
+          {#if isMediaFile(activeTab.name)}
+            <MediaViewer
+              filePath={activeTab.path}
+              fileName={activeTab.name}
+            />
+          {:else if isMarkdownFile(activeTab.name) && activeTab.previewMode === 'split'}
+            <div class="split-editor">
+              <div class="editor-section">
+                <MonacoEditor
+                  bind:this={monacoEditor}
+                  content={activeTab.content || ''}
+                  language={getLanguageFromFilename(activeTab.name)}
+                  onChange={handleEditorChange}
+                  readOnly={false}
+                  scrollSync={scrollSync}
+                />
+              </div>
+              <div class="preview-section">
+                <MarkdownPreview
+                  bind:this={markdownPreview}
+                  content={activeTab.content || ''}
+                  isDarkTheme={true}
+                  scrollSync={scrollSync}
+                />
+              </div>
+            </div>
+          {:else if isMarkdownFile(activeTab.name) && activeTab.previewMode === 'preview'}
+            <MarkdownPreview
+              content={activeTab.content || ''}
+              isDarkTheme={true}
+            />
+          {:else}
+            <MonacoEditor
+              content={activeTab.content || ''}
+              language={getLanguageFromFilename(activeTab.name)}
+              onChange={handleEditorChange}
+              readOnly={false}
+            />
+          {/if}
         {/key}
       {:else if activeTab.type === 'browser'}
         <div 
@@ -450,6 +559,32 @@
   .action-button svg {
     width: 14px;
     height: 14px;
+  }
+
+  .action-button.active {
+    background-color: var(--color-accent);
+    color: var(--color-background);
+  }
+
+  .split-editor {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .editor-section {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border-right: 1px solid var(--color-border);
+  }
+
+  .preview-section {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    overflow: hidden;
   }
 
   .browser-toolbar {
