@@ -156,13 +156,23 @@
         const windowWidth = window.innerWidth;
         const windowHeight = window.innerHeight;
         
+        // Add safety inset to prevent overflow (accounts for scrollbars, rendering differences, etc.)
+        const SAFETY_INSET = 2; // 2px inset on all sides
+        
         const bounds = {
-          x: Math.round(Math.max(0, rect.left)),
-          y: Math.round(Math.max(0, rect.top)),
-          // Clamp width: can't exceed remaining space after x offset
-          width: Math.round(Math.max(0, Math.min(rect.width, windowWidth - rect.left))),
-          // Clamp height: can't exceed remaining space after y offset
-          height: Math.round(Math.max(0, Math.min(rect.height, windowHeight - rect.top)))
+          // Add inset to x/y position
+          x: Math.round(Math.max(0, rect.left + SAFETY_INSET)),
+          y: Math.round(Math.max(0, rect.top + SAFETY_INSET)),
+          // Subtract double inset from width/height (both sides)
+          // Also clamp to remaining window space
+          width: Math.round(Math.max(0, Math.min(
+            rect.width - (SAFETY_INSET * 2),
+            windowWidth - rect.left - (SAFETY_INSET * 2)
+          ))),
+          height: Math.round(Math.max(0, Math.min(
+            rect.height - (SAFETY_INSET * 2),
+            windowHeight - rect.top - (SAFETY_INSET * 2)
+          )))
         };
         
         // 🔧 FIX 4: Check if bounds have actually changed before sending to Electron
@@ -187,8 +197,8 @@
           windowHeight: windowHeight
         });
         
-        // Log clamping details
-        console.log('[IDEWindow] 🔒 Bounds clamping applied:', {
+        // Log clamping details with safety inset
+        console.log('[IDEWindow] 🔒 Bounds clamping applied (with safety inset):', {
           original: {
             x: Math.round(rect.left),
             y: Math.round(rect.top),
@@ -196,9 +206,11 @@
             height: Math.round(rect.height)
           },
           clamped: bounds,
+          safetyInset: SAFETY_INSET,
           validation: {
             'x + width ≤ windowWidth': `${bounds.x} + ${bounds.width} ≤ ${windowWidth} = ${bounds.x + bounds.width <= windowWidth}`,
-            'y + height ≤ windowHeight': `${bounds.y} + ${bounds.height} ≤ ${windowHeight} = ${bounds.y + bounds.height <= windowHeight}`
+            'y + height ≤ windowHeight': `${bounds.y} + ${bounds.height} ≤ ${windowHeight} = ${bounds.y + bounds.height <= windowHeight}`,
+            'insetApplied': `Added ${SAFETY_INSET}px inset on all sides`
           }
         });
         
