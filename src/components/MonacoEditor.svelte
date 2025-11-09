@@ -78,6 +78,63 @@
       insertSpaces: true,
     });
 
+    // Override Alt+Arrow keys for app-level navigation (tab/pane switching)
+    // Alt+Left: Previous tab
+    editor.addCommand(
+      monaco.KeyMod.Alt | monaco.KeyCode.LeftArrow,
+      () => {
+        console.log('[MonacoEditor] Alt+Left intercepted, dispatching to app');
+        window.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'ArrowLeft',
+          code: 'ArrowLeft',
+          altKey: true,
+          bubbles: true
+        }));
+      }
+    );
+    
+    // Alt+Right: Next tab
+    editor.addCommand(
+      monaco.KeyMod.Alt | monaco.KeyCode.RightArrow,
+      () => {
+        console.log('[MonacoEditor] Alt+Right intercepted, dispatching to app');
+        window.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'ArrowRight',
+          code: 'ArrowRight',
+          altKey: true,
+          bubbles: true
+        }));
+      }
+    );
+    
+    // Alt+Up: Previous pane
+    editor.addCommand(
+      monaco.KeyMod.Alt | monaco.KeyCode.UpArrow,
+      () => {
+        console.log('[MonacoEditor] Alt+Up intercepted, dispatching to app');
+        window.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'ArrowUp',
+          code: 'ArrowUp',
+          altKey: true,
+          bubbles: true
+        }));
+      }
+    );
+    
+    // Alt+Down: Next pane
+    editor.addCommand(
+      monaco.KeyMod.Alt | monaco.KeyCode.DownArrow,
+      () => {
+        console.log('[MonacoEditor] Alt+Down intercepted, dispatching to app');
+        window.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'ArrowDown',
+          code: 'ArrowDown',
+          altKey: true,
+          bubbles: true
+        }));
+      }
+    );
+
     // Listen for content changes
     editor.onDidChangeModelContent(() => {
       const newContent = editor.getValue();

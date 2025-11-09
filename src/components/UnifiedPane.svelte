@@ -4,10 +4,12 @@
   import { browserStore } from '../stores/browserStore.js';
   import { terminalStore } from '../stores/terminalStore.js';
   import { appStore } from '../stores/appStore.js';
+  import { activeWorkspacePath } from '../stores/workspaceStore.js';
   import EditorTab from './EditorTab.svelte';
   import MonacoEditor from './MonacoEditor.svelte';
   import MediaViewer from './MediaViewer.svelte';
   import MarkdownPreview from './MarkdownPreview.svelte';
+  import TipTapEditor from './TipTapEditor.svelte';
 
   export let pane;
   export let isActive = false;
@@ -229,6 +231,32 @@
     }
   }
 
+  // Mind editor handling
+  let mindSaveTimeout;
+  async function handleMindChange(newContent) {
+    if (activeTab && activeTab.type === 'mind') {
+      activeTab.content = newContent;
+      editorStore.setTabDirty(pane.id, activeTab.id, true);
+      
+      // Auto-save after 500ms of no changes
+      clearTimeout(mindSaveTimeout);
+      mindSaveTimeout = setTimeout(async () => {
+        if (window.electronAPI && $activeWorkspacePath) {
+          const result = await window.electronAPI.mindWrite({
+            workspacePath: $activeWorkspacePath,
+            name: activeTab.name,
+            content: newContent
+          });
+          
+          if (result.success) {
+            editorStore.setTabDirty(pane.id, activeTab.id, false);
+            console.log('[Mind] Auto-saved:', activeTab.name);
+          }
+        }
+      }, 500);
+    }
+  }
+
   function isMarkdownFile(filename) {
     return filename?.toLowerCase().endsWith('.md');
   }
@@ -262,26 +290,62 @@
 
   // Browser navigation
   let urlInput = '';
-  $: if (activeBrowser) {
-    urlInput = activeBrowser.url;
+  let urlInputFocused = false;
+  
+  // Only update URL input when browser changes AND input is not focused
+  $: if (activeBrowser && !urlInputFocused) {
+    urlInput = activeBrowser.url || '';
   }
 
-  async function handleUrlEnter(event) {
-    if (event.key === 'Enter' && activeBrowser && activeTab?.type === 'browser' && window.electronAPI) {
-      // Prevent default behavior (newline insertion, form submission)
-      event.preventDefault();
-      event.stopPropagation();
-      
-      let url = urlInput.trim();
-      if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        if (url.includes('.') && !url.includes(' ')) {
-          url = 'https://' + url;
-        } else {
-          url = 'https://www.google.com/search?q=' + encodeURIComponent(url);
-        }
+  function handleUrlFocus() {
+    urlInputFocused = true;
+    console.log('[UnifiedPane] 🎯 URL input focused');
+  }
+  
+  function handleUrlBlur() {
+    urlInputFocused = false;
+    // Restore actual browser URL when unfocusing
+    if (activeBrowser) {
+      urlInput = activeBrowser.url || '';
+    }
+    console.log('[UnifiedPane] 💤 URL input blurred');
+  }
+  
+  async function handleUrlSubmit(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    if (!activeBrowser || !window.electronAPI) return;
+    
+    let url = urlInput.trim();
+    if (!url) return;
+    
+    console.log('[UnifiedPane] 🌐 Navigating to:', url);
+    
+    // Auto-prepend https:// if needed
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      if (url.includes('.') && !url.includes(' ')) {
+        url = 'https://' + url;
+      } else {
+        // Search query
+        url = 'https://www.google.com/search?q=' + encodeURIComponent(url);
       }
-      await window.electronAPI.browserNavigate({ browserId: activeBrowser.id, url });
-      browserStore.navigate(activeBrowser.id, url);
+    }
+    
+    await window.electronAPI.browserNavigate({ browserId: activeBrowser.id, url });
+    browserStore.navigate(activeBrowser.id, url);
+    
+    // Blur and focus browser
+    event.target.blur();
+    await window.electronAPI.browserFocus?.({ browserId: activeBrowser.id });
+  }
+  
+  async function handleUrlKeydown(event) {
+    if (event.key === 'Enter') {
+      await handleUrlSubmit(event);
+    } else if (event.key === 'Escape') {
+      // Reset to actual URL on Escape
+      event.target.blur();
     }
   }
 
@@ -309,6 +373,7 @@
 <div
   class="unified-pane"
   class:active={isActive}
+  data-pane-id={pane.id}
   on:click={handlePaneClick}
   role="tabpanel"
   tabindex="-1"
@@ -329,7 +394,7 @@
           <EditorTab
             tab={{
               id: tab.id,
-              name: tab.type === 'browser' ? tab.title : (tab.type === 'terminal' ? tab.title : tab.name),
+              name: tab.type === 'browser' ? tab.title : (tab.type === 'terminal' ? tab.title : (tab.type === 'mind' ? `🧠 ${tab.name}` : tab.name)),
               path: tab.path,
               isDirty: tab.isDirty
             }}
@@ -405,7 +470,19 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 8a4 4 0 017.5-2m.5 6a4 4 0 01-7.5 2m0-4V4m0 0h4M12 12V8m0 4H8" />
         </svg>
       </button>
-      <input type="text" class="url-input" bind:value={urlInput} on:keydown={handleUrlEnter} placeholder="Enter URL or search..." />
+      <form on:submit={handleUrlSubmit} style="flex: 1; display: flex;">
+        <input 
+          type="text" 
+          class="url-input" 
+          bind:value={urlInput} 
+          on:focus={handleUrlFocus}
+          on:blur={handleUrlBlur}
+          on:keydown={handleUrlKeydown}
+          placeholder="Enter URL or search..." 
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </form>
     </div>
   {/if}
 
@@ -454,11 +531,34 @@
           {/if}
         {/key}
       {:else if activeTab.type === 'browser'}
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
         <div 
           class="browser-content" 
           data-browser-location="canvas-pane" 
           data-pane-id={pane.id}
           data-active-browser={activeTab.browserId}
+          on:click={async () => {
+            // When user clicks in browser area, focus the WebContentsView
+            if (window.electronAPI && activeTab.browserId) {
+              const browser = allBrowsers.find(b => b.id === activeTab.browserId);
+              console.log('[UnifiedPane] 🖱️ Browser area clicked:', {
+                browserId: activeTab.browserId,
+                paneId: pane.id,
+                browserURL: browser?.url,
+                isActive: pane.activeTabId === activeTab.id
+              });
+              await window.electronAPI.browserFocus?.({ browserId: activeTab.browserId });
+            }
+          }}
+          on:keydown={(e) => {
+            console.log('[UnifiedPane] 🎹 Keydown on browser-content div:', {
+              key: e.key,
+              code: e.code,
+              browserId: activeTab.browserId,
+              paneId: pane.id,
+              target: e.target.className
+            });
+          }}
         >
           <!-- WebContentsView renders here -->
           {#if overlayVisible}
@@ -477,6 +577,14 @@
             <div class="terminal-blur-overlay"></div>
           {/if}
         </div>
+      {:else if activeTab.type === 'mind'}
+        {#key activeTab.id}
+          <TipTapEditor
+            content={activeTab.content || ''}
+            onChange={handleMindChange}
+            editable={true}
+          />
+        {/key}
       {/if}
     {:else}
       <div class="empty-pane">
@@ -649,8 +757,7 @@
     flex: 1;
     overflow: hidden;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    /* Don't center - let children fill space naturally */
   }
 
   .browser-content {
@@ -709,6 +816,9 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
     gap: var(--spacing-md);
     color: var(--color-text-tertiary);
   }

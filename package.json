@@ -35,9 +35,9 @@
     "wait-on": "^7.2.0"
   },
   "dependencies": {
-    "@tiptap/core": "^3.10.2",
-    "@tiptap/pm": "^3.10.2",
-    "@tiptap/starter-kit": "^3.10.2",
+    "@tiptap/core": "^3.10.4",
+    "@tiptap/pm": "^3.10.4",
+    "@tiptap/starter-kit": "^3.10.4",
     "@xterm/addon-fit": "^0.10.0",
     "electron-store": "^11.0.2",
     "highlight.js": "^11.11.1",

@@ -1,5 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import { workspaceStore } from './workspaceStore.js';
+import { canvasStore } from './canvasStore.js';
 
 // Media file extensions
 const IMAGE_EXTENSIONS = new Set([
@@ -16,10 +17,11 @@ function isMediaFile(filename) {
   return IMAGE_EXTENSIONS.has(ext) || VIDEO_EXTENSIONS.has(ext);
 }
 
-// Editor state per workspace
-const workspaceEditorStates = new Map();
+// Editor state per workspace per canvas
+// Structure: workspaceId -> canvasId -> editorState
+const workspaceCanvasEditorStates = new Map();
 
-// Get initial state for a workspace
+// Get initial state for a canvas
 function getInitialState() {
   return {
     layout: {
@@ -43,6 +45,7 @@ function createEditorStore() {
   const { subscribe, set, update } = store;
   
   let currentWorkspaceId = null;
+  let currentCanvasId = null;
   let currentState = getInitialState();
 
   // Track state changes
@@ -50,34 +53,182 @@ function createEditorStore() {
     currentState = state;
   });
 
+  // Helper to get workspace canvas map
+  function getWorkspaceCanvasMap(workspaceId) {
+    if (!workspaceCanvasEditorStates.has(workspaceId)) {
+      workspaceCanvasEditorStates.set(workspaceId, new Map());
+    }
+    return workspaceCanvasEditorStates.get(workspaceId);
+  }
+
   // Subscribe to workspace changes
   workspaceStore.subscribe((workspaceState) => {
     const newWorkspaceId = workspaceState.activeWorkspaceId;
     
     if (newWorkspaceId !== currentWorkspaceId) {
-      // Save current state if we have a workspace
-      if (currentWorkspaceId) {
-        workspaceEditorStates.set(currentWorkspaceId, { ...currentState });
+      // Save current state if we have both workspace and canvas
+      if (currentWorkspaceId && currentCanvasId) {
+        const canvasMap = getWorkspaceCanvasMap(currentWorkspaceId);
+        canvasMap.set(currentCanvasId, { ...currentState });
       }
       
       // Load or initialize state for new workspace
       if (newWorkspaceId) {
-        const savedState = workspaceEditorStates.get(newWorkspaceId);
+        const canvasMap = getWorkspaceCanvasMap(newWorkspaceId);
+        // Get active canvas ID from canvasStore
+        const activeCanvasId = canvasStore.getActiveCanvasId();
+        const savedState = canvasMap.get(activeCanvasId);
+        
         if (savedState) {
           set(savedState);
         } else {
           set(getInitialState());
         }
+        
+        currentCanvasId = activeCanvasId;
       } else {
         set(getInitialState());
+        currentCanvasId = null;
       }
       
       currentWorkspaceId = newWorkspaceId;
     }
   });
 
+  // Subscribe to canvas changes (within same workspace)
+  canvasStore.subscribe((canvasState) => {
+    const newCanvasId = canvasState.activeCanvasId;
+    
+    // Only switch canvas if workspace hasn't changed
+    if (newCanvasId !== currentCanvasId && currentWorkspaceId) {
+      // Save current canvas state
+      if (currentCanvasId) {
+        const canvasMap = getWorkspaceCanvasMap(currentWorkspaceId);
+        canvasMap.set(currentCanvasId, { ...currentState });
+      }
+      
+      // Load state for new canvas
+      const canvasMap = getWorkspaceCanvasMap(currentWorkspaceId);
+      const savedState = canvasMap.get(newCanvasId);
+      
+      if (savedState) {
+        set(savedState);
+      } else {
+        set(getInitialState());
+      }
+      
+      currentCanvasId = newCanvasId;
+    }
+  });
+
   return {
     subscribe,
+
+    // Open mind file in active pane
+    openMind: async (name, content = '') => {
+      console.log('[editorStore.openMind] Called with:', { name });
+      const pane = findPaneById(currentState.layout, currentState.activePaneId);
+      
+      if (!pane) {
+        console.log('[editorStore.openMind] ❌ REJECTED: no pane found');
+        return;
+      }
+
+      // Check if mind already open in this pane
+      if (pane.paneType === 'editor') {
+        const existingTab = pane.tabs.find((t) => t.type === 'mind' && t.name === name);
+        if (existingTab) {
+          update((state) => {
+            const targetPane = findPaneById(state.layout, state.activePaneId);
+            if (targetPane) {
+              targetPane.activeTabId = existingTab.id;
+            }
+            return { ...state };
+          });
+          return;
+        }
+      }
+
+      update((state) => {
+        const targetPane = findPaneById(state.layout, state.activePaneId);
+        
+        if (!targetPane) {
+          console.log('[editorStore.openMind] ❌ No target pane found');
+          return state;
+        }
+
+        // If active pane is a terminal pane with terminals, split it
+        if (targetPane.paneType === 'terminal' && targetPane.terminalIds.length > 0) {
+          console.log('[editorStore.openMind] ✅ Splitting terminal pane (has terminals)');
+          const result = splitPaneInLayout(
+            state.layout,
+            state.activePaneId,
+            'vertical',
+            state.nextPaneId
+          );
+          
+          if (result) {
+            const newPane = findPaneById(result.layout, result.newPaneId);
+            if (newPane) {
+              const newTab = {
+                id: `tab-${state.nextTabId}`,
+                type: 'mind',
+                name: name,
+                content: content,
+                isDirty: false,
+              };
+              
+              newPane.tabs = [newTab];
+              newPane.activeTabId = newTab.id;
+              
+              console.log('[editorStore.openMind] ✅ Created new mind tab:', newTab.id, 'in new pane:', newPane.id);
+              
+              return {
+                ...state,
+                layout: result.layout,
+                activePaneId: result.newPaneId,
+                nextPaneId: state.nextPaneId + 1,
+                nextTabId: state.nextTabId + 1,
+              };
+            }
+          }
+        }
+        
+        // If active pane is empty terminal, convert it to editor
+        if (targetPane.paneType === 'terminal' && targetPane.terminalIds.length === 0) {
+          console.log('[editorStore.openMind] ✅ Converting empty terminal pane to editor');
+          targetPane.paneType = 'editor';
+          targetPane.terminalIds = [];
+          targetPane.activeTerminalId = null;
+          targetPane.tabs = [];
+          targetPane.activeTabId = null;
+        }
+        
+        // At this point, we should have an editor pane - create the tab
+        if (targetPane.paneType !== 'editor') {
+          console.log('[editorStore.openMind] ❌ Cannot create tab - pane is still', targetPane.paneType);
+          return state;
+        }
+
+        const newTab = {
+          id: `tab-${state.nextTabId}`,
+          type: 'mind',
+          name: name,
+          content: content,
+          isDirty: false,
+        };
+
+        targetPane.tabs.push(newTab);
+        targetPane.activeTabId = newTab.id;
+        
+        console.log('[editorStore.openMind] ✅ Created new mind tab:', newTab.id, 'in pane:', targetPane.id);
+
+        return {
+          ...state,
+          nextTabId: state.nextTabId + 1,
+        };
+      });
+    },
 
     // Open file in active pane
     openFile: async (filePath, fileName) => {

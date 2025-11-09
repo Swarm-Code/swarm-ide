@@ -15,6 +15,7 @@ const store = new Store();
 
 // Browser management
 const browsers = new Map(); // browserId -> WebContentsView
+let currentlyFocusedBrowserId = null; // Track which browser has focus (prevents event interception)
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -28,19 +29,63 @@ function createWindow() {
     },
   });
 
-  // Set CSP to fix security warning
+  // Prevent Ctrl+R and F5 from reloading the entire Electron app
+  // BUT: Only intercept when main window has focus, not when browser views are focused
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+
+    
+    // CRITICAL FIX: If a browser view is focused, don't intercept ANY events
+    // Let the WebContentsView handle all keyboard input
+    if (currentlyFocusedBrowserId !== null) {
+
+      return; // Don't intercept - let browser handle it
+    }
+    
+    // Only block reload keys when main window has focus
+    if ((input.control || input.meta) && input.key.toLowerCase() === 'r') {
+
+      event.preventDefault();
+    }
+    if (input.key === 'F5') {
+
+      event.preventDefault();
+    }
+  });
+  
+  // Clear focus tracking when main window regains focus
+  mainWindow.webContents.on('focus', () => {
+    if (currentlyFocusedBrowserId !== null) {
+
+      currentlyFocusedBrowserId = null;
+    }
+  });
+
+  // Set CSP ONLY for the main window's HTML (not for browser WebContentsView)
+  // This prevents the restrictive CSP from blocking external websites
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self'; " +
-          "script-src 'self'; " +
-          "style-src 'self' 'unsafe-inline'; " +
-          "font-src 'self' data:"
-        ]
-      }
-    });
+    // Only apply CSP to our own app files (dist/index.html)
+    // Don't apply to external websites loaded in WebContentsView
+    const isAppFile = details.url.startsWith('file://');
+    
+    if (isAppFile) {
+
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            "default-src 'self'; " +
+            "script-src 'self'; " +
+            "style-src 'self' 'unsafe-inline'; " +
+            "font-src 'self' data:"
+          ]
+        }
+      });
+    } else {
+      // External website - don't modify CSP
+      callback({
+        responseHeaders: details.responseHeaders
+      });
+    }
   });
 
   // Always load from dist folder (production build)
@@ -210,6 +255,65 @@ ipcMain.handle('fs:readFile', async (event, filePath) => {
   }
 });
 
+// Mind file management (stored in .swarm/mind/)
+ipcMain.handle('mind:list', async (event, workspacePath) => {
+  try {
+    const mindDir = path.join(workspacePath, '.swarm', 'mind');
+    
+    // Create directory if it doesn't exist
+    await fs.mkdir(mindDir, { recursive: true });
+    
+    const entries = await fs.readdir(mindDir, { withFileTypes: true });
+    const mindFiles = entries
+      .filter(entry => entry.isFile() && entry.name.endsWith('.html'))
+      .map(entry => ({
+        name: entry.name.replace('.html', ''),
+        path: path.join(mindDir, entry.name),
+      }));
+    
+    return { success: true, files: mindFiles };
+  } catch (error) {
+    console.error('Error listing mind files:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mind:read', async (event, { workspacePath, name }) => {
+  try {
+    const mindPath = path.join(workspacePath, '.swarm', 'mind', `${name}.html`);
+    const content = await fs.readFile(mindPath, 'utf-8');
+    return { success: true, content };
+  } catch (error) {
+    console.error('Error reading mind file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mind:write', async (event, { workspacePath, name, content }) => {
+  try {
+    const mindDir = path.join(workspacePath, '.swarm', 'mind');
+    await fs.mkdir(mindDir, { recursive: true });
+    
+    const mindPath = path.join(mindDir, `${name}.html`);
+    await fs.writeFile(mindPath, content, 'utf-8');
+    return { success: true };
+  } catch (error) {
+    console.error('Error writing mind file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mind:delete', async (event, { workspacePath, name }) => {
+  try {
+    const mindPath = path.join(workspacePath, '.swarm', 'mind', `${name}.html`);
+    await fs.unlink(mindPath);
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting mind file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Terminal management
 const terminals = new Map();
 
@@ -297,12 +401,53 @@ ipcMain.handle('terminal:kill', (event, { terminalId }) => {
 // Browser IPC Handlers
 ipcMain.handle('browser:create', (event, { browserId, url, workspaceId }) => {
   try {
+    // 🔧 FIX: Prevent duplicate browser creation when tabs are dragged between panes
+    // Check if browser already exists in the browsers Map
+    if (browsers.has(browserId)) {
+      console.log('[browser:create] ✓ Browser already exists, skipping duplicate creation:', browserId);
+      return { success: true, alreadyExists: true };
+    }
+    
     const view = new WebContentsView({
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: true,
       }
+    });
+
+    // Set User-Agent to Chrome on Windows to prevent content blocking
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+    view.webContents.setUserAgent(userAgent);
+
+    // Prevent Ctrl+R from reloading the main Electron app (should only reload the browser page)
+    view.webContents.on('before-input-event', (event, input) => {
+      // Intercept Alt+Arrow keys for app-level navigation (tab/pane switching)
+      if (input.type === 'keyDown' && input.alt && 
+          (input.key === 'ArrowLeft' || input.key === 'ArrowRight' || 
+           input.key === 'ArrowUp' || input.key === 'ArrowDown')) {
+        console.log('[Browser] Alt+Arrow intercepted, sending to main window:', input.key);
+        event.preventDefault();
+        
+        // Send to main window renderer for navigation
+        const mainWindow = BrowserWindow.getAllWindows()[0];
+        if (mainWindow) {
+          mainWindow.webContents.send('browser:keyboard-nav', {
+            key: input.key,
+            code: input.code,
+            altKey: true
+          });
+        }
+        return;
+      }
+      
+      // Allow Ctrl+R and F5 in browser views (they reload the page, not the app)
+      // But prevent Ctrl+Shift+R (hard reload) to avoid confusion
+      if ((input.control || input.meta) && input.shift && input.key.toLowerCase() === 'r') {
+        console.log('[Browser] Blocked Ctrl+Shift+R hard reload');
+        event.preventDefault();
+      }
+      // Ctrl+R and F5 are allowed - they reload the browser page only
     });
 
     // Load the URL
@@ -537,7 +682,7 @@ ipcMain.handle('browser:setBounds', (event, { browserId, bounds }) => {
         oldBounds.y === bounds.y && 
         oldBounds.width === bounds.width && 
         oldBounds.height === bounds.height) {
-      console.log('[browser:setBounds] ⏭️ Skipping - bounds unchanged for', browserId);
+
       return { success: true };
     }
 
@@ -550,6 +695,7 @@ ipcMain.handle('browser:setBounds', (event, { browserId, bounds }) => {
     // We must ensure bounds never exceed the window
     const windowBounds = mainWindow.getContentBounds();
     
+    // Use exact bounds - no safety inset (browser-content div already has containment)
     const clampedBounds = {
       x: Math.max(0, Math.min(bounds.x, windowBounds.width)),
       y: Math.max(0, Math.min(bounds.y, windowBounds.height)),
@@ -562,37 +708,22 @@ ipcMain.handle('browser:setBounds', (event, { browserId, bounds }) => {
         clampedBounds.y !== bounds.y || 
         clampedBounds.width !== bounds.width || 
         clampedBounds.height !== bounds.height) {
-      console.log('[browser:setBounds] 🔒 Bounds clamped to window dimensions:');
-      console.log('[browser:setBounds]   Window:', windowBounds);
-      console.log('[browser:setBounds]   Original bounds:', bounds);
-      console.log('[browser:setBounds]   Clamped bounds:', clampedBounds);
+
     }
 
     // Add view at index 0 to keep it BELOW main window's webContents
     // This allows DOM elements (dropdowns, modals) to render ABOVE the browser
     const contentView = mainWindow.contentView;
     
-    console.log('[browser:setBounds] 🔍 BEFORE adding view:');
-    console.log('[browser:setBounds]   contentView.children.length:', contentView.children.length);
-    console.log('[browser:setBounds]   children types:', contentView.children.map((child, i) => {
-      return `[${i}] ${child.constructor.name}`;
-    }).join(', '));
+
     
     // 🔧 FIX 2: Only add view if not already present - REMOVE the re-order cycle
     if (!contentView.children.includes(view)) {
-      console.log('[browser:setBounds] ➕ Adding NEW view at index 0');
+
       contentView.addChildView(view, 0);
     } else {
-      // View already exists - do NOT remove/re-add every time
-      // Just update bounds to keep it in place
-      console.log('[browser:setBounds] ✓ View already exists, keeping in place (no re-order)');
+
     }
-    
-    console.log('[browser:setBounds] 🔍 AFTER adding view:');
-    console.log('[browser:setBounds]   contentView.children.length:', contentView.children.length);
-    console.log('[browser:setBounds]   children types:', contentView.children.map((child, i) => {
-      return `[${i}] ${child.constructor.name}`;
-    }).join(', '));
 
     // Set bounds (using clamped values to ensure they fit in window)
     const roundedBounds = {
@@ -604,7 +735,7 @@ ipcMain.handle('browser:setBounds', (event, { browserId, bounds }) => {
     
     view.setBounds(roundedBounds);
     
-    console.log('[browser:setBounds] ✅ Set bounds:', roundedBounds);
+
 
     return { success: true };
   } catch (error) {
@@ -634,6 +765,17 @@ ipcMain.handle('browser:hide', (event, { browserId }) => {
     const contentView = mainWindow.contentView;
     if (contentView.children.includes(view)) {
       contentView.removeChildView(view);
+    }
+
+    // CRITICAL FIX: Clear focus tracking when browser is hidden
+    // This prevents main window from thinking browser still has focus
+    if (currentlyFocusedBrowserId === browserId) {
+
+      currentlyFocusedBrowserId = null;
+      
+      // Focus main window to ensure keyboard events work
+      mainWindow.webContents.focus();
+
     }
 
     // Clear cached bounds when hiding - will force re-add with new bounds when shown
@@ -745,6 +887,36 @@ ipcMain.handle('browser:stop', (event, { browserId }) => {
   }
 });
 
+// Focus browser (bring WebContentsView to front and focus it)
+ipcMain.handle('browser:focus', (event, { browserId }) => {
+  try {
+    const view = browsers.get(browserId);
+    if (!view) {
+      console.log('[browser:focus] ❌ Browser not found:', browserId);
+      return { success: false, error: 'Browser not found' };
+    }
+
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (!mainWindow) {
+      console.log('[browser:focus] ❌ Main window not found');
+      return { success: false, error: 'Main window not found' };
+    }
+
+    // Track which browser is focused (prevents main window from intercepting events)
+    currentlyFocusedBrowserId = browserId;
+    
+    // Focus the WebContentsView so it can receive keyboard input
+    view.webContents.focus();
+    
+
+    
+    return { success: true };
+  } catch (error) {
+    console.error('[browser:focus] ❌ Error focusing browser:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Destroy browser
 ipcMain.handle('browser:destroy', (event, { browserId }) => {
   try {
@@ -769,6 +941,12 @@ ipcMain.handle('browser:destroy', (event, { browserId }) => {
     // Clean up cached bounds
     browserBounds.delete(browserId);
     
+    // Clear focus tracking if this browser was focused
+    if (currentlyFocusedBrowserId === browserId) {
+
+      currentlyFocusedBrowserId = null;
+    }
+    
     browsers.delete(browserId);
     return { success: true };
   } catch (error) {
@@ -787,7 +965,7 @@ ipcMain.handle('browsers:hideForOverlay', async () => {
       return { success: false, error: 'Main window not found' };
     }
 
-    console.log('[browsers:hideForOverlay] 🙈 Hiding browsers for overlay');
+
     hiddenBrowsersForOverlay.clear();
 
     const contentView = mainWindow.contentView;
@@ -800,7 +978,7 @@ ipcMain.handle('browsers:hideForOverlay', async () => {
       if (contentView.children.includes(view)) {
         contentView.removeChildView(view);
         hiddenBrowsersForOverlay.add(browserId);
-        console.log('[browsers:hideForOverlay] Hidden browser:', browserId);
+
       }
     }
 
@@ -813,7 +991,7 @@ ipcMain.handle('browsers:hideForOverlay', async () => {
 
 ipcMain.handle('browsers:showAfterOverlay', async () => {
   try {
-    console.log('[browsers:showAfterOverlay] 👁️ Showing browsers after overlay, count:', hiddenBrowsersForOverlay.size);
+
     
     // Trigger browser repositioning by sending message to renderer
     const mainWindow = BrowserWindow.getAllWindows()[0];
@@ -850,6 +1028,17 @@ app.on('window-all-closed', function () {
   }
   
   if (process.platform !== 'darwin') app.quit();
+});
+
+// Open in file explorer
+ipcMain.handle('fs:openInExplorer', async (event, filePath) => {
+  try {
+    shell.showItemInFolder(filePath);
+    return { success: true };
+  } catch (error) {
+    console.error('Error opening in file explorer:', error);
+    return { success: false, error: error.message };
+  }
 });
 
 // LSP IPC Handlers
