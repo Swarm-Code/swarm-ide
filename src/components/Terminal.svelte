@@ -12,6 +12,44 @@
   let fitAddon;
   let dataListener;
   let exitListener;
+  
+  // Export method to refresh terminal (for when it becomes visible)
+  export function refresh() {
+    if (!fitAddon || !terminal || !terminalElement) return;
+    
+    const rect = terminalElement.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      requestAnimationFrame(() => {
+        try {
+          fitAddon.fit();
+          if (window.electronAPI) {
+            window.electronAPI.terminalResize({ 
+              terminalId, 
+              cols: terminal.cols, 
+              rows: terminal.rows 
+            });
+          }
+          console.log(`[Terminal ${terminalId}] Refreshed and fit to ${terminal.cols}×${terminal.rows}`);
+        } catch (error) {
+          console.error(`[Terminal ${terminalId}] Error during refresh:`, error);
+        }
+      });
+    }
+  }
+  
+  // Export method to clear terminal history
+  export function clearHistory() {
+    if (!terminal) return;
+    
+    try {
+      // Clear the screen and scrollback buffer
+      terminal.clear();
+      terminal.reset();
+      console.log(`[Terminal ${terminalId}] Cleared history and reset`);
+    } catch (error) {
+      console.error(`[Terminal ${terminalId}] Error clearing history:`, error);
+    }
+  }
 
   onMount(async () => {
     console.log(`[Terminal ${terminalId}] MOUNTED`);
@@ -37,7 +75,13 @@
 
     // Open terminal in DOM
     terminal.open(terminalElement);
-    fitAddon.fit();
+    
+    // Initial fit with requestAnimationFrame to ensure DOM is ready
+    requestAnimationFrame(() => {
+      if (fitAddon && terminal) {
+        fitAddon.fit();
+      }
+    });
 
     // Listen for user input and send to PTY
     terminal.onData((data) => {
@@ -74,15 +118,36 @@
 
     // Handle window resize
     const resizeObserver = new ResizeObserver(() => {
-      if (fitAddon && terminal) {
-        fitAddon.fit();
-        // Send new dimensions to PTY
-        if (window.electronAPI) {
-          const cols = terminal.cols;
-          const rows = terminal.rows;
-          window.electronAPI.terminalResize({ terminalId, cols, rows });
-        }
+      if (!fitAddon || !terminal || !terminalElement) return;
+      
+      // Check if terminal is actually visible and has valid dimensions
+      const rect = terminalElement.getBoundingClientRect();
+      const isVisible = terminalElement.offsetParent !== null && 
+                       rect.width > 0 && 
+                       rect.height > 0;
+      
+      if (!isVisible) {
+        console.log(`[Terminal ${terminalId}] Skipping fit - terminal not visible or has invalid dimensions`);
+        return;
       }
+      
+      // Use requestAnimationFrame to ensure layout is complete
+      requestAnimationFrame(() => {
+        if (fitAddon && terminal) {
+          try {
+            fitAddon.fit();
+            // Send new dimensions to PTY
+            if (window.electronAPI) {
+              const cols = terminal.cols;
+              const rows = terminal.rows;
+              console.log(`[Terminal ${terminalId}] Resized to ${cols}×${rows}`);
+              window.electronAPI.terminalResize({ terminalId, cols, rows });
+            }
+          } catch (error) {
+            console.error(`[Terminal ${terminalId}] Error during fit:`, error);
+          }
+        }
+      });
     });
     resizeObserver.observe(terminalElement);
 

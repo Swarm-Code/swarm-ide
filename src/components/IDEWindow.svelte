@@ -101,6 +101,7 @@
       
       // Position the terminal
       if (targetContainer && isInCurrentWorkspace) {
+        const wasHidden = terminalEl.style.display === 'none';
         const rect = targetContainer.getBoundingClientRect();
         terminalEl.style.top = `${rect.top}px`;
         terminalEl.style.left = `${rect.left}px`;
@@ -108,6 +109,18 @@
         terminalEl.style.height = `${rect.height}px`;
         terminalEl.style.display = 'block';
         console.log('[IDEWindow] Positioned terminal', terminalId, 'at', rect);
+        
+        // If terminal was just made visible, refresh it to fix sizing
+        if (wasHidden) {
+          const terminalComponent = terminalComponents.get(terminalId);
+          if (terminalComponent && terminalComponent.refresh) {
+            // Use setTimeout to ensure DOM has updated
+            setTimeout(() => {
+              terminalComponent.refresh();
+              console.log('[IDEWindow] Refreshed terminal', terminalId, 'after becoming visible');
+            }, 50);
+          }
+        }
       } else {
         terminalEl.style.display = 'none';
         if (!isInCurrentWorkspace) {
@@ -316,6 +329,7 @@
   let editorAreaElement;
   let cachedBrowserBounds = new Map(); // browserId -> bounds (for deduplication)
   let positionBrowsersTimeout = null; // Debounce timer
+  let terminalComponents = new Map(); // terminalId -> Terminal component instance
 
   onMount(async () => {
     window.addEventListener('keydown', handleKeydown);
@@ -463,6 +477,7 @@
     {#each allTerminals as terminal (terminal.id)}
       <div class="terminal-wrapper" data-terminal-id={terminal.id} data-workspace-id={terminal.workspaceId}>
         <Terminal 
+          bind:this={terminalComponents[terminal.id]}
           terminalId={terminal.id}
           cwd={currentWorkspacePath}
         />
