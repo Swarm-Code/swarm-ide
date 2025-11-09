@@ -469,6 +469,9 @@
           data-active-terminal={activeTab.terminalId}
         >
           <!-- Terminal renders here via IDEWindow positioning -->
+          {#if overlayVisible}
+            <div class="terminal-blur-overlay"></div>
+          {/if}
         </div>
       {/if}
     {:else}
@@ -665,7 +668,8 @@
     overflow: hidden;
   }
 
-  .browser-blur-overlay {
+  .browser-blur-overlay,
+  .terminal-blur-overlay {
     position: absolute;
     top: 0;
     left: 0;
