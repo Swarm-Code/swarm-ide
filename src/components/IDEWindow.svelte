@@ -19,7 +19,7 @@
   let explorerVisible = true; // Local state like terminal
   let terminalVisible = false;
   let diagnosticsVisible = false;
-  let chatVisible = true; // Chat panel visible by default
+  let chatVisible = false; // Chat panel hidden by default
   let activeWorkspaceId = null;
   let workspaces = [];
   let allTerminals = [];
