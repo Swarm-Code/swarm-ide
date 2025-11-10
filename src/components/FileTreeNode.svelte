@@ -97,6 +97,8 @@
   async function handleOpenInWorkspace() {
     if (!item.isDirectory) return;
     
+    console.log('[FileTreeNode] 📂 Opening folder in workspace:', item.path);
+    
     // Get current workspaces and active workspace
     let currentWorkspaces = [];
     let activeWorkspaceId = null;
@@ -109,27 +111,31 @@
     });
     unsubscribe();
     
+    console.log('[FileTreeNode] Current workspace:', {
+      id: activeWorkspaceId,
+      isSSH: activeWorkspace?.isSSH,
+      oldPath: activeWorkspace?.path
+    });
+    
     // Find active workspace and update its path
     if (activeWorkspaceId && activeWorkspace) {
       const isSSH = activeWorkspace.isSSH;
       const sshConnection = activeWorkspace.sshConnection;
       
-      // For SSH workspaces, keep the ssh:// prefix structure
+      // Use the folder's actual path directly
       let newPath = item.path;
-      if (isSSH && sshConnection) {
-        // If path doesn't start with /, add it
-        if (!newPath.startsWith('/')) {
-          newPath = '/' + newPath;
-        }
-      }
+      
+      console.log('[FileTreeNode] Updating workspace path to:', newPath);
       
       workspaceStore.updateWorkspace(activeWorkspaceId, { path: newPath });
       
       // Save to electron-store
       if (window.electronAPI) {
-        await window.electronAPI.workspaceSave(currentWorkspaces.map(w => 
+        const updatedWorkspaces = currentWorkspaces.map(w => 
           w.id === activeWorkspaceId ? { ...w, path: newPath } : w
-        ));
+        );
+        console.log('[FileTreeNode] Saving workspace with new path:', newPath);
+        await window.electronAPI.workspaceSave(updatedWorkspaces);
       }
     }
     
@@ -139,12 +145,16 @@
   async function handleOpenAsNewWorkspace() {
     if (!item.isDirectory) return;
     
+    console.log('[FileTreeNode] 🆕 Opening folder as new workspace:', item.path);
+    
     // Check if we're in an SSH workspace
     let activeWorkspace = null;
     const unsubscribe = workspaceStore.subscribe((state) => {
       activeWorkspace = state.workspaces.find(w => w.id === state.activeWorkspaceId);
     });
     unsubscribe();
+    
+    console.log('[FileTreeNode] Current workspace isSSH:', activeWorkspace?.isSSH);
     
     const workspace = {
       id: Date.now().toString(),
@@ -164,6 +174,8 @@
       });
     }
     
+    console.log('[FileTreeNode] New workspace object:', workspace);
+    
     workspaceStore.addWorkspace(workspace);
     workspaceStore.setActiveWorkspace(workspace.id);
     
@@ -174,6 +186,7 @@
       });
       unsubscribe2();
       
+      console.log('[FileTreeNode] Saving new workspace to electron-store');
       await window.electronAPI.workspaceSave(allWorkspaces);
       await window.electronAPI.workspaceSetActive(workspace.id);
     }

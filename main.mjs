@@ -317,6 +317,23 @@ ipcMain.handle('fs:readFile', async (event, filePath) => {
   }
 });
 
+// Read file as binary (for PDFs, Word docs, Excel, etc.)
+ipcMain.handle('fs:readFileBinary', async (event, filePath) => {
+  try {
+    const buffer = await fs.readFile(filePath);
+    return { 
+      success: true, 
+      data: Array.from(buffer) // Convert buffer to array for IPC transfer
+    };
+  } catch (error) {
+    console.error('Error reading binary file:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
 // Mind file management (stored in .swarm/mind/)
 ipcMain.handle('mind:list', async (event, workspacePath) => {
   try {

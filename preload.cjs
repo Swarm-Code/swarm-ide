@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getRecentProjects: () => ipcRenderer.invoke('store:getRecentProjects'),
   readDirectory: (path) => ipcRenderer.invoke('fs:readDirectory', path),
   readFile: (path) => ipcRenderer.invoke('fs:readFile', path),
+  readFileBinary: (path) => ipcRenderer.invoke('fs:readFileBinary', path),
   openInExplorer: (path) => ipcRenderer.invoke('fs:openInExplorer', path),
   // Workspace APIs
   workspaceGetAll: () => ipcRenderer.invoke('workspace:getAll'),
