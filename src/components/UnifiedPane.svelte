@@ -101,6 +101,7 @@
 
   $: activeTab = pane.tabs.find(t => t.id === pane.activeTabId);
   $: activeBrowser = activeTab?.type === 'browser' ? allBrowsers.find(b => b.id === activeTab.browserId) : null;
+  $: isDeepWikiBrowser = activeTab?.type === 'browser' && activeBrowser?.type === 'deepwiki';
 
   function handlePaneClick() {
     editorStore.setActivePane(pane.id);
@@ -453,7 +454,7 @@
     </div>
   </div>
 
-  {#if activeTab?.type === 'browser' && activeBrowser}
+  {#if activeTab?.type === 'browser' && activeBrowser && !isDeepWikiBrowser}
     <div class="browser-toolbar">
       <button class="nav-button" disabled={!activeBrowser.canGoBack} on:click={handleGoBack} title="Back">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">

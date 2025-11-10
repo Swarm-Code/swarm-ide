@@ -48,6 +48,50 @@ function createEditorStore() {
   let currentCanvasId = null;
   let currentState = getInitialState();
 
+  function findBrowserTabInLayout(node, browserId) {
+    if (!node) return null;
+
+    if (node.type === 'pane') {
+      if (node.paneType === 'editor' && Array.isArray(node.tabs)) {
+        const tab = node.tabs.find((t) => t.type === 'browser' && t.browserId === browserId);
+        if (tab) {
+          return { pane: node, tab };
+        }
+      }
+      return null;
+    }
+
+    if (node.type === 'split') {
+      return findBrowserTabInLayout(node.left, browserId) || findBrowserTabInLayout(node.right, browserId);
+    }
+
+    return null;
+  }
+
+  function pruneBrowserTabsFromLayout(node, browserId) {
+    if (!node) return false;
+
+    let removed = false;
+    if (node.type === 'pane' && node.paneType === 'editor' && Array.isArray(node.tabs)) {
+      const nextTabs = node.tabs.filter((t) => !(t.type === 'browser' && t.browserId === browserId));
+      if (nextTabs.length !== node.tabs.length) {
+        removed = true;
+        node.tabs = nextTabs;
+        if (!nextTabs.some((t) => t.id === node.activeTabId)) {
+          node.activeTabId = nextTabs[nextTabs.length - 1]?.id || null;
+        }
+      }
+    } else if (node.type === 'split') {
+      if (pruneBrowserTabsFromLayout(node.left, browserId)) {
+        removed = true;
+      }
+      if (pruneBrowserTabsFromLayout(node.right, browserId)) {
+        removed = true;
+      }
+    }
+    return removed;
+  }
+
   // Track state changes
   subscribe((state) => {
     currentState = state;
@@ -539,7 +583,7 @@ function createEditorStore() {
     }),
 
     // Add browser as a tab in active pane
-    addBrowser: (browserId, url = 'https://www.google.com') => update((state) => {
+    addBrowser: (browserId, url = 'https://www.google.com', options = {}) => update((state) => {
       console.log('[editorStore.addBrowser] Called with browserId:', browserId);
       
       const pane = findPaneById(state.layout, state.activePaneId);
@@ -559,7 +603,7 @@ function createEditorStore() {
           type: 'browser',
           browserId: browserId,
           url: url,
-          title: 'New Tab',
+          title: options.title || 'New Tab',
         };
         
         pane.tabs.push(newTab);
@@ -589,7 +633,7 @@ function createEditorStore() {
               type: 'browser',
               browserId: browserId,
               url: url,
-              title: 'New Tab',
+              title: options.title || 'New Tab',
             };
             
             newPane.tabs = [newTab];
@@ -682,6 +726,23 @@ function createEditorStore() {
       toPane.activeTabId = tab.id;
       state.activePaneId = toPaneId;
 
+      return { ...state };
+    }),
+
+    focusBrowserTab: (browserId) => update((state) => {
+      const result = findBrowserTabInLayout(state.layout, browserId);
+      if (!result) return state;
+
+      result.pane.activeTabId = result.tab.id;
+      state.activePaneId = result.pane.id;
+      return { ...state };
+    }),
+
+    removeBrowserTabs: (browserId) => update((state) => {
+      const removed = pruneBrowserTabsFromLayout(state.layout, browserId);
+      if (!removed) {
+        return state;
+      }
       return { ...state };
     }),
 

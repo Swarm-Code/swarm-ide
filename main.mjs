@@ -6,12 +6,22 @@ import Store from 'electron-store';
 import os from 'os';
 import pty from 'node-pty';
 import { lspServerManager } from './lsp-server-manager.mjs';
+import { DeepWikiManager } from './deepwiki-manager.mjs';
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const store = new Store();
+const deepWikiManager = new DeepWikiManager(store);
+
+deepWikiManager.on('status', (status) => {
+  BrowserWindow.getAllWindows().forEach((windowInstance) => {
+    if (!windowInstance.isDestroyed()) {
+      windowInstance.webContents.send('deepwiki:status', status);
+    }
+  });
+});
 
 // Browser management
 const browsers = new Map(); // browserId -> WebContentsView
@@ -171,6 +181,36 @@ ipcMain.handle('workspace:restoreSession', () => {
     return lastSession.workspaces;
   }
   return null;
+});
+
+// DeepWiki IPC handlers
+ipcMain.handle('deepwiki:getSettings', () => {
+  return deepWikiManager.getSettings();
+});
+
+ipcMain.handle('deepwiki:updateSettings', (event, updates) => {
+  return deepWikiManager.updateSettings(updates || {});
+});
+
+ipcMain.handle('deepwiki:getStatus', () => {
+  return deepWikiManager.getStatus();
+});
+
+ipcMain.handle('deepwiki:start', async () => {
+  try {
+    return await deepWikiManager.start();
+  } catch (error) {
+    return {
+      ...deepWikiManager.getStatus(),
+      state: 'error',
+      message: error.message,
+      error: error.message,
+    };
+  }
+});
+
+ipcMain.handle('deepwiki:stop', () => {
+  return deepWikiManager.stop();
 });
 
 ipcMain.handle('fs:readDirectory', async (event, dirPath) => {
@@ -1008,8 +1048,16 @@ ipcMain.handle('browsers:showAfterOverlay', async () => {
   }
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   createWindow();
+
+  if (deepWikiManager.shouldAutoStart()) {
+    try {
+      await deepWikiManager.start();
+    } catch (error) {
+      console.error('[DeepWiki] Failed to auto-start:', error);
+    }
+  }
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -1019,6 +1067,8 @@ app.whenReady().then(() => {
 app.on('window-all-closed', function () {
   // Clean up LSP servers
   lspServerManager.stopAll();
+  // Stop DeepWiki processes
+  deepWikiManager.stop();
   
   // Clean up browsers
   for (const [browserId, view] of browsers.entries()) {
@@ -1029,6 +1079,10 @@ app.on('window-all-closed', function () {
   }
   
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  deepWikiManager.stop();
 });
 
 // Open in file explorer

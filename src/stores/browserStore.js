@@ -7,22 +7,56 @@ function createBrowserStore() {
     activeBrowserId: null,
   });
 
+  const getSnapshot = () => {
+    let snapshot;
+    const unsubscribe = subscribe((state) => {
+      snapshot = state;
+    });
+    unsubscribe();
+    return snapshot;
+  };
+
   return {
     subscribe,
 
-    addBrowser: (id, url, workspaceId) => update((state) => ({
-      ...state,
-      browsers: [...state.browsers, { 
-        id, 
-        url: url || 'about:blank',
-        title: 'New Tab',
+    addBrowser: (id, url, workspaceId, options = {}) => update((state) => {
+      if (!id || !workspaceId) {
+        return state;
+      }
+
+      const existing = state.browsers.find((b) => b.id === id);
+      const nextBrowser = {
+        id,
+        url: url || existing?.url || 'about:blank',
+        title: options.title || existing?.title || 'New Tab',
         workspaceId,
-        canGoBack: false,
-        canGoForward: false,
-        isLoading: false
-      }],
-      activeBrowserId: id,
-    })),
+        canGoBack: existing?.canGoBack ?? false,
+        canGoForward: existing?.canGoForward ?? false,
+        isLoading: existing?.isLoading ?? false,
+        type: options.type || existing?.type || 'generic',
+        metadata: options.metadata || existing?.metadata || {},
+      };
+
+      const browsers = existing
+        ? state.browsers.map((b) => (b.id === id ? nextBrowser : b))
+        : [...state.browsers, nextBrowser];
+
+      return {
+        ...state,
+        browsers,
+        activeBrowserId: id,
+      };
+    }),
+
+    getBrowserById: (browserId) => {
+      const snapshot = getSnapshot();
+      return snapshot.browsers.find((b) => b.id === browserId) || null;
+    },
+
+    hasBrowser: (browserId) => {
+      const snapshot = getSnapshot();
+      return snapshot.browsers.some((b) => b.id === browserId);
+    },
 
     removeBrowser: (id) => update((state) => {
       const browsers = state.browsers.filter((b) => b.id !== id);

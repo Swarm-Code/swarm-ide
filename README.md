@@ -42,6 +42,11 @@ Swarm IDE is a modern desktop code editor built with Electron and Svelte, featur
 - Video and audio playback
 - PDF viewing support
 
+### DeepWiki Plugin (preview)
+- Launches the DeepWiki FastAPI + Next.js stack directly from the IDE
+- Automatically injects the `/ide-plugin` route into a browser tab tied to the active workspace
+- Provides Activity Bar controls plus in-app settings for repo paths, ports, and auto-start
+
 ## Installation
 
 ### Download Pre-built Binaries

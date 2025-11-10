@@ -7,6 +7,7 @@
   import { browserStore } from '../stores/browserStore.js';
   import { editorStore } from '../stores/editorStore.js';
   import { activeWorkspacePath } from '../stores/workspaceStore.js';
+  import { deepWikiStore } from '../stores/deepWikiStore.js';
   import ActivityBar from './ActivityBar.svelte';
   import WorkspaceSwitcher from './WorkspaceSwitcher.svelte';
   import CanvasSwitcher from './CanvasSwitcher.svelte';
@@ -625,6 +626,7 @@
   let lastNavigationTime = 0;
 
   onMount(async () => {
+    deepWikiStore.initialize();
     window.addEventListener('keydown', handleKeydown);
     window.addEventListener('resize', positionTerminals);
     window.addEventListener('resize', positionBrowsers);

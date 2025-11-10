@@ -51,4 +51,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   mindRead: (opts) => ipcRenderer.invoke('mind:read', opts),
   mindWrite: (opts) => ipcRenderer.invoke('mind:write', opts),
   mindDelete: (opts) => ipcRenderer.invoke('mind:delete', opts),
+  // DeepWiki APIs
+  deepwikiGetSettings: () => ipcRenderer.invoke('deepwiki:getSettings'),
+  deepwikiUpdateSettings: (settings) => ipcRenderer.invoke('deepwiki:updateSettings', settings),
+  deepwikiGetStatus: () => ipcRenderer.invoke('deepwiki:getStatus'),
+  deepwikiStart: () => ipcRenderer.invoke('deepwiki:start'),
+  deepwikiStop: () => ipcRenderer.invoke('deepwiki:stop'),
+  onDeepWikiStatus: (callback) => ipcRenderer.on('deepwiki:status', (event, data) => callback(data)),
 });

@@ -23,7 +23,12 @@
     "dist:linux": "bun run build && electron-builder --linux",
     "dist:all": "bun run build && electron-builder --mac --linux"
   },
-  "keywords": ["ide", "editor", "ai", "development"],
+  "keywords": [
+    "ide",
+    "editor",
+    "ai",
+    "development"
+  ],
   "author": "Swarm-Code Team <luis@swarmcode.ai>",
   "license": "SEE LICENSE IN LICENSE",
   "build": {
@@ -45,7 +50,10 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ]
     },
@@ -53,7 +61,9 @@
       "title": "Swarm IDE"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Development"
     },
     "win": {
@@ -68,6 +78,7 @@
     "electron": "^30.0.0",
     "electron-builder": "^26.0.12",
     "electron-rebuild": "^3.2.9",
+    "esbuild": "0.20.2",
     "eslint": "^8.56.0",
     "eslint-plugin-svelte": "^2.35.1",
     "prettier": "^3.1.1",
@@ -92,5 +103,11 @@
     "vscode-languageclient": "^9.0.1",
     "vscode-languageserver-protocol": "^3.17.5",
     "xterm": "^5.3.0"
+  },
+  "overrides": {
+    "esbuild": "0.20.2",
+    "vite": {
+      "esbuild": "0.20.2"
+    }
   }
 }

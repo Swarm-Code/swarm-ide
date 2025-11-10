@@ -4,9 +4,15 @@
   import { browserStore } from '../stores/browserStore.js';
   import { terminalStore } from '../stores/terminalStore.js';
   import { workspaceStore } from '../stores/workspaceStore.js';
+  import { deepWikiStore } from '../stores/deepWikiStore.js';
+  import DeepWikiSettingsModal from './DeepWikiSettingsModal.svelte';
 
   let activePanel = 'explorer';
   let activeWorkspaceId = null;
+  let deepWikiState = null;
+  let showDeepWikiMenu = false;
+  let deepWikiMenuTop = 0;
+  let showDeepWikiSettings = false;
 
   appStore.subscribe((state) => {
     activePanel = state.activePanel;
@@ -15,6 +21,14 @@
   workspaceStore.subscribe((state) => {
     activeWorkspaceId = state.activeWorkspaceId;
   });
+
+  deepWikiStore.subscribe((state) => {
+    deepWikiState = state;
+  });
+
+  $: deepWikiStatus = deepWikiState?.status ?? { state: 'stopped', message: 'DeepWiki idle' };
+  $: deepWikiRunning = deepWikiStatus.state === 'running';
+  $: deepWikiStarting = deepWikiStatus.state === 'starting';
 
   function handlePanelClick(panel) {
     appStore.setActivePanel(panel);
@@ -57,7 +71,56 @@
     
     console.log('[ActivityBar.handleBrowserClick] ✅ Browser creation complete');
   }
+
+  async function handleDeepWikiClick() {
+    await deepWikiStore.openForActiveWorkspace({ focus: true });
+  }
+
+  function handleDeepWikiContextMenu(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    deepWikiMenuTop = rect.top;
+    showDeepWikiMenu = true;
+  }
+
+  function closeDeepWikiMenu() {
+    showDeepWikiMenu = false;
+  }
+
+  async function handleDeepWikiMenuAction(action) {
+    if (action === 'open') {
+      await handleDeepWikiClick();
+    } else if (action === 'regenerate') {
+      await deepWikiStore.regenerateActiveWorkspace();
+    } else if (action === 'start') {
+      await deepWikiStore.start();
+    } else if (action === 'stop') {
+      await deepWikiStore.stop();
+    } else if (action === 'configure') {
+      showDeepWikiSettings = true;
+    }
+
+    if (action !== 'configure') {
+      closeDeepWikiMenu();
+    }
+  }
+
+  function handleWindowClick(event) {
+    if (!showDeepWikiMenu) return;
+    if (event.target.closest('.deepwiki-menu') || event.target.closest('.deepwiki-button')) {
+      return;
+    }
+    closeDeepWikiMenu();
+  }
+
+  async function handleDeepWikiSettingsSave(event) {
+    await deepWikiStore.saveSettings(event.detail);
+    showDeepWikiSettings = false;
+  }
 </script>
+
+<svelte:window on:click={handleWindowClick} />
 
 <div class="activity-bar">
   <button
@@ -74,6 +137,33 @@
         d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
       />
     </svg>
+  </button>
+
+  <button
+    class="activity-button deepwiki-button"
+    class:active={deepWikiRunning}
+    class:loading={deepWikiStarting}
+    on:click={handleDeepWikiClick}
+    on:contextmenu={handleDeepWikiContextMenu}
+    title={`DeepWiki — ${deepWikiStatus.message || 'Launch plugin'}. Right-click for actions.`}
+  >
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        d="M4 19.5V5a2 2 0 012-2h9.5a.5.5 0 01.5.5V7h3a1 1 0 011 1v12.5a.5.5 0 01-.5.5H8a4 4 0 00-4 4"
+      />
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        d="M8 7h8"
+      />
+    </svg>
+    {#if deepWikiStarting}
+      <span class="activity-spinner" aria-hidden="true"></span>
+    {/if}
   </button>
   
   <button
@@ -106,6 +196,39 @@
     </svg>
   </button>
 </div>
+
+{#if showDeepWikiMenu}
+  <div class="deepwiki-menu" style={`top: ${deepWikiMenuTop}px`}>
+    <div class="menu-section">
+      <p class="menu-title">DeepWiki</p>
+      <p class="menu-status">{deepWikiStatus.message}</p>
+    </div>
+    <button class="menu-item" on:click={() => handleDeepWikiMenuAction('open')}>
+      Open / Focus Pane
+    </button>
+    <button class="menu-item" on:click={() => handleDeepWikiMenuAction('regenerate')} disabled={!deepWikiRunning}>
+      Regenerate Workspace
+    </button>
+    <button class="menu-item" on:click={() => handleDeepWikiMenuAction(deepWikiRunning ? 'stop' : 'start')}>
+      {deepWikiRunning ? 'Stop Services' : 'Start Services'}
+    </button>
+    <button class="menu-item" on:click={() => handleDeepWikiMenuAction('configure')}>
+      Configure…
+    </button>
+    {#if deepWikiStatus.state === 'error'}
+      <p class="menu-error">{deepWikiStatus.error || deepWikiStatus.message}</p>
+    {/if}
+  </div>
+{/if}
+
+{#if showDeepWikiSettings}
+  <DeepWikiSettingsModal
+    settings={deepWikiState?.settings}
+    status={deepWikiStatus}
+    on:close={() => showDeepWikiSettings = false}
+    on:save={handleDeepWikiSettingsSave}
+  />
+{/if}
 
 <style>
   .activity-bar {
@@ -151,6 +274,10 @@
     color: var(--color-text-primary);
   }
 
+  .activity-button.loading {
+    color: var(--color-accent);
+  }
+
   .activity-button.active::before {
     height: 24px;
   }
@@ -158,5 +285,84 @@
   .activity-button svg {
     width: 24px;
     height: 24px;
+  }
+
+  .activity-spinner {
+    position: absolute;
+    bottom: 6px;
+    right: 8px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: currentColor;
+    animation: activity-pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes activity-pulse {
+    0% {
+      transform: scale(0.7);
+      opacity: 0.4;
+    }
+    50% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    100% {
+      transform: scale(0.7);
+      opacity: 0.4;
+    }
+  }
+
+  .deepwiki-menu {
+    position: absolute;
+    left: 56px;
+    width: 220px;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+    padding: var(--spacing-sm);
+    z-index: var(--z-popover, 1000);
+  }
+
+  .menu-section {
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .menu-title {
+    margin: 0;
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .menu-status {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+  }
+
+  .menu-item {
+    width: 100%;
+    text-align: left;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    border: none;
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+  }
+
+  .menu-item:hover:enabled {
+    background-color: var(--color-surface-hover);
+  }
+
+  .menu-item:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .menu-error {
+    margin: var(--spacing-xs) 0 0;
+    font-size: var(--font-size-xs);
+    color: var(--color-danger, #ff3b30);
   }
 </style>
