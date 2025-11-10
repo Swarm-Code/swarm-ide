@@ -43,7 +43,33 @@
         console.error('Electron API not available');
         return;
       }
-      const contents = await window.electronAPI.readDirectory(folderItem.path);
+      
+      // Check if current workspace is SSH
+      let activeWorkspace = null;
+      const unsubscribe = workspaceStore.subscribe((state) => {
+        activeWorkspace = state.workspaces.find(w => w.id === state.activeWorkspaceId);
+      });
+      unsubscribe();
+      
+      let contents = [];
+      
+      if (activeWorkspace?.isSSH && activeWorkspace.sshConnection) {
+        // Use SFTP for SSH workspaces
+        const connectionId = activeWorkspace.sshConnection.id;
+        console.log('[FileTreeNode] Loading SSH folder:', { connectionId, path: folderItem.path });
+        const result = await window.electronAPI.sshSftpReadDir(connectionId, folderItem.path);
+        
+        if (result.success) {
+          contents = result.items;
+        } else {
+          console.error('[FileTreeNode] Failed to load SSH folder:', result.error);
+          return;
+        }
+      } else {
+        // Use local filesystem
+        contents = await window.electronAPI.readDirectory(folderItem.path);
+      }
+      
       fileExplorerStore.addFolderContents(folderItem.path, contents);
     }
   }
@@ -71,23 +97,38 @@
   async function handleOpenInWorkspace() {
     if (!item.isDirectory) return;
     
-    // Get current workspaces
+    // Get current workspaces and active workspace
     let currentWorkspaces = [];
     let activeWorkspaceId = null;
+    let activeWorkspace = null;
     
-    workspaceStore.subscribe((state) => {
+    const unsubscribe = workspaceStore.subscribe((state) => {
       currentWorkspaces = state.workspaces;
       activeWorkspaceId = state.activeWorkspaceId;
-    })();
+      activeWorkspace = state.workspaces.find(w => w.id === state.activeWorkspaceId);
+    });
+    unsubscribe();
     
     // Find active workspace and update its path
-    if (activeWorkspaceId) {
-      workspaceStore.updateWorkspace(activeWorkspaceId, { path: item.path });
+    if (activeWorkspaceId && activeWorkspace) {
+      const isSSH = activeWorkspace.isSSH;
+      const sshConnection = activeWorkspace.sshConnection;
+      
+      // For SSH workspaces, keep the ssh:// prefix structure
+      let newPath = item.path;
+      if (isSSH && sshConnection) {
+        // If path doesn't start with /, add it
+        if (!newPath.startsWith('/')) {
+          newPath = '/' + newPath;
+        }
+      }
+      
+      workspaceStore.updateWorkspace(activeWorkspaceId, { path: newPath });
       
       // Save to electron-store
       if (window.electronAPI) {
         await window.electronAPI.workspaceSave(currentWorkspaces.map(w => 
-          w.id === activeWorkspaceId ? { ...w, path: item.path } : w
+          w.id === activeWorkspaceId ? { ...w, path: newPath } : w
         ));
       }
     }
@@ -98,20 +139,40 @@
   async function handleOpenAsNewWorkspace() {
     if (!item.isDirectory) return;
     
+    // Check if we're in an SSH workspace
+    let activeWorkspace = null;
+    const unsubscribe = workspaceStore.subscribe((state) => {
+      activeWorkspace = state.workspaces.find(w => w.id === state.activeWorkspaceId);
+    });
+    unsubscribe();
+    
     const workspace = {
       id: Date.now().toString(),
       path: item.path,
       color: getRandomColor(),
     };
     
+    // If current workspace is SSH, copy SSH metadata to new workspace
+    if (activeWorkspace?.isSSH && activeWorkspace.sshConnection) {
+      workspace.isSSH = true;
+      workspace.sshConnection = activeWorkspace.sshConnection;
+      
+      console.log('[FileTreeNode] Creating new SSH workspace:', {
+        path: workspace.path,
+        connectionId: workspace.sshConnection.id,
+        host: workspace.sshConnection.host
+      });
+    }
+    
     workspaceStore.addWorkspace(workspace);
     workspaceStore.setActiveWorkspace(workspace.id);
     
     if (window.electronAPI) {
       let allWorkspaces = [];
-      workspaceStore.subscribe((state) => {
+      const unsubscribe2 = workspaceStore.subscribe((state) => {
         allWorkspaces = state.workspaces;
-      })();
+      });
+      unsubscribe2();
       
       await window.electronAPI.workspaceSave(allWorkspaces);
       await window.electronAPI.workspaceSetActive(workspace.id);
