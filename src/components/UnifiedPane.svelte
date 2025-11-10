@@ -8,6 +8,7 @@
   import EditorTab from './EditorTab.svelte';
   import MonacoEditor from './MonacoEditor.svelte';
   import MediaViewer from './MediaViewer.svelte';
+  import DocumentViewer from './DocumentViewer.svelte';
   import MarkdownPreview from './MarkdownPreview.svelte';
   import TipTapEditor from './TipTapEditor.svelte';
 
@@ -204,10 +205,27 @@
     '.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv', '.m4v'
   ]);
 
+  const DOCUMENT_EXTENSIONS = new Set([
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.ppt', '.pptx', '.env', '.log'
+  ]);
+
   function isMediaFile(filename) {
     if (!filename) return false;
     const ext = filename.substring(filename.lastIndexOf('.')).toLowerCase();
     return IMAGE_EXTENSIONS.has(ext) || VIDEO_EXTENSIONS.has(ext);
+  }
+
+  function isDocumentFile(filename) {
+    if (!filename) return false;
+    const ext = filename.substring(filename.lastIndexOf('.')).toLowerCase();
+    const baseName = filename.substring(filename.lastIndexOf('/') + 1);
+    
+    if (DOCUMENT_EXTENSIONS.has(ext)) return true;
+    if (baseName === '.env' || baseName.startsWith('.env.')) return true;
+    if (baseName === '.gitignore' || baseName === '.gitattributes') return true;
+    if (baseName.endsWith('.log')) return true;
+    
+    return false;
   }
 
   function getLanguageFromFilename(filename) {
@@ -492,6 +510,11 @@
         {#key activeTab.id}
           {#if isMediaFile(activeTab.name)}
             <MediaViewer
+              filePath={activeTab.path}
+              fileName={activeTab.name}
+            />
+          {:else if isDocumentFile(activeTab.name)}
+            <DocumentViewer
               filePath={activeTab.path}
               fileName={activeTab.name}
             />
