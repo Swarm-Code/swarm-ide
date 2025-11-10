@@ -10,7 +10,18 @@ function createFileExplorerStore() {
 
   return {
     subscribe,
-    setFileTree: (tree) => update((state) => ({ ...state, fileTree: tree })),
+    setFileTree: (tree) => {
+      console.log('[fileExplorerStore] 📝 setFileTree called with:', tree);
+      console.log('[fileExplorerStore] Tree length:', tree?.length);
+      console.log('[fileExplorerStore] First 3 items:', tree?.slice(0, 3));
+      
+      update((state) => {
+        console.log('[fileExplorerStore] Previous tree length:', state.fileTree.length);
+        const newState = { ...state, fileTree: tree };
+        console.log('[fileExplorerStore] New tree length:', newState.fileTree.length);
+        return newState;
+      });
+    },
     toggleFolder: (folderPath) => update((state) => {
       const expanded = new Set(state.expandedFolders);
       if (expanded.has(folderPath)) {

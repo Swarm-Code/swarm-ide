@@ -272,20 +272,48 @@ function createEditorStore() {
         // Media files don't need content - MediaViewer uses file:// URLs directly
         content = '';
       } else if (window.electronAPI) {
-        const result = await window.electronAPI.readFile(filePath);
-
-        // Handle new response format
-        if (result && result.error) {
-          // Show error message in the editor
-          content = `# Unable to open file\n\n**Error:** ${result.message}\n\n`;
-          if (result.error === 'unsupported') {
-            content += 'This file type is not supported for editing.\n';
-            content += 'Supported file types: text files, code files, configuration files, etc.';
+        // Check if current workspace is SSH
+        let activeWorkspace = null;
+        const unsubscribe = workspaceStore.subscribe(state => {
+          activeWorkspace = state.workspaces.find(w => w.id === state.activeWorkspaceId);
+        });
+        unsubscribe();
+        
+        console.log('[editorStore.openFile] Workspace check:', {
+          isSSH: activeWorkspace?.isSSH,
+          connectionId: activeWorkspace?.sshConnection?.id,
+          path: activeWorkspace?.path
+        });
+        
+        if (activeWorkspace?.isSSH) {
+          console.log('[editorStore.openFile] 🔌 SSH workspace detected, using SFTP');
+          const connectionId = activeWorkspace.sshConnection.id;
+          console.log('[editorStore.openFile] Reading via SFTP:', { connectionId, filePath });
+          const result = await window.electronAPI.sshSftpReadFile(connectionId, filePath);
+          console.log('[editorStore.openFile] SFTP result:', { success: result?.success, hasContent: !!result?.content, error: result?.error });
+          
+          if (result && result.success) {
+            content = result.content;
+          } else {
+            content = `# Unable to open file\n\n**Error:** ${result?.error || 'Unknown error'}\n\n`;
           }
-        } else if (result && result.content !== undefined) {
-          content = result.content;
         } else {
-          content = '// Error loading file';
+          console.log('[editorStore.openFile] 📁 Local workspace, using local FS');
+          const result = await window.electronAPI.readFile(filePath);
+
+          // Handle new response format
+          if (result && result.error) {
+            // Show error message in the editor
+            content = `# Unable to open file\n\n**Error:** ${result.message}\n\n`;
+            if (result.error === 'unsupported') {
+              content += 'This file type is not supported for editing.\n';
+              content += 'Supported file types: text files, code files, configuration files, etc.';
+            }
+          } else if (result && result.content !== undefined) {
+            content = result.content;
+          } else {
+            content = '// Error loading file';
+          }
         }
       }
 
@@ -866,11 +894,204 @@ function createEditorStore() {
       return { ...state };
     }),
 
+    // Open mind file in active pane
+    openMindFile: async (filename, content, workspacePath) => update((state) => {
+      console.log('[editorStore.openMindFile] Opening:', { filename, workspacePath, contentLength: content?.length });
+      
+      const pane = findPaneById(state.layout, state.activePaneId);
+      
+      if (!pane || pane.paneType !== 'editor') {
+        console.log('[editorStore.openMindFile] No active editor pane found');
+        return state;
+      }
+
+      // Check if mind file already open in this pane
+      const existingTab = pane.tabs.find((t) => t.type === 'mind' && t.name === filename);
+      if (existingTab) {
+        console.log('[editorStore.openMindFile] Tab already exists, activating:', existingTab.id);
+        pane.activeTabId = existingTab.id;
+        return { ...state };
+      }
+
+      const newTab = {
+        id: `tab-${state.nextTabId}`,
+        type: 'mind',
+        name: filename,
+        filePath: `${workspacePath}/.swarm/mind/${filename}.html`,
+        content: content,
+        isDirty: false,
+        workspacePath: workspacePath,
+      };
+
+      console.log('[editorStore.openMindFile] Creating new tab:', newTab);
+
+      pane.tabs.push(newTab);
+      pane.activeTabId = newTab.id;
+
+      return {
+        ...state,
+        nextTabId: state.nextTabId + 1,
+      };
+    }),
+
+    // Update tab content (for Mind editor auto-save)
+    updateTabContent: (tabId, content) => update((state) => {
+      console.log('[editorStore.updateTabContent] Updating tab:', tabId);
+      
+      // Find the tab in any pane
+      const allPanes = [];
+      function collectPanes(node) {
+        if (node.type === 'pane') {
+          allPanes.push(node);
+        } else if (node.type === 'split') {
+          collectPanes(node.left);
+          collectPanes(node.right);
+        }
+      }
+      collectPanes(state.layout);
+      
+      for (const pane of allPanes) {
+        const tab = pane.tabs.find(t => t.id === tabId);
+        if (tab) {
+          tab.content = content;
+          tab.isDirty = true;
+          console.log('[editorStore.updateTabContent] Updated tab content');
+          break;
+        }
+      }
+      
+      return { ...state };
+    }),
+
+    // Open git diff view for a file
+    openGitDiff: async (filePath, isStaged = false) => {
+      const pane = findPaneById(currentState.layout, currentState.activePaneId);
+      
+      if (!pane || pane.paneType !== 'editor') return;
+
+      // Check if diff already open for this file
+      const existingTab = pane.tabs.find((t) => t.type === 'diff' && t.filePath === filePath);
+      if (existingTab) {
+        update((state) => {
+          const targetPane = findPaneById(state.layout, state.activePaneId);
+          if (targetPane) {
+            targetPane.activeTabId = existingTab.id;
+          }
+          return { ...state };
+        });
+        return;
+      }
+
+      // Get original and modified content
+      let originalContent = '';
+      let modifiedContent = '';
+      
+      if (window.electronAPI) {
+        // Get current file content (modified)
+        const result = await window.electronAPI.readFile(filePath);
+        if (result && result.content) {
+          modifiedContent = result.content;
+        }
+        
+        // Get original content from git
+        // TODO: Could optimize by getting HEAD version from git
+        // For now, we'll show diff view with empty original if needed
+      }
+
+      const fileName = filePath.split('/').pop();
+      const language = getLanguageFromFilename(fileName);
+
+      update((state) => {
+        const targetPane = findPaneById(state.layout, state.activePaneId);
+        if (!targetPane || targetPane.paneType !== 'editor') return state;
+
+        const newTab = {
+          id: `tab-${state.nextTabId}`,
+          type: 'diff',
+          filePath: filePath,
+          name: fileName,
+          originalContent: originalContent,
+          modifiedContent: modifiedContent,
+          language: language,
+          isStaged: isStaged,
+        };
+
+        targetPane.tabs.push(newTab);
+        targetPane.activeTabId = newTab.id;
+
+        return {
+          ...state,
+          nextTabId: state.nextTabId + 1,
+        };
+      });
+    },
+
+    // Open commit view
+    openCommitView: () => {
+      const pane = findPaneById(currentState.layout, currentState.activePaneId);
+      
+      if (!pane || pane.paneType !== 'editor') return;
+
+      // Check if commit view already open
+      const existingTab = pane.tabs.find((t) => t.type === 'commit');
+      if (existingTab) {
+        update((state) => {
+          const targetPane = findPaneById(state.layout, state.activePaneId);
+          if (targetPane) {
+            targetPane.activeTabId = existingTab.id;
+          }
+          return { ...state };
+        });
+        return;
+      }
+
+      update((state) => {
+        const targetPane = findPaneById(state.layout, state.activePaneId);
+        if (!targetPane || targetPane.paneType !== 'editor') return state;
+
+        const newTab = {
+          id: `tab-${state.nextTabId}`,
+          type: 'commit',
+          name: 'Commit',
+        };
+
+        targetPane.tabs.push(newTab);
+        targetPane.activeTabId = newTab.id;
+
+        return {
+          ...state,
+          nextTabId: state.nextTabId + 1,
+        };
+      });
+    },
+
     // Clear all editor state (for workspace switch)
     clearState: () => {
       set(getInitialState());
     },
   };
+}
+
+// Helper: Get language from filename
+function getLanguageFromFilename(filename) {
+  const ext = filename.split('.').pop().toLowerCase();
+  const languageMap = {
+    'js': 'javascript',
+    'mjs': 'javascript',
+    'cjs': 'javascript',
+    'jsx': 'javascript',
+    'ts': 'typescript',
+    'tsx': 'typescript',
+    'json': 'json',
+    'html': 'html',
+    'css': 'css',
+    'scss': 'scss',
+    'py': 'python',
+    'md': 'markdown',
+    'svelte': 'svelte',
+    'vue': 'vue',
+  };
+  return languageMap[ext] || 'plaintext';
 }
 
 // Helper: Find pane by ID in layout tree

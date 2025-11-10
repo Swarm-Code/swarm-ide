@@ -5,13 +5,70 @@ import fs from 'fs/promises';
 import Store from 'electron-store';
 import os from 'os';
 import pty from 'node-pty';
+import { simpleGit } from 'simple-git';
 import { lspServerManager } from './lsp-server-manager.mjs';
+import { Client } from 'ssh2';
+import crypto from 'crypto';
+import SSHConnectionManager from './src/services/SSHConnectionManager.js';
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const store = new Store();
+
+// SSH connection management - using proper architecture
+const sshConnectionManager = new SSHConnectionManager();
+const sshTerminals = new Map(); // terminalId -> { stream, connectionId }
+const sshTempCredentials = new Map(); // workspaceId -> credentials
+
+// Encryption for stored credentials
+// IMPORTANT: This key is generated at runtime and changes each app restart
+// This means credentials are only valid for the current session
+// For production, you'd want to use a persistent key stored securely
+let ENCRYPTION_KEY = null;
+const ENCRYPTION_IV_LENGTH = 16;
+
+function getEncryptionKey() {
+  if (!ENCRYPTION_KEY) {
+    // Try to load existing key from store, or create new one
+    const storedKey = store.get('encryptionKey');
+    if (storedKey) {
+      ENCRYPTION_KEY = Buffer.from(storedKey, 'hex');
+    } else {
+      ENCRYPTION_KEY = crypto.randomBytes(32);
+      store.set('encryptionKey', ENCRYPTION_KEY.toString('hex'));
+    }
+  }
+  return ENCRYPTION_KEY;
+}
+
+function encrypt(text) {
+  if (!text) return undefined;
+  const key = getEncryptionKey();
+  const iv = crypto.randomBytes(ENCRYPTION_IV_LENGTH);
+  const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return iv.toString('hex') + ':' + encrypted;
+}
+
+function decrypt(text) {
+  if (!text) return undefined;
+  try {
+    const key = getEncryptionKey();
+    const parts = text.split(':');
+    const iv = Buffer.from(parts.shift(), 'hex');
+    const encryptedText = parts.join(':');
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+    let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (err) {
+    console.error('[Decrypt] Failed to decrypt:', err.message);
+    return undefined;
+  }
+}
 
 // Browser management
 const browsers = new Map(); // browserId -> WebContentsView
@@ -174,6 +231,11 @@ ipcMain.handle('workspace:restoreSession', () => {
 
 ipcMain.handle('fs:readDirectory', async (event, dirPath) => {
   try {
+    // Skip if SSH path
+    if (dirPath && dirPath.startsWith('ssh://')) {
+      return [];
+    }
+    
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
     const items = await Promise.all(
       entries.map(async (entry) => {
@@ -1027,6 +1089,17 @@ app.on('window-all-closed', function () {
     browsers.delete(browserId);
   }
   
+  // Clean up SSH connections
+  sshConnectionManager.disconnectAll();
+  
+  // Clean up SSH terminals
+  for (const [terminalId, terminal] of sshTerminals.entries()) {
+    if (terminal.stream) {
+      terminal.stream.close();
+    }
+    sshTerminals.delete(terminalId);
+  }
+  
   if (process.platform !== 'darwin') app.quit();
 });
 
@@ -1041,6 +1114,139 @@ ipcMain.handle('fs:openInExplorer', async (event, filePath) => {
   }
 });
 
+// Git IPC Handlers
+ipcMain.handle('git:status', async (event, { cwd }) => {
+  try {
+    // Skip if SSH path
+    if (cwd && cwd.startsWith('ssh://')) {
+      return { files: [], staged: [], modified: [], not_added: [], deleted: [], renamed: [] };
+    }
+    
+    const git = simpleGit(cwd);
+    const status = await git.status();
+    // Serialize to plain object to avoid IPC cloning errors
+    return JSON.parse(JSON.stringify(status));
+  } catch (error) {
+    console.error('Git status error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('git:branches', async (event, { cwd }) => {
+  try {
+    // Skip if SSH path
+    if (cwd && cwd.startsWith('ssh://')) {
+      return { all: [], branches: {}, current: '' };
+    }
+    
+    const git = simpleGit(cwd);
+    const branches = await git.branch();
+    // Serialize to plain object to avoid IPC cloning errors
+    return JSON.parse(JSON.stringify(branches));
+  } catch (error) {
+    console.error('Git branches error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('git:log', async (event, { cwd, maxCount = 50 }) => {
+  try {
+    // Skip if SSH path
+    if (cwd && cwd.startsWith('ssh://')) {
+      return { all: [], latest: null, total: 0 };
+    }
+    
+    const git = simpleGit(cwd);
+    const log = await git.log({ maxCount });
+    // Serialize to plain object to avoid IPC cloning errors
+    return JSON.parse(JSON.stringify(log));
+  } catch (error) {
+    console.error('Git log error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('git:add', async (event, { cwd, files }) => {
+  try {
+    const git = simpleGit(cwd);
+    await git.add(files);
+    return { success: true };
+  } catch (error) {
+    console.error('Git add error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('git:reset', async (event, { cwd, files }) => {
+  try {
+    const git = simpleGit(cwd);
+    if (files && files.length > 0) {
+      await git.reset(['HEAD', '--', ...files]);
+    } else {
+      await git.reset(['HEAD']);
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('Git reset error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('git:commit', async (event, { cwd, message }) => {
+  try {
+    const git = simpleGit(cwd);
+    const result = await git.commit(message);
+    return result;
+  } catch (error) {
+    console.error('Git commit error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('git:checkout', async (event, { cwd, branch }) => {
+  try {
+    const git = simpleGit(cwd);
+    await git.checkout(branch);
+    return { success: true };
+  } catch (error) {
+    console.error('Git checkout error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('git:diff', async (event, { cwd, file }) => {
+  try {
+    const git = simpleGit(cwd);
+    const diff = await git.diff(['--', file]);
+    return diff;
+  } catch (error) {
+    console.error('Git diff error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('git:pull', async (event, { cwd }) => {
+  try {
+    const git = simpleGit(cwd);
+    const result = await git.pull();
+    return result;
+  } catch (error) {
+    console.error('Git pull error:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('git:push', async (event, { cwd }) => {
+  try {
+    const git = simpleGit(cwd);
+    const result = await git.push();
+    return result;
+  } catch (error) {
+    console.error('Git push error:', error);
+    throw error;
+  }
+});
+
 // LSP IPC Handlers
 ipcMain.handle('lsp:startServer', (event, { languageId, serverConfig }) => {
   return lspServerManager.startServer(languageId, serverConfig);
@@ -1052,4 +1258,685 @@ ipcMain.handle('lsp:sendMessage', (event, { languageId, message }) => {
 
 ipcMain.handle('lsp:stopServer', (event, { languageId }) => {
   return lspServerManager.stopServer(languageId);
+});
+
+// SSH IPC Handlers
+ipcMain.handle('ssh:getConnections', () => {
+  const connections = store.get('sshConnections', []);
+  console.log('[SSH] Loading connections from store:', connections.length);
+  
+  const validConnections = [];
+  const failedConnections = [];
+  
+  // Decrypt credentials if saved
+  for (const conn of connections) {
+    console.log('[SSH] Processing connection:', conn.id, 'hasCredentials:', !!conn.credentials);
+    
+    if (conn.credentials) {
+      console.log('[SSH] Connection has credentials object:', {
+        hasPassword: !!conn.credentials.password,
+        hasPrivateKey: !!conn.credentials.privateKey
+      });
+      
+      try {
+        const decryptedCreds = {};
+        let decryptionFailed = false;
+        
+        if (conn.credentials.password) {
+          const decrypted = decrypt(conn.credentials.password);
+          if (decrypted) {
+            decryptedCreds.password = decrypted;
+            console.log('[SSH] Password decrypted successfully');
+          } else {
+            console.log('[SSH] Password decryption failed - removing stale credentials');
+            decryptionFailed = true;
+          }
+        }
+        
+        if (conn.credentials.privateKey && !decryptionFailed) {
+          const decrypted = decrypt(conn.credentials.privateKey);
+          if (decrypted) {
+            decryptedCreds.privateKey = decrypted;
+            console.log('[SSH] Private key decrypted successfully');
+          } else {
+            console.log('[SSH] Private key decryption failed - removing stale credentials');
+            decryptionFailed = true;
+          }
+        }
+        
+        if (decryptionFailed) {
+          // Credentials were encrypted with old key, remove them
+          failedConnections.push(conn.id);
+          validConnections.push({
+            ...conn,
+            credentials: undefined,
+            savedCredentials: false // Mark as no longer having saved credentials
+          });
+        } else {
+          validConnections.push({
+            ...conn,
+            credentials: Object.keys(decryptedCreds).length > 0 ? decryptedCreds : undefined,
+            savedCredentials: Object.keys(decryptedCreds).length > 0
+          });
+        }
+      } catch (err) {
+        console.error('[SSH] Error decrypting credentials:', err);
+        failedConnections.push(conn.id);
+        validConnections.push({ 
+          ...conn, 
+          credentials: undefined,
+          savedCredentials: false
+        });
+      }
+    } else {
+      console.log('[SSH] Connection has no credentials to decrypt');
+      validConnections.push(conn);
+    }
+  }
+  
+  // Clean up failed connections from store
+  if (failedConnections.length > 0) {
+    console.log('[SSH] Cleaning up', failedConnections.length, 'connections with failed decryption');
+    const cleanedConnections = connections.map(conn => {
+      if (failedConnections.includes(conn.id)) {
+        // Remove stale encrypted credentials
+        const { credentials, ...rest } = conn;
+        return { ...rest, savedCredentials: false };
+      }
+      return conn;
+    });
+    store.set('sshConnections', cleanedConnections);
+  }
+  
+  return validConnections;
+});
+
+ipcMain.handle('ssh:saveConnection', (event, connection) => {
+  const connections = store.get('sshConnections', []);
+  
+  console.log('[SSH] Saving connection:', connection.id, 'hasCredentials:', !!connection.credentials);
+  if (connection.credentials) {
+    console.log('[SSH] Credentials:', {
+      hasPassword: !!connection.credentials.password,
+      hasPrivateKey: !!connection.credentials.privateKey
+    });
+  }
+  
+  // Create a copy to avoid mutating the original
+  const connectionToSave = { ...connection };
+  
+  // Encrypt credentials if present
+  if (connectionToSave.credentials) {
+    console.log('[SSH] Encrypting credentials...');
+    const encryptedCreds = {};
+    
+    if (connectionToSave.credentials.password) {
+      encryptedCreds.password = encrypt(connectionToSave.credentials.password);
+      console.log('[SSH] Password encrypted');
+    }
+    
+    if (connectionToSave.credentials.privateKey) {
+      encryptedCreds.privateKey = encrypt(connectionToSave.credentials.privateKey);
+      console.log('[SSH] Private key encrypted');
+    }
+    
+    connectionToSave.credentials = encryptedCreds;
+  }
+  
+  const existing = connections.findIndex(c => c.id === connectionToSave.id);
+  if (existing >= 0) {
+    console.log('[SSH] Updating existing connection');
+    connections[existing] = connectionToSave;
+  } else {
+    console.log('[SSH] Adding new connection');
+    connections.push(connectionToSave);
+  }
+  
+  store.set('sshConnections', connections);
+  console.log('[SSH] Saved. Total connections:', connections.length);
+  return { success: true };
+});
+
+ipcMain.handle('ssh:removeConnection', (event, id) => {
+  const connections = store.get('sshConnections', []);
+  store.set('sshConnections', connections.filter(c => c.id !== id));
+  return { success: true };
+});
+
+ipcMain.handle('ssh:clearAllConnections', () => {
+  store.set('sshConnections', []);
+  console.log('[SSH] Cleared all saved connections');
+  return { success: true };
+});
+
+ipcMain.handle('ssh:setTempCredentials', (event, { workspaceId, credentials }) => {
+  process.stdout.write(`[SSH] Setting temp credentials for workspace: ${workspaceId}\n`);
+  process.stdout.write(`[SSH] Credentials: ${JSON.stringify({
+    hasPassword: !!credentials?.password,
+    hasPrivateKey: !!credentials?.privateKey,
+    passwordLength: credentials?.password?.length,
+    privateKeyLength: credentials?.privateKey?.length
+  })}\n`);
+  sshTempCredentials.set(workspaceId, credentials);
+  return { success: true };
+});
+
+// Test SSH connection (doesn't save, just tests connectivity)
+ipcMain.handle('ssh:testConnection', async (event, { connection, credentials }) => {
+  process.stdout.write(`[SSH TEST] Testing connection to: ${JSON.stringify({
+    host: connection.host,
+    port: connection.port,
+    username: connection.username,
+    hasPassword: !!credentials.password,
+    hasPrivateKey: !!credentials.privateKey
+  })}\n`);
+
+  const client = new Client();
+  
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      client.end();
+      process.stdout.write('[SSH TEST] Connection timeout\n');
+      resolve({ success: false, error: 'Connection timeout (20s)' });
+    }, 20000);
+
+    client.on('ready', () => {
+      clearTimeout(timeout);
+      process.stdout.write('[SSH TEST] ✅ Connection successful\n');
+      
+      // Test SFTP
+      client.sftp((err, sftp) => {
+        if (err) {
+          process.stderr.write(`[SSH TEST] ❌ SFTP failed: ${err.message}\n`);
+          client.end();
+          resolve({ 
+            success: true, 
+            sftpAvailable: false,
+            message: 'SSH connected but SFTP unavailable'
+          });
+          return;
+        }
+
+        process.stdout.write('[SSH TEST] ✅ SFTP available\n');
+        
+        // Test reading home directory
+        sftp.readdir('.', (err, list) => {
+          client.end();
+          
+          if (err) {
+            process.stdout.write(`[SSH TEST] ⚠️ Cannot read directory: ${err.message}\n`);
+            resolve({
+              success: true,
+              sftpAvailable: true,
+              filesystemAccess: false,
+              message: 'SSH and SFTP work but filesystem access limited'
+            });
+          } else {
+            process.stdout.write(`[SSH TEST] ✅ Filesystem accessible, found ${list.length} items\n`);
+            resolve({
+              success: true,
+              sftpAvailable: true,
+              filesystemAccess: true,
+              fileCount: list.length,
+              message: 'All systems operational'
+            });
+          }
+        });
+      });
+    });
+
+    client.on('error', (err) => {
+      clearTimeout(timeout);
+      process.stderr.write(`[SSH TEST] ❌ Connection error: ${err.message}\n`);
+      resolve({ 
+        success: false, 
+        error: err.message,
+        code: err.code,
+        level: err.level
+      });
+    });
+
+    // Connect with credentials
+    const config = {
+      host: connection.host,
+      port: connection.port,
+      username: connection.username,
+      readyTimeout: 20000
+    };
+
+    if (credentials.privateKey) {
+      // Check if it's a path or actual key content
+      if (credentials.privateKey.includes('BEGIN')) {
+        config.privateKey = credentials.privateKey;
+        process.stdout.write('[SSH TEST] Using private key (content)\n');
+        client.connect(config);
+      } else {
+        // It's a path, read it
+        fs.readFile(credentials.privateKey, 'utf8')
+          .then(privateKey => {
+            config.privateKey = privateKey;
+            process.stdout.write('[SSH TEST] Using private key (file)\n');
+            client.connect(config);
+          })
+          .catch(err => {
+            clearTimeout(timeout);
+            process.stderr.write(`[SSH TEST] ❌ Failed to read private key: ${err.message}\n`);
+            resolve({ success: false, error: `Failed to read private key: ${err.message}` });
+          });
+      }
+    } else if (credentials.password) {
+      config.password = credentials.password;
+      process.stdout.write('[SSH TEST] Using password authentication\n');
+      client.connect(config);
+    } else {
+      clearTimeout(timeout);
+      process.stderr.write('[SSH TEST] ❌ No credentials provided\n');
+      resolve({ success: false, error: 'No valid credentials provided' });
+    }
+  });
+});
+
+ipcMain.handle('ssh:selectKeyFile', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    filters: [
+      { name: 'SSH Keys', extensions: ['*'] },
+      { name: 'All Files', extensions: ['*'] }
+    ],
+    defaultPath: path.join(os.homedir(), '.ssh')
+  });
+  
+  if (!result.canceled && result.filePaths.length > 0) {
+    return result.filePaths[0];
+  }
+  return null;
+});
+
+// Create or get SSH connection with SFTP using SSHConnectionManager
+async function getOrCreateSSHConnection(connectionId, connection, credentials) {
+  // Check if connection already exists
+  if (sshConnectionManager.isConnected(connectionId)) {
+    process.stdout.write(`[SSH] Reusing existing connection: ${connectionId}\n`);
+    return sshConnectionManager.getConnection(connectionId);
+  }
+
+  process.stdout.write(`[SSH] Creating new connection via SSHConnectionManager: ${connectionId}\n`);
+
+  // If private key path provided, read the file content
+  const creds = { ...credentials };
+  if (creds.privateKey && !creds.privateKey.includes('BEGIN')) {
+    // It's a path, read the file
+    try {
+      creds.privateKey = await fs.readFile(creds.privateKey, 'utf8');
+    } catch (err) {
+      throw new Error(`Failed to read private key: ${err.message}`);
+    }
+  }
+
+  // Setup event handlers for connection lifecycle
+  const handleDisconnect = (id) => {
+    if (id === connectionId) {
+      process.stdout.write(`[SSH] Connection closed, notifying terminals: ${connectionId}\n`);
+      
+      // Notify all terminals using this connection
+      for (const [termId, termData] of sshTerminals.entries()) {
+        if (termData.connectionId === connectionId) {
+          const window = BrowserWindow.getAllWindows()[0];
+          if (window) {
+            window.webContents.send('terminal:exit', { 
+              terminalId: termId, 
+              exitCode: 1, 
+              signal: 'SIGHUP' 
+            });
+          }
+          sshTerminals.delete(termId);
+        }
+      }
+    }
+  };
+
+  // Listen for disconnect events
+  sshConnectionManager.once(`disconnected`, handleDisconnect);
+
+  try {
+    await sshConnectionManager.connect(connection, creds, Client);
+    return sshConnectionManager.getConnection(connectionId);
+  } catch (err) {
+    sshConnectionManager.off(`disconnected`, handleDisconnect);
+    throw err;
+  }
+}
+
+// Create SSH terminal with PTY using SSHConnectionManager
+ipcMain.handle('ssh:createTerminal', async (event, { terminalId, connection, credentials, workspaceId }) => {
+  try {
+    process.stdout.write(`[SSH] 🚀 Creating terminal: ${terminalId}\n`);
+    process.stdout.write(`[SSH] Connection: ${JSON.stringify({
+      id: connection.id,
+      host: connection.host,
+      port: connection.port,
+      username: connection.username
+    })}\n`);
+    process.stdout.write(`[SSH] Has credentials passed? ${!!credentials}\n`);
+    process.stdout.write(`[SSH] WorkspaceId: ${workspaceId}\n`);
+    
+    // Get credentials from temp store if not provided
+    if (!credentials && workspaceId) {
+      process.stdout.write(`[SSH] Looking up credentials from temp store for workspace: ${workspaceId}\n`);
+      credentials = sshTempCredentials.get(workspaceId);
+      process.stdout.write(`[SSH] Found credentials in temp store? ${!!credentials}\n`);
+      if (credentials) {
+        process.stdout.write(`[SSH] Temp credentials: ${JSON.stringify({
+          hasPassword: !!credentials.password,
+          hasPrivateKey: !!credentials.privateKey
+        })}\n`);
+      }
+    } else if (credentials) {
+      process.stdout.write(`[SSH] Using provided credentials: ${JSON.stringify({
+        hasPassword: !!credentials.password,
+        hasPrivateKey: !!credentials.privateKey
+      })}\n`);
+    }
+    
+    if (!credentials) {
+      process.stderr.write('[SSH] ❌ No credentials available\n');
+      return { success: false, error: 'No credentials provided' };
+    }
+
+    process.stdout.write('[SSH] 🔌 Getting or creating SSH connection...\n');
+    // Get or create SSH connection (with SFTP)
+    const connectionId = connection.id;
+    const connData = await getOrCreateSSHConnection(connectionId, connection, credentials);
+    process.stdout.write(`[SSH] ✅ Connection ready: ${connectionId}\n`);
+    
+    // Now request a shell PTY channel via SSHConnectionManager
+    process.stdout.write('[SSH] 📡 Requesting PTY shell channel...\n');
+    const stream = await sshConnectionManager.createShellChannel(connectionId, {
+      term: 'xterm-256color',
+      cols: 80,
+      rows: 30
+    });
+
+    process.stdout.write('[SSH] ✅ Shell channel established\n');
+    
+    // Store terminal stream
+    sshTerminals.set(terminalId, { stream, connectionId });
+
+    // Send data from SSH to renderer
+    stream.on('data', (data) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      if (window) {
+        window.webContents.send('terminal:data', { terminalId, data: data.toString() });
+      }
+    });
+
+    stream.on('close', () => {
+      process.stdout.write(`[SSH] 🔚 Shell stream closed: ${terminalId}\n`);
+      const window = BrowserWindow.getAllWindows()[0];
+      if (window) {
+        window.webContents.send('terminal:exit', { terminalId, exitCode: 0, signal: null });
+      }
+      sshTerminals.delete(terminalId);
+    });
+
+    stream.stderr.on('data', (data) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      if (window) {
+        window.webContents.send('terminal:data', { terminalId, data: data.toString() });
+      }
+    });
+
+    process.stdout.write(`[SSH] ✨ Terminal creation complete: ${terminalId}\n`);
+    return { success: true, terminalId, connectionId };
+  } catch (error) {
+    process.stderr.write(`[SSH] ❌ Error creating terminal: ${error}\n`);
+    return { success: false, error: error.message };
+  }
+});
+
+// Write to SSH terminal
+ipcMain.handle('ssh:write', (event, { terminalId, data }) => {
+  const terminal = sshTerminals.get(terminalId);
+  if (terminal && terminal.stream) {
+    terminal.stream.write(data);
+    return { success: true };
+  }
+  return { success: false, error: 'SSH terminal not found' };
+});
+
+// Resize SSH terminal
+ipcMain.handle('ssh:resize', (event, { terminalId, cols, rows }) => {
+  const terminal = sshTerminals.get(terminalId);
+  if (terminal && terminal.stream) {
+    terminal.stream.setWindow(rows, cols, rows * 24, cols * 80);
+    return { success: true };
+  }
+  return { success: false, error: 'SSH terminal not found' };
+});
+
+// Kill SSH terminal
+ipcMain.handle('ssh:kill', (event, { terminalId }) => {
+  const terminal = sshTerminals.get(terminalId);
+  if (terminal) {
+    if (terminal.stream) {
+      terminal.stream.close();
+    }
+    sshTerminals.delete(terminalId);
+    return { success: true };
+  }
+  return { success: false, error: 'SSH terminal not found' };
+});
+
+// SFTP Operations - Read Directory
+ipcMain.handle('ssh:sftp:readdir', async (event, { connectionId, remotePath }) => {
+  try {
+    process.stdout.write(`[SFTP] 📂 Reading directory: ${remotePath} for connection: ${connectionId}\n`);
+    
+    const sftp = sshConnectionManager.getSftpSession(connectionId);
+    if (!sftp) {
+      process.stderr.write(`[SFTP] ❌ SFTP session not found for connection: ${connectionId}\n`);
+      process.stdout.write(`[SFTP] Available connections: ${JSON.stringify(sshConnectionManager.getAllConnections())}\n`);
+      return { success: false, error: 'SSH connection or SFTP session not found' };
+    }
+
+    process.stdout.write('[SFTP] ✅ SFTP session found, reading directory...\n');
+
+    return new Promise((resolve) => {
+      sftp.readdir(remotePath, (err, list) => {
+        if (err) {
+          process.stderr.write(`[SFTP] ❌ Error reading directory: ${err.message}\n`);
+          resolve({ success: false, error: err.message });
+          return;
+        }
+
+        process.stdout.write(`[SFTP] ✅ Directory read successfully, found ${list.length} items\n`);
+
+        const items = list.map(item => ({
+          name: item.filename,
+          path: `${remotePath}/${item.filename}`,
+          isDirectory: item.longname.startsWith('d'),
+          size: item.attrs.size,
+          modified: new Date(item.attrs.mtime * 1000),
+          permissions: item.attrs.mode
+        }));
+
+        process.stdout.write(`[SFTP] First 5 items: ${JSON.stringify(items.slice(0, 5).map(i => ({ name: i.name, isDir: i.isDirectory })), null, 2)}\n`);
+        resolve({ success: true, items });
+      });
+    });
+  } catch (error) {
+    process.stderr.write(`[SFTP] ❌ Exception in readdir: ${error}\n`);
+    return { success: false, error: error.message };
+  }
+});
+
+// SFTP Operations - Read File
+ipcMain.handle('ssh:sftp:readFile', async (event, { connectionId, remotePath }) => {
+  try {
+    const sftp = sshConnectionManager.getSftpSession(connectionId);
+    if (!sftp) {
+      return { success: false, error: 'SSH connection or SFTP session not found' };
+    }
+
+    return new Promise((resolve) => {
+      sftp.readFile(remotePath, 'utf8', (err, data) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+          return;
+        }
+
+        resolve({ success: true, content: data });
+      });
+    });
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// SFTP Operations - Write File
+ipcMain.handle('ssh:sftp:writeFile', async (event, { connectionId, remotePath, content }) => {
+  try {
+    const sftp = sshConnectionManager.getSftpSession(connectionId);
+    if (!sftp) {
+      return { success: false, error: 'SSH connection or SFTP session not found' };
+    }
+
+    return new Promise((resolve) => {
+      sftp.writeFile(remotePath, content, 'utf8', (err) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+          return;
+        }
+
+        resolve({ success: true });
+      });
+    });
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// SFTP Operations - Create Directory
+ipcMain.handle('ssh:sftp:mkdir', async (event, { connectionId, remotePath }) => {
+  try {
+    const sftp = sshConnectionManager.getSftpSession(connectionId);
+    if (!sftp) {
+      return { success: false, error: 'SSH connection or SFTP session not found' };
+    }
+
+    return new Promise((resolve) => {
+      sftp.mkdir(remotePath, (err) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+          return;
+        }
+
+        resolve({ success: true });
+      });
+    });
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// SFTP Operations - Delete File
+ipcMain.handle('ssh:sftp:unlink', async (event, { connectionId, remotePath }) => {
+  try {
+    const sftp = sshConnectionManager.getSftpSession(connectionId);
+    if (!sftp) {
+      return { success: false, error: 'SSH connection or SFTP session not found' };
+    }
+
+    return new Promise((resolve) => {
+      sftp.unlink(remotePath, (err) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+          return;
+        }
+
+        resolve({ success: true });
+      });
+    });
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// SFTP Operations - Delete Directory
+ipcMain.handle('ssh:sftp:rmdir', async (event, { connectionId, remotePath }) => {
+  try {
+    const sftp = sshConnectionManager.getSftpSession(connectionId);
+    if (!sftp) {
+      return { success: false, error: 'SSH connection or SFTP session not found' };
+    }
+
+    return new Promise((resolve) => {
+      sftp.rmdir(remotePath, (err) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+          return;
+        }
+
+        resolve({ success: true });
+      });
+    });
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// SFTP Operations - Rename/Move
+ipcMain.handle('ssh:sftp:rename', async (event, { connectionId, oldPath, newPath }) => {
+  try {
+    const sftp = sshConnectionManager.getSftpSession(connectionId);
+    if (!sftp) {
+      return { success: false, error: 'SSH connection or SFTP session not found' };
+    }
+
+    return new Promise((resolve) => {
+      sftp.rename(oldPath, newPath, (err) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+          return;
+        }
+
+        resolve({ success: true });
+      });
+    });
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// SFTP Operations - Get Stats
+ipcMain.handle('ssh:sftp:stat', async (event, { connectionId, remotePath }) => {
+  try {
+    const sftp = sshConnectionManager.getSftpSession(connectionId);
+    if (!sftp) {
+      return { success: false, error: 'SSH connection or SFTP session not found' };
+    }
+
+    return new Promise((resolve) => {
+      sftp.stat(remotePath, (err, stats) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+          return;
+        }
+
+        resolve({ 
+          success: true, 
+          stats: {
+            size: stats.size,
+            mode: stats.mode,
+            mtime: stats.mtime,
+            atime: stats.atime,
+            isDirectory: stats.isDirectory(),
+            isFile: stats.isFile()
+          }
+        });
+      });
+    });
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 });

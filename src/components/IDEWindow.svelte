@@ -2,7 +2,7 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import { appStore } from '../stores/appStore.js';
   import { workspaceStore } from '../stores/workspaceStore.js';
-  import { canvasStore } from '../stores/canvasStore.js';
+  import { canvasStore, activeCanvas } from '../stores/canvasStore.js';
   import { terminalStore } from '../stores/terminalStore.js';
   import { browserStore } from '../stores/browserStore.js';
   import { editorStore } from '../stores/editorStore.js';
@@ -11,17 +11,21 @@
   import WorkspaceSwitcher from './WorkspaceSwitcher.svelte';
   import CanvasSwitcher from './CanvasSwitcher.svelte';
   import FileExplorer from './FileExplorer.svelte';
+  import MindSidebar from './MindSidebar.svelte';
+  import GitPanel from './GitPanel.svelte';
   import EditorCanvas from './EditorCanvas.svelte';
   import TerminalPanel from './TerminalPanel.svelte';
   import DiagnosticsPanel from './DiagnosticsPanel.svelte';
   import Terminal from './Terminal.svelte';
   import ChatPanel from './ChatPanel.svelte';
+  import SSHQuickLauncher from './SSHQuickLauncher.svelte';
 
   let currentProject = null;
   let explorerVisible = true; // Local state like terminal
   let terminalVisible = false;
   let diagnosticsVisible = false;
   let chatVisible = false; // Chat panel hidden by default
+  let activePanel = 'explorer'; // Track which panel is active
   let activeWorkspaceId = null;
   let workspaces = [];
   let allTerminals = [];
@@ -29,6 +33,7 @@
   let currentWorkspacePath = null;
   let activeTerminalId = null;
   let editorLayout = null;
+  let currentCanvas = null;
   // Initialize to default state to prevent null errors
   let currentEditorState = {
     layout: { type: 'pane', id: 'pane-1', tabs: [], activeTabId: null },
@@ -36,6 +41,10 @@
     nextPaneId: 2,
     nextTabId: 1
   };
+
+  activeCanvas.subscribe((canvas) => {
+    currentCanvas = canvas;
+  });
 
   terminalStore.subscribe((state) => {
     allTerminals = state.terminals;
@@ -400,6 +409,7 @@
 
   appStore.subscribe((state) => {
     currentProject = state.currentProject;
+    activePanel = state.activePanel;
   });
 
   workspaceStore.subscribe((state) => {
@@ -418,6 +428,41 @@
     workspaceStore.setWorkspaces([]);
     workspaceStore.setActiveWorkspace(null);
     appStore.clearCurrentProject();
+  }
+
+  async function handleSSHConnect(event) {
+    console.log('[IDEWindow] SSH Connect event:', event);
+    const { connection, tempCredentials } = event.detail;
+    
+    // Create SSH terminal workspace
+    const workspaceId = `ssh-${connection.id}-${Date.now()}`;
+    const workspace = {
+      id: workspaceId,
+      path: `ssh://${connection.username}@${connection.host}:${connection.port}`,
+      color: '#ff9500',
+      isSSH: true,
+      sshConnection: connection
+    };
+    
+    console.log('[IDEWindow] Creating SSH workspace:', workspace);
+    
+    workspaceStore.addWorkspace(workspace);
+    workspaceStore.setActiveWorkspace(workspaceId);
+    
+    // Store credentials for this session (temp or saved)
+    const credentialsToStore = tempCredentials || connection.credentials;
+    if (credentialsToStore && window.electronAPI) {
+      await window.electronAPI.sshSetTempCredentials({
+        workspaceId,
+        credentials: credentialsToStore
+      });
+    }
+    
+    // Create a terminal for the SSH connection
+    const terminalId = `terminal-${Date.now()}`;
+    terminalStore.addTerminal(terminalId, workspaceId);
+    
+    console.log('[IDEWindow] SSH terminal created:', terminalId);
   }
 
   function handleKeydown(event) {
@@ -668,6 +713,40 @@
       const savedWorkspaces = await window.electronAPI.workspaceGetAll();
       const savedActiveId = await window.electronAPI.workspaceGetActive();
       
+      // Check if workspaces already exist in store (from WelcomeScreen)
+      let existingWorkspaces = [];
+      let existingActiveId = null;
+      const unsub = workspaceStore.subscribe(state => {
+        existingWorkspaces = state.workspaces;
+        existingActiveId = state.activeWorkspaceId;
+      });
+      unsub();
+      
+      console.log('[IDEWindow] onMount - workspace state:', {
+        existingCount: existingWorkspaces.length,
+        existingActiveId,
+        savedCount: savedWorkspaces?.length,
+        savedActiveId,
+        hasCurrentProject: !!currentProject
+      });
+      
+      // If workspaces already exist (e.g., from WelcomeScreen SSH connection), don't override
+      if (existingWorkspaces.length > 0 && existingActiveId) {
+        console.log('[IDEWindow] Keeping existing workspace setup from WelcomeScreen');
+        // Still merge saved workspaces but don't change active
+        if (savedWorkspaces && savedWorkspaces.length > 0) {
+          // Merge: keep existing + add any saved ones that don't exist
+          const mergedWorkspaces = [...existingWorkspaces];
+          for (const saved of savedWorkspaces) {
+            if (!mergedWorkspaces.find(w => w.id === saved.id)) {
+              mergedWorkspaces.push(saved);
+            }
+          }
+          workspaceStore.setWorkspaces(mergedWorkspaces);
+        }
+        return; // Don't change active workspace
+      }
+      
       if (savedWorkspaces && savedWorkspaces.length > 0) {
         workspaceStore.setWorkspaces(savedWorkspaces);
         
@@ -676,6 +755,7 @@
           const projectWorkspace = savedWorkspaces.find(w => w.path === currentProject.path);
           
           if (projectWorkspace) {
+            console.log('[IDEWindow] Found saved workspace for current project');
             workspaceStore.setActiveWorkspace(projectWorkspace.id);
             await window.electronAPI.workspaceSetActive(projectWorkspace.id);
           } else {
@@ -726,16 +806,19 @@
       <WorkspaceSwitcher />
       <CanvasSwitcher />
     </div>
-    <button class="chat-toggle-button" on:click={() => chatVisible = !chatVisible} title={chatVisible ? 'Hide Chat' : 'Show Chat'}>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-        />
-      </svg>
-    </button>
+    <div class="header-right">
+      <SSHQuickLauncher onConnect={handleSSHConnect} />
+      <button class="chat-toggle-button" on:click={() => chatVisible = !chatVisible} title={chatVisible ? 'Hide Chat' : 'Show Chat'}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+          />
+        </svg>
+      </button>
+    </div>
   </div>
 
   <div class="ide-content">
@@ -743,8 +826,14 @@
       {terminalVisible} 
       onToggleTerminal={() => terminalVisible = !terminalVisible}
     />
-    <div class="sidebar" class:hidden={!explorerVisible}>
-      <FileExplorer projectPath={workspacePath} />
+    <div class="sidebar" class:hidden={!explorerVisible || currentCanvas?.type === 'git'}>
+      {#if activePanel === 'git' && !activeWorkspace?.isSSH}
+        <GitPanel />
+      {:else if currentCanvas?.type === 'mind'}
+        <MindSidebar />
+      {:else}
+        <FileExplorer projectPath={workspacePath} />
+      {/if}
     </div>
     <div class="main-area">
       <div class="editor-area" style="height: {terminalVisible || diagnosticsVisible ? '60%' : '100%'}">
@@ -760,11 +849,18 @@
   <!-- Global terminal container - ALL terminals render here ONCE -->
   <div class="global-terminal-container">
     {#each allTerminals as terminal (terminal.id)}
+      {@const workspace = workspaces.find(w => w.id === terminal.workspaceId)}
+      {@const isSSH = workspace?.isSSH || false}
+      {@const sshConnection = workspace?.sshConnection}
       <div class="terminal-wrapper" data-terminal-id={terminal.id} data-workspace-id={terminal.workspaceId}>
         <Terminal 
           bind:this={terminalComponents[terminal.id]}
           terminalId={terminal.id}
           cwd={currentWorkspacePath}
+          isSSH={isSSH}
+          sshConnection={sshConnection}
+          sshCredentials={sshConnection?.credentials}
+          workspaceId={terminal.workspaceId}
         />
       </div>
     {/each}
@@ -814,8 +910,14 @@
     justify-self: start;
   }
 
-  .chat-toggle-button {
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
     justify-self: end;
+  }
+
+  .chat-toggle-button {
     width: 32px;
     height: 32px;
     display: flex;
@@ -854,6 +956,36 @@
 
   .sidebar.hidden {
     display: none;
+  }
+
+  .ssh-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: var(--spacing-xl);
+    text-align: center;
+    color: var(--color-text-secondary);
+  }
+
+  .ssh-placeholder svg {
+    width: 64px;
+    height: 64px;
+    margin-bottom: var(--spacing-lg);
+    opacity: 0.5;
+  }
+
+  .ssh-placeholder h3 {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .ssh-placeholder p {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-tertiary);
   }
 
   .main-area {
