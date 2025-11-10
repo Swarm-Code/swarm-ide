@@ -57,7 +57,12 @@
       if (workspace?.isSSH && workspace?.sshConnection?.id) {
         console.log('[FileExplorer] 🚀 SSH workspace detected, loading directory...');
         console.log('[FileExplorer] Connection ID:', workspace.sshConnection.id);
-        loadSSHDirectory(workspace.sshConnection.id, '/root');
+        // Use workspace.path (the actual directory path) instead of /root
+        const remotePath = workspace.path.startsWith('ssh://') 
+          ? workspace.path.split('://')[1].split(':')[2] || '/root'  // Extract path from ssh://user@host:port/path
+          : workspace.path;
+        console.log('[FileExplorer] Loading SSH path:', remotePath);
+        loadSSHDirectory(workspace.sshConnection.id, remotePath);
       } else if (workspace?.path && !workspace.path.startsWith('ssh://')) {
         console.log('[FileExplorer] 📂 Local workspace detected, loading directory...');
         loadDirectory(workspace.path);
@@ -85,8 +90,12 @@
       // Check if this is an SSH workspace
       if (activeWorkspace?.isSSH) {
         console.log('[FileExplorer] 🔌 SSH workspace detected, loading via SFTP');
-        // Load SSH directory via SFTP
-        await loadSSHDirectory(activeWorkspace.sshConnection.id, '/root');
+        // Use workspace.path (the actual directory path) instead of /root
+        const remotePath = activeWorkspace.path.startsWith('ssh://') 
+          ? activeWorkspace.path.split('://')[1].split(':')[2] || '/root'  // Extract path from ssh://user@host:port/path
+          : activeWorkspace.path;
+        console.log('[FileExplorer] Loading SSH path:', remotePath);
+        await loadSSHDirectory(activeWorkspace.sshConnection.id, remotePath);
       } else if (!path.startsWith('ssh://')) {
         console.log('[FileExplorer] 💻 Local workspace detected');
         await loadDirectory(path);
@@ -117,8 +126,12 @@
     if (activeWorkspace?.isSSH) {
       console.log('[FileExplorer] 🔌 Loading SSH directory on mount');
       console.log('[FileExplorer] Loading SSH dir for connection:', activeWorkspace.sshConnection.id);
-      // Load SSH directory
-      await loadSSHDirectory(activeWorkspace.sshConnection.id, '/root');
+      // Use workspace.path (the actual directory path) instead of /root
+      const remotePath = activeWorkspace.path.startsWith('ssh://') 
+        ? activeWorkspace.path.split('://')[1].split(':')[2] || '/root'  // Extract path from ssh://user@host:port/path
+        : activeWorkspace.path;
+      console.log('[FileExplorer] Loading SSH path on mount:', remotePath);
+      await loadSSHDirectory(activeWorkspace.sshConnection.id, remotePath);
     } else if (initialPath && !initialPath.startsWith('ssh://')) {
       console.log('[FileExplorer] 💻 Loading local directory on mount');
       await loadDirectory(initialPath);

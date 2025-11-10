@@ -11,10 +11,30 @@ const VIDEO_EXTENSIONS = new Set([
   '.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv', '.m4v'
 ]);
 
+const DOCUMENT_EXTENSIONS = new Set([
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.ppt', '.pptx', '.env', '.log'
+]);
+
 function isMediaFile(filename) {
   if (!filename) return false;
   const ext = filename.substring(filename.lastIndexOf('.')).toLowerCase();
   return IMAGE_EXTENSIONS.has(ext) || VIDEO_EXTENSIONS.has(ext);
+}
+
+function isDocumentFile(filename) {
+  if (!filename) return false;
+  const ext = filename.substring(filename.lastIndexOf('.')).toLowerCase();
+  const baseName = filename.substring(filename.lastIndexOf('/') + 1);
+  
+  // Check extensions
+  if (DOCUMENT_EXTENSIONS.has(ext)) return true;
+  
+  // Check special files
+  if (baseName === '.env' || baseName.startsWith('.env.')) return true;
+  if (baseName === '.gitignore' || baseName === '.gitattributes') return true;
+  if (baseName.endsWith('.log')) return true;
+  
+  return false;
 }
 
 // Editor state per workspace per canvas
@@ -267,9 +287,11 @@ function createEditorStore() {
 
       // Check if this is a media file (image or video)
       const isMedia = isMediaFile(fileName);
+      const isDocument = isDocumentFile(fileName);
 
-      if (isMedia) {
-        // Media files don't need content - MediaViewer uses file:// URLs directly
+      if (isMedia || isDocument) {
+        // Media and document files don't need content loaded here
+        // They will be loaded by their respective viewers
         content = '';
       } else if (window.electronAPI) {
         // Check if current workspace is SSH
