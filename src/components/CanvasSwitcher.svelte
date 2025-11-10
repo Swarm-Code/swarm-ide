@@ -1,4 +1,5 @@
 <script>
+  import { tick } from 'svelte';
   import { canvasStore, activeCanvas } from '../stores/canvasStore.js';
 
   let canvases = [];
@@ -6,6 +7,7 @@
   let editingCanvasId = null;
   let editingName = '';
   let colorPickerCanvasId = null;
+  let editingInputRef = null;
 
   canvasStore.subscribe((state) => {
     canvases = state.canvases;
@@ -29,11 +31,14 @@
     }
   }
 
-  function startEditing(canvas, event) {
-    event.stopPropagation();
+  async function startEditing(canvas, event) {
+    event?.stopPropagation();
     editingCanvasId = canvas.id;
     editingName = canvas.name;
     colorPickerCanvasId = null;
+    await tick();
+    editingInputRef?.focus();
+    editingInputRef?.select?.();
   }
 
   function finishEditing() {
@@ -69,6 +74,13 @@
     colorPickerCanvasId = null;
   }
 
+  function handleTabKeydown(event, canvasId) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleCanvasSwitch(canvasId);
+    }
+  }
+
   const colorPalette = [
     '#0071e3', '#34c759', '#ff9500', '#ff3b30', '#af52de', '#5ac8fa',
     '#64d2ff', '#ffd60a', '#ff375f', '#bf5af2', '#30d158', '#0a84ff'
@@ -91,7 +103,10 @@
     <div 
       class="canvas-tab" 
       class:active={canvas.id === activeCanvasId}
+      role="button"
+      tabindex="0"
       on:click={() => handleCanvasSwitch(canvas.id)}
+      on:keydown={(event) => handleTabKeydown(event, canvas.id)}
       on:dblclick={(e) => startEditing(canvas, e)}
     >
       <button 
@@ -122,7 +137,7 @@
           on:keydown={handleKeydown}
           on:blur={finishEditing}
           on:click={(e) => e.stopPropagation()}
-          autofocus
+          bind:this={editingInputRef}
         />
       {:else}
         <span class="canvas-tab-name">{canvas.name}</span>

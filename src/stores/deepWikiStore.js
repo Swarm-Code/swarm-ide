@@ -10,6 +10,11 @@ const initialState = {
   error: null,
 };
 
+const normalizeSettings = (settings = {}) => ({
+  ...settings,
+  env: { ...(settings?.env || {}) },
+});
+
 function createDeepWikiStore() {
   const { subscribe, update } = writable(initialState);
 
@@ -226,10 +231,11 @@ function createDeepWikiStore() {
         window.electronAPI.deepwikiGetStatus(),
       ]);
 
+      const normalizedSettings = normalizeSettings(settings);
       update((state) => ({
         ...state,
         initialized: true,
-        settings,
+        settings: normalizedSettings,
         status,
         error: status.state === 'error' ? status.message : null,
       }));
@@ -272,8 +278,8 @@ function createDeepWikiStore() {
         });
       }
 
-      if (settings?.enabled && status.state === 'running' && activeWorkspace) {
-        await ensureWorkspaceBrowser(activeWorkspace, { focus: settings.openPaneOnLaunch });
+      if (normalizedSettings?.enabled && status.state === 'running' && activeWorkspace) {
+        await ensureWorkspaceBrowser(activeWorkspace, { focus: normalizedSettings.openPaneOnLaunch });
       }
     } catch (error) {
       console.error('[DeepWiki] Failed to initialize store:', error);
@@ -314,15 +320,21 @@ function createDeepWikiStore() {
   async function saveSettings(nextSettings) {
     if (!window.electronAPI) return null;
     const previous = getCurrentSettings();
-    const updated = await window.electronAPI.deepwikiUpdateSettings(nextSettings);
+    const updatedRaw = await window.electronAPI.deepwikiUpdateSettings(nextSettings);
+    const updated = normalizeSettings(updatedRaw);
     update((state) => ({ ...state, settings: updated }));
+
+    const envChanged = JSON.stringify(previous?.env || {}) !== JSON.stringify(updated.env || {});
 
     const requiresRestart = previous && (
       previous.repoPath !== updated.repoPath ||
       previous.backendPort !== updated.backendPort ||
       previous.frontendPort !== updated.frontendPort ||
       previous.pythonCommand !== updated.pythonCommand ||
-      previous.nodeCommand !== updated.nodeCommand
+      previous.nodeCommand !== updated.nodeCommand ||
+      previous.provider !== updated.provider ||
+      previous.model !== updated.model ||
+      envChanged
     );
 
     if (!updated.enabled) {

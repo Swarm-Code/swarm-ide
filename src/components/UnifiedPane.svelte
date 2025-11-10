@@ -10,6 +10,7 @@
   import MediaViewer from './MediaViewer.svelte';
   import MarkdownPreview from './MarkdownPreview.svelte';
   import TipTapEditor from './TipTapEditor.svelte';
+  import GlobalSettingsPanel from './GlobalSettingsPanel.svelte';
 
   export let pane;
   export let isActive = false;
@@ -395,7 +396,15 @@
           <EditorTab
             tab={{
               id: tab.id,
-              name: tab.type === 'browser' ? tab.title : (tab.type === 'terminal' ? tab.title : (tab.type === 'mind' ? `🧠 ${tab.name}` : tab.name)),
+              name: tab.type === 'browser'
+                ? tab.title
+                : tab.type === 'terminal'
+                  ? tab.title
+                  : tab.type === 'mind'
+                    ? `🧠 ${tab.name}`
+                    : tab.type === 'settings'
+                      ? (tab.title || 'Settings')
+                      : tab.name,
               path: tab.path,
               isDirty: tab.isDirty
             }}
@@ -586,6 +595,12 @@
             editable={true}
           />
         {/key}
+      {:else if activeTab.type === 'settings'}
+        <GlobalSettingsPanel
+          selectedActivityId={activeTab.settingsActivityId}
+          on:activityChange={(event) => editorStore.updateSettingsTab(pane.id, activeTab.id, event.detail.activityId)}
+          on:close={() => editorStore.closeTab(pane.id, activeTab.id)}
+        />
       {/if}
     {:else}
       <div class="empty-pane">

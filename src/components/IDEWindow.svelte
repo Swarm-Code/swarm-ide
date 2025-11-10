@@ -871,56 +871,6 @@
     transition: height var(--transition-fast);
   }
 
-  .bottom-panel-container {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    border-top: 1px solid var(--color-border);
-  }
-
-  .bottom-panel-tabs {
-    display: flex;
-    gap: var(--spacing-xs);
-    padding: var(--spacing-xs);
-    background-color: var(--color-surface-secondary);
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .bottom-panel-tabs.hidden {
-    display: none;
-  }
-
-  .panel-tab {
-    padding: var(--spacing-xs) var(--spacing-md);
-    background-color: transparent;
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    border-radius: var(--radius-sm);
-    transition: all var(--transition-fast);
-  }
-
-  .panel-tab:hover {
-    background-color: var(--color-surface-hover);
-    color: var(--color-text-primary);
-  }
-
-  .panel-tab.active {
-    background-color: var(--color-accent);
-    color: white;
-  }
-
-  .terminal-area,
-  .diagnostics-area {
-    flex: 1;
-    overflow: hidden;
-  }
-
-  .terminal-area.hidden,
-  .diagnostics-area.hidden {
-    display: none;
-  }
-
   .chat-sidebar {
     width: 350px;
     background-color: var(--color-background);

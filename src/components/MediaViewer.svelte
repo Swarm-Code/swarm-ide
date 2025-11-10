@@ -414,7 +414,6 @@
     padding: var(--spacing-2xl);
   }
 
-  .loading-message svg,
   .error-message svg,
   .unsupported-message svg {
     width: 48px;

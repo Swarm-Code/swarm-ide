@@ -9,6 +9,19 @@ const DEFAULT_FRONTEND_PORT = 3007;
 const LOG_BUFFER_LIMIT = 200;
 const HEALTH_TIMEOUT_MS = 60000;
 const HEALTH_INTERVAL_MS = 1000;
+const ENV_FORWARD_KEYS = [
+  'OPENAI_API_KEY',
+  'OPENAI_BASE_URL',
+  'GOOGLE_API_KEY',
+  'OPENROUTER_API_KEY',
+  'AZURE_OPENAI_API_KEY',
+  'AZURE_OPENAI_ENDPOINT',
+  'AZURE_OPENAI_VERSION',
+  'DEEPWIKI_EMBEDDER_TYPE',
+  'OLLAMA_HOST',
+  'LM_STUDIO_BASE_URL',
+  'LM_STUDIO_API_KEY',
+];
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -134,16 +147,28 @@ export class DeepWikiManager extends EventEmitter {
       frontendPort: DEFAULT_FRONTEND_PORT,
       pythonCommand: 'python',
       nodeCommand: process.platform === 'win32' ? 'npm.cmd' : 'npm',
+      provider: 'google',
+      model: '',
+      env: {},
     };
   }
 
   getSettings() {
     const saved = this.store.get(this.settingsKey, {});
-    return { ...this.defaultSettings, ...saved };
+    return {
+      ...this.defaultSettings,
+      ...saved,
+      env: { ...(this.defaultSettings.env || {}), ...(saved.env || {}) },
+    };
   }
 
   updateSettings(partial = {}) {
-    const updated = { ...this.getSettings(), ...partial };
+    const current = this.getSettings();
+    const updated = {
+      ...current,
+      ...partial,
+      env: { ...(current.env || {}), ...(partial.env || {}) },
+    };
     this.store.set(this.settingsKey, updated);
     return updated;
   }
@@ -176,6 +201,24 @@ export class DeepWikiManager extends EventEmitter {
     this.status = this.buildStatus(state, message, extra);
     this.emit('status', this.status);
     return this.status;
+  }
+
+  buildEnvOverrides(settings) {
+    const overrides = {};
+    const envSource = settings?.env || {};
+    for (const key of ENV_FORWARD_KEYS) {
+      const value = envSource[key];
+      if (typeof value === 'string' && value.trim() !== '') {
+        overrides[key] = value.trim();
+      }
+    }
+    if (settings?.provider) {
+      overrides.DEEPWIKI_DEFAULT_PROVIDER = settings.provider;
+    }
+    if (settings?.model) {
+      overrides.DEEPWIKI_DEFAULT_MODEL = settings.model;
+    }
+    return overrides;
   }
 
   appendLog(source, chunk) {
@@ -269,6 +312,7 @@ export class DeepWikiManager extends EventEmitter {
     }
     const env = {
       ...process.env,
+      ...this.buildEnvOverrides(settings),
       PORT: String(settings.backendPort),
       PYTHONUNBUFFERED: '1',
     };
@@ -293,6 +337,7 @@ export class DeepWikiManager extends EventEmitter {
     }
     const env = {
       ...process.env,
+      ...this.buildEnvOverrides(settings),
       PORT: String(settings.frontendPort),
       FRONTEND_PORT: String(settings.frontendPort),
       BACKEND_PORT: String(settings.backendPort),

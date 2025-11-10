@@ -894,6 +894,54 @@ function createEditorStore() {
       };
     }),
 
+    openSettingsTab: (activityId) => update((state) => {
+      const panes = collectEditorPanes(state.layout);
+      if (panes.length === 0) return state;
+
+      const existingEntry = panes
+        .map((pane) => ({ pane, tab: pane.tabs.find((t) => t.type === 'settings') }))
+        .find((entry) => entry.tab);
+
+      if (existingEntry) {
+        if (activityId !== undefined) {
+          existingEntry.tab.settingsActivityId = activityId ?? null;
+        }
+        existingEntry.pane.activeTabId = existingEntry.tab.id;
+        state.activePaneId = existingEntry.pane.id;
+        return { ...state };
+      }
+
+      const targetPane = findPaneById(state.layout, state.activePaneId) || panes[0];
+      if (!targetPane || targetPane.paneType !== 'editor') {
+        return state;
+      }
+
+      const newTab = {
+        id: `tab-${state.nextTabId}`,
+        type: 'settings',
+        title: 'Settings',
+        settingsActivityId: activityId ?? null,
+      };
+
+      targetPane.tabs.push(newTab);
+      targetPane.activeTabId = newTab.id;
+      state.activePaneId = targetPane.id;
+
+      return {
+        ...state,
+        nextTabId: state.nextTabId + 1,
+      };
+    }),
+
+    updateSettingsTab: (paneId, tabId, activityId) => update((state) => {
+      const pane = findPaneById(state.layout, paneId);
+      if (!pane) return state;
+      const tab = pane.tabs.find((t) => t.id === tabId && t.type === 'settings');
+      if (!tab) return state;
+      tab.settingsActivityId = activityId ?? null;
+      return { ...state };
+    }),
+
     // Convert an editor pane to a terminal pane (for backward compatibility)
     convertPaneToTerminal: (paneId, terminalId) => update((state) => {
       const pane = findPaneById(state.layout, paneId);
@@ -960,6 +1008,23 @@ function findPaneByTerminalId(layout, terminalId) {
   }
 
   return null;
+}
+
+function collectEditorPanes(layout) {
+  const panes = [];
+  function traverse(node) {
+    if (!node) return;
+    if (node.type === 'pane') {
+      if (node.paneType === 'editor') {
+        panes.push(node);
+      }
+    } else if (node.type === 'split') {
+      traverse(node.left);
+      traverse(node.right);
+    }
+  }
+  traverse(layout);
+  return panes;
 }
 
 // Helper: Split pane in layout tree
