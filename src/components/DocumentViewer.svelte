@@ -12,14 +12,6 @@
   let isSSH = false;
   let sshConnectionId = null;
 
-  // PDF viewer state
-  let pdfDoc = null;
-  let pdfPages = [];
-  let currentPage = 1;
-  let totalPages = 0;
-  let scale = 1.5;
-  let rendering = false;
-
   const PDF_EXTENSIONS = new Set(['.pdf']);
   const WORD_EXTENSIONS = new Set(['.doc', '.docx']);
   const EXCEL_EXTENSIONS = new Set(['.xls', '.xlsx', '.csv']);
@@ -34,6 +26,7 @@
     if (POWERPOINT_EXTENSIONS.has(ext)) return 'powerpoint';
     if (TEXT_EXTENSIONS.has(ext)) return 'text';
     
+    // Handle files without extensions or special names
     const baseName = path.substring(path.lastIndexOf('/') + 1);
     if (baseName === '.env' || baseName.startsWith('.env.')) return 'text';
     if (baseName === '.gitignore' || baseName === '.gitattributes') return 'text';
@@ -47,6 +40,7 @@
     error = null;
 
     try {
+      // Check if current workspace is SSH
       let activeWorkspace = null;
       const unsubscribe = workspaceStore.subscribe(state => {
         activeWorkspace = state.workspaces.find(w => w.id === state.activeWorkspaceId);
@@ -55,6 +49,12 @@
 
       isSSH = activeWorkspace?.isSSH || false;
       sshConnectionId = activeWorkspace?.sshConnection?.id || null;
+
+      console.log('[DocumentViewer] Loading file:', {
+        path: filePath,
+        isSSH,
+        connectionId: sshConnectionId
+      });
 
       fileType = detectFileType(filePath);
 
@@ -80,13 +80,7 @@
   }
 
   async function loadPDF() {
-    const pdfjsLib = await import('pdfjs-dist');
-    
-    // Set worker path
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-      'pdfjs-dist/build/pdf.worker.mjs',
-      import.meta.url
-    ).href;
+    const { PDFDocument } = await import('pdf-lib');
     
     if (!window.electronAPI) {
       throw new Error('Electron API not available');
@@ -94,72 +88,30 @@
 
     let result;
     if (isSSH && sshConnectionId) {
-      result = await window.electronAPI.sshSftpReadFileBinary?.(sshConnectionId, filePath);
-      if (result?.success) {
+      console.log('[DocumentViewer] Reading PDF via SFTP');
+      result = await window.electronAPI.sshSftpReadFileBinary(sshConnectionId, filePath);
+      if (result.success) {
+        // Convert array back to Uint8Array
         result.data = new Uint8Array(result.data);
       }
     } else {
+      console.log('[DocumentViewer] Reading PDF from local filesystem');
       result = await window.electronAPI.readFileBinary(filePath);
     }
 
-    if (!result?.success) {
-      throw new Error(result?.error || 'Failed to read PDF');
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to read PDF');
     }
 
-    const typedArray = new Uint8Array(result.data);
-    const loadingTask = pdfjsLib.getDocument({ data: typedArray });
-    pdfDoc = await loadingTask.promise;
-    totalPages = pdfDoc.numPages;
+    const pdfDoc = await PDFDocument.load(result.data);
+    const numPages = pdfDoc.getPageCount();
     
-    await renderAllPages();
-  }
-
-  async function renderAllPages() {
-    rendering = true;
-    pdfPages = [];
-
-    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-      const page = await pdfDoc.getPage(pageNum);
-      const viewport = page.getViewport({ scale });
-      
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-
-      await page.render({
-        canvasContext: context,
-        viewport: viewport
-      }).promise;
-
-      pdfPages.push({
-        pageNum,
-        canvas,
-        width: viewport.width,
-        height: viewport.height
-      });
-    }
-
-    rendering = false;
-  }
-
-  async function zoomIn() {
-    if (scale < 3) {
-      scale += 0.25;
-      await renderAllPages();
-    }
-  }
-
-  async function zoomOut() {
-    if (scale > 0.5) {
-      scale -= 0.25;
-      await renderAllPages();
-    }
-  }
-
-  async function resetZoom() {
-    scale = 1.5;
-    await renderAllPages();
+    let text = `PDF Document: ${fileName}\n`;
+    text += `Pages: ${numPages}\n\n`;
+    text += `Note: Full PDF rendering will be added in future updates.\n`;
+    text += `For now, you can view this file using an external PDF viewer.`;
+    
+    content = text;
   }
 
   async function loadWord() {
@@ -171,20 +123,20 @@
 
     let result;
     if (isSSH && sshConnectionId) {
-      result = await window.electronAPI.sshSftpReadFileBinary?.(sshConnectionId, filePath);
-      if (result?.success) {
+      console.log('[DocumentViewer] Reading Word doc via SFTP');
+      result = await window.electronAPI.sshSftpReadFileBinary(sshConnectionId, filePath);
+      if (result.success) {
         result.data = new Uint8Array(result.data);
       }
     } else {
       result = await window.electronAPI.readFileBinary(filePath);
     }
 
-    if (!result?.success) {
-      throw new Error(result?.error || 'Failed to read Word document');
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to read Word document');
     }
 
-    const arrayBuffer = new Uint8Array(result.data).buffer;
-    const { value: html } = await mammoth.convertToHtml({ arrayBuffer });
+    const { value: html } = await mammoth.convertToHtml({ arrayBuffer: result.data });
     content = html;
     fileType = 'word-html';
   }
@@ -198,19 +150,20 @@
 
     let result;
     if (isSSH && sshConnectionId) {
-      result = await window.electronAPI.sshSftpReadFileBinary?.(sshConnectionId, filePath);
-      if (result?.success) {
+      console.log('[DocumentViewer] Reading Excel via SFTP');
+      result = await window.electronAPI.sshSftpReadFileBinary(sshConnectionId, filePath);
+      if (result.success) {
         result.data = new Uint8Array(result.data);
       }
     } else {
       result = await window.electronAPI.readFileBinary(filePath);
     }
 
-    if (!result?.success) {
-      throw new Error(result?.error || 'Failed to read Excel document');
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to read Excel document');
     }
 
-    const workbook = XLSX.read(new Uint8Array(result.data), { type: 'array' });
+    const workbook = XLSX.read(result.data, { type: 'array' });
     
     let html = '<div class="excel-viewer">';
     
@@ -229,6 +182,8 @@
   }
 
   async function loadPowerPoint() {
+    // PowerPoint parsing is more complex and would require additional libraries
+    // For now, show basic info
     content = `PowerPoint Document: ${fileName}\n\n`;
     content += `Note: Full PowerPoint rendering requires additional libraries.\n`;
     content += `For now, you can view this file using an external viewer.`;
@@ -241,16 +196,19 @@
 
     let result;
     if (isSSH && sshConnectionId) {
-      result = await window.electronAPI.sshSftpReadFile?.(sshConnectionId, filePath);
+      console.log('[DocumentViewer] Reading text file via SFTP');
+      result = await window.electronAPI.sshSftpReadFile(sshConnectionId, filePath);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to read file');
+      }
+      content = result.content || '';
     } else {
       result = await window.electronAPI.readFile(filePath);
+      if (result.error) {
+        throw new Error(result.message || 'Failed to read file');
+      }
+      content = result.content || '';
     }
-
-    if (result?.error) {
-      throw new Error(result.message || 'Failed to read file');
-    }
-
-    content = result.content || '';
   }
 
   $: if (filePath) {
@@ -263,46 +221,14 @@
     <div class="document-info">
       <span class="file-name">{fileName}</span>
       <span class="file-type">{fileType.toUpperCase()}</span>
-      {#if fileType === 'pdf' && totalPages > 0}
-        <span class="page-info">{totalPages} {totalPages === 1 ? 'page' : 'pages'}</span>
-        <span class="zoom-level">{Math.round(scale * 100)}%</span>
-      {/if}
     </div>
-
-    {#if fileType === 'pdf'}
-      <div class="pdf-controls">
-        <button class="control-button" on:click={zoomOut} disabled={scale <= 0.5 || rendering} title="Zoom out">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
-            <circle cx="6.5" cy="6.5" r="4.5" stroke-width="1.5"/>
-            <line x1="9.5" y1="9.5" x2="13" y2="13" stroke-width="1.5" stroke-linecap="round"/>
-            <line x1="4.5" y1="6.5" x2="8.5" y2="6.5" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-        </button>
-
-        <button class="control-button" on:click={resetZoom} disabled={rendering} title="Reset zoom">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
-            <rect x="2" y="2" width="12" height="12" stroke-width="1.5" rx="1"/>
-            <text x="8" y="11" text-anchor="middle" fill="currentColor" font-size="8" font-family="monospace">1:1</text>
-          </svg>
-        </button>
-
-        <button class="control-button" on:click={zoomIn} disabled={scale >= 3 || rendering} title="Zoom in">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
-            <circle cx="6.5" cy="6.5" r="4.5" stroke-width="1.5"/>
-            <line x1="9.5" y1="9.5" x2="13" y2="13" stroke-width="1.5" stroke-linecap="round"/>
-            <line x1="6.5" y1="4.5" x2="6.5" y2="8.5" stroke-width="1.5" stroke-linecap="round"/>
-            <line x1="4.5" y1="6.5" x2="8.5" y2="6.5" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-        </button>
-      </div>
-    {/if}
   </div>
 
   <div class="document-content">
-    {#if loading || rendering}
+    {#if loading}
       <div class="loading-message">
         <div class="spinner"></div>
-        <p>{rendering ? 'Rendering PDF...' : 'Loading document...'}</p>
+        <p>Loading document...</p>
       </div>
     {:else if error}
       <div class="error-message">
@@ -312,19 +238,6 @@
           <circle cx="12" cy="16" r="1" fill="currentColor"/>
         </svg>
         <p>{error}</p>
-      </div>
-    {:else if fileType === 'pdf' && pdfPages.length > 0}
-      <div class="pdf-pages">
-        {#each pdfPages as page (page.pageNum)}
-          <div class="pdf-page">
-            <div class="page-number">Page {page.pageNum} of {totalPages}</div>
-            <canvas
-              bind:this={page.canvas}
-              width={page.width}
-              height={page.height}
-            />
-          </div>
-        {/each}
       </div>
     {:else if fileType === 'word-html' || fileType === 'excel-html'}
       <div class="html-content">
@@ -378,51 +291,10 @@
     font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
   }
 
-  .page-info,
-  .zoom-level {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
-  }
-
-  .pdf-controls {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .control-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    color: var(--color-text-tertiary);
-    transition: all var(--transition-fast);
-    cursor: pointer;
-  }
-
-  .control-button:hover:not(:disabled) {
-    background-color: var(--color-surface-hover);
-    color: var(--color-text-primary);
-  }
-
-  .control-button:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .control-button svg {
-    width: 16px;
-    height: 16px;
-  }
-
   .document-content {
     flex: 1;
     overflow: auto;
     padding: var(--spacing-lg);
-    background-color: #525659;
   }
 
   .loading-message,
@@ -460,40 +332,6 @@
     color: var(--color-error, #f87171);
   }
 
-  .pdf-pages {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--spacing-xl);
-    padding: var(--spacing-xl) 0;
-  }
-
-  .pdf-page {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--spacing-sm);
-    background: white;
-    padding: var(--spacing-md);
-    border-radius: var(--radius-md);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  }
-
-  .page-number {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
-    padding: var(--spacing-xs) var(--spacing-sm);
-    background-color: var(--color-surface);
-    border-radius: var(--radius-sm);
-  }
-
-  .pdf-page canvas {
-    display: block;
-    max-width: 100%;
-    height: auto;
-  }
-
   .text-content {
     font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
     font-size: var(--font-size-sm);
@@ -509,9 +347,6 @@
     margin: 0 auto;
     line-height: 1.6;
     color: var(--color-text-primary);
-    background: white;
-    padding: var(--spacing-xl);
-    border-radius: var(--radius-md);
   }
 
   .html-content :global(table) {
@@ -552,7 +387,6 @@
 
   .html-content :global(p) {
     margin: var(--spacing-sm) 0;
-    color: #1a1a1a;
   }
 
   .html-content :global(h1),
@@ -561,7 +395,7 @@
   .html-content :global(h4) {
     margin-top: var(--spacing-lg);
     margin-bottom: var(--spacing-sm);
-    color: #1a1a1a;
+    color: var(--color-text-primary);
   }
 
   .html-content :global(ul),
