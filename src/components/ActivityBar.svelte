@@ -12,6 +12,7 @@
   let activePanel = 'explorer';
   let activeWorkspaceId = null;
   let deepWikiState = null;
+  let browserState = { browsers: [], activeBrowserId: null };
   let showDeepWikiMenu = false;
   let deepWikiMenuTop = 0;
   let editorState = null;
@@ -28,20 +29,34 @@
     deepWikiState = state;
   });
 
+  browserStore.subscribe((state) => {
+    browserState = state;
+  });
+
   editorStore.subscribe((state) => {
     editorState = state;
   });
 
   $: deepWikiStatus = deepWikiState?.status ?? { state: 'stopped', message: 'DeepWiki idle' };
+  $: activeDeepWikiBrowser = browserState.browsers.find(
+    (browser) => browser.type === 'deepwiki' && browser.workspaceId === activeWorkspaceId
+  );
+  $: deepWikiBrowserError = activeDeepWikiBrowser
+    ? deepWikiState?.browserErrors?.[activeDeepWikiBrowser.id]
+    : null;
   $: deepWikiRunning = deepWikiStatus.state === 'running';
   $: deepWikiStarting = deepWikiStatus.state === 'starting';
   $: deepWikiIndicatorState = (() => {
+    if (deepWikiBrowserError) return 'error';
     const state = deepWikiStatus?.state;
     if (state === 'error') return 'error';
     if (state === 'starting') return 'loading';
     if (state === 'running') return 'running';
     return 'idle';
   })();
+  $: deepWikiUiMessage = deepWikiBrowserError?.message || deepWikiStatus?.message || 'DeepWiki idle';
+  $: deepWikiMenuError = deepWikiBrowserError?.message
+    || (deepWikiStatus.state === 'error' ? (deepWikiStatus.error || deepWikiStatus.message) : null);
 
   function openSettingsTab(target = null) {
     editorStore.openSettingsTab(target);
@@ -251,7 +266,7 @@
       class:loading={deepWikiStarting}
       on:click={handleDeepWikiButton}
       on:contextmenu={handleDeepWikiContextMenu}
-      title={`DeepWiki — ${deepWikiStatus.message || 'Launch plugin'}. Cmd+Click for settings.`}
+      title={`DeepWiki — ${deepWikiUiMessage}. Cmd+Click for settings.`}
     >
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
         <path
@@ -295,7 +310,7 @@
   <div class="deepwiki-menu" style={`top: ${deepWikiMenuTop}px`}>
     <div class="menu-section">
       <p class="menu-title">DeepWiki</p>
-      <p class="menu-status">{deepWikiStatus.message}</p>
+      <p class="menu-status">{deepWikiUiMessage}</p>
     </div>
     <button class="menu-item" on:click={() => handleDeepWikiMenuAction('open')}>
       Open / Focus Pane
@@ -309,8 +324,8 @@
     <button class="menu-item" on:click={() => handleDeepWikiMenuAction('configure')}>
       Configure…
     </button>
-    {#if deepWikiStatus.state === 'error'}
-      <p class="menu-error">{deepWikiStatus.error || deepWikiStatus.message}</p>
+    {#if deepWikiMenuError}
+      <p class="menu-error">{deepWikiMenuError}</p>
     {/if}
   </div>
 {/if}

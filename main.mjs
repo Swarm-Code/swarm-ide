@@ -496,6 +496,16 @@ ipcMain.handle('browser:create', (event, { browserId, url, workspaceId }) => {
       console.error('Error loading URL:', err);
       // Try to load error page or about:blank
       view.webContents.loadURL('about:blank');
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      if (mainWindow) {
+        mainWindow.webContents.send('browser:error', {
+          browserId,
+          url,
+          code: err.code || null,
+          description: err.message || 'Unknown navigation error',
+        });
+        mainWindow.webContents.send('browser:loading', { browserId, isLoading: false });
+      }
     });
 
     browsers.set(browserId, view);
@@ -542,6 +552,35 @@ ipcMain.handle('browser:create', (event, { browserId, url, workspaceId }) => {
     view.webContents.on('did-stop-loading', () => {
       const mainWindow = BrowserWindow.getAllWindows()[0];
       if (mainWindow) {
+        mainWindow.webContents.send('browser:loading', { browserId, isLoading: false });
+      }
+    });
+    
+    view.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame) {
+        return;
+      }
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      if (mainWindow) {
+        mainWindow.webContents.send('browser:error', {
+          browserId,
+          url: validatedURL || url,
+          code: errorCode,
+          description: errorDescription || 'Navigation failed',
+        });
+        mainWindow.webContents.send('browser:loading', { browserId, isLoading: false });
+      }
+    });
+
+    view.webContents.on('render-process-gone', (event, details) => {
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      if (mainWindow) {
+        mainWindow.webContents.send('browser:error', {
+          browserId,
+          url,
+          code: details.exitCode,
+          description: `Renderer crashed (${details.reason || 'unknown reason'})`,
+        });
         mainWindow.webContents.send('browser:loading', { browserId, isLoading: false });
       }
     });
@@ -844,7 +883,9 @@ ipcMain.handle('browser:navigate', (event, { browserId, url }) => {
       if (mainWindow) {
         mainWindow.webContents.send('browser:error', { 
           browserId, 
-          error: err.message 
+          error: err.message,
+          code: err.code || null,
+          url
         });
       }
     });

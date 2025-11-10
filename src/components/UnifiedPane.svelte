@@ -5,6 +5,7 @@
   import { terminalStore } from '../stores/terminalStore.js';
   import { appStore } from '../stores/appStore.js';
   import { activeWorkspacePath } from '../stores/workspaceStore.js';
+  import { deepWikiStore } from '../stores/deepWikiStore.js';
   import EditorTab from './EditorTab.svelte';
   import MonacoEditor from './MonacoEditor.svelte';
   import MediaViewer from './MediaViewer.svelte';
@@ -19,6 +20,7 @@
   const createdBrowsers = new Set();
   let dragOverIndex = null;
   let overlayVisible = false;
+  let deepWikiState = null;
 
   browserStore.subscribe((state) => {
     allBrowsers = state.browsers;
@@ -26,6 +28,10 @@
 
   appStore.subscribe((state) => {
     overlayVisible = state.overlayVisible;
+  });
+
+  deepWikiStore.subscribe((state) => {
+    deepWikiState = state;
   });
 
   // Create browser instances for browser tabs
@@ -103,6 +109,73 @@
   $: activeTab = pane.tabs.find(t => t.id === pane.activeTabId);
   $: activeBrowser = activeTab?.type === 'browser' ? allBrowsers.find(b => b.id === activeTab.browserId) : null;
   $: isDeepWikiBrowser = activeTab?.type === 'browser' && activeBrowser?.type === 'deepwiki';
+  $: deepWikiStatus = deepWikiState?.status;
+  $: activeDeepWikiError = isDeepWikiBrowser && activeBrowser
+    ? deepWikiState?.browserErrors?.[activeBrowser.id]
+    : null;
+  $: deepWikiPanelState = (() => {
+    if (!isDeepWikiBrowser || !activeBrowser) {
+      return null;
+    }
+    const workspaceName = activeBrowser.metadata?.workspaceName || 'workspace';
+    if (activeDeepWikiError) {
+      const detailParts = [];
+      if (activeDeepWikiError.url) {
+        detailParts.push(`Tried: ${activeDeepWikiError.url}`);
+      }
+      if (activeDeepWikiError.code) {
+        detailParts.push(`Code: ${activeDeepWikiError.code}`);
+      }
+      return {
+        variant: 'error',
+        title: 'Unable to reach DeepWiki',
+        description: activeDeepWikiError.message,
+        details: detailParts.join(' • ') || null,
+        actions: ['retry', 'settings'],
+      };
+    }
+    if (!deepWikiState?.initialized) {
+      return {
+        variant: 'loading',
+        title: 'Preparing DeepWiki',
+        description: 'Initializing the plugin services…',
+        actions: [],
+      };
+    }
+    if (deepWikiStatus?.state === 'starting') {
+      return {
+        variant: 'loading',
+        title: 'Starting DeepWiki',
+        description: deepWikiStatus.message || 'Booting the local services…',
+        actions: [],
+      };
+    }
+    if (deepWikiStatus?.state === 'error') {
+      return {
+        variant: 'error',
+        title: 'DeepWiki failed to start',
+        description: deepWikiStatus.error || deepWikiStatus.message || 'Check your configuration and try again.',
+        actions: ['start', 'settings'],
+      };
+    }
+    if (deepWikiStatus?.state === 'stopped') {
+      return {
+        variant: 'info',
+        title: 'DeepWiki is stopped',
+        description: 'Start the services to generate documentation for this workspace.',
+        actions: ['start', 'settings'],
+      };
+    }
+    if (activeBrowser.isLoading) {
+      return {
+        variant: 'loading',
+        title: 'Loading DeepWiki',
+        description: `Preparing docs for ${workspaceName}…`,
+        actions: [],
+      };
+    }
+    return null;
+  })();
 
   function handlePaneClick() {
     editorStore.setActivePane(pane.id);
@@ -142,6 +215,18 @@
   function handleDragOver(event, index) {
     event.preventDefault();
     dragOverIndex = index;
+  }
+
+  async function handleDeepWikiRetry() {
+    await deepWikiStore.regenerateActiveWorkspace();
+  }
+
+  async function handleDeepWikiStart() {
+    await deepWikiStore.start();
+  }
+
+  function handleDeepWikiOpenSettings() {
+    editorStore.openSettingsTab('deepwiki');
   }
 
   function handleDragLeave() {
@@ -574,6 +659,45 @@
           {#if overlayVisible}
             <div class="browser-blur-overlay"></div>
           {/if}
+          {#if isDeepWikiBrowser && deepWikiPanelState}
+            <div class={`deepwiki-overlay deepwiki-overlay--${deepWikiPanelState.variant}`}>
+              <div class="deepwiki-overlay-card">
+                {#if deepWikiPanelState.variant === 'loading'}
+                  <span class="deepwiki-spinner" aria-hidden="true"></span>
+                {:else if deepWikiPanelState.variant === 'error'}
+                  <span class="deepwiki-status-icon" aria-hidden="true">!</span>
+                {:else}
+                  <span class="deepwiki-status-icon" aria-hidden="true">ℹ︎</span>
+                {/if}
+                <div class="deepwiki-overlay-copy">
+                  <p class="deepwiki-overlay-title">{deepWikiPanelState.title}</p>
+                  <p class="deepwiki-overlay-description">{deepWikiPanelState.description}</p>
+                  {#if deepWikiPanelState.details}
+                    <p class="deepwiki-overlay-details">{deepWikiPanelState.details}</p>
+                  {/if}
+                </div>
+                {#if deepWikiPanelState.actions?.length}
+                  <div class="deepwiki-overlay-actions">
+                    {#if deepWikiPanelState.actions?.includes('retry')}
+                      <button type="button" on:click|stopPropagation={handleDeepWikiRetry}>
+                        Retry
+                      </button>
+                    {/if}
+                    {#if deepWikiPanelState.actions?.includes('start')}
+                      <button type="button" on:click|stopPropagation={handleDeepWikiStart}>
+                        Start Services
+                      </button>
+                    {/if}
+                    {#if deepWikiPanelState.actions?.includes('settings')}
+                      <button type="button" on:click|stopPropagation={handleDeepWikiOpenSettings}>
+                        Configure
+                      </button>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            </div>
+          {/if}
         </div>
       {:else if activeTab.type === 'terminal'}
         <div 
@@ -784,6 +908,122 @@
     contain: strict;
     overflow: hidden;
     box-sizing: border-box;
+  }
+  
+  .deepwiki-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-lg);
+    z-index: 11;
+    pointer-events: none;
+  }
+
+  .deepwiki-overlay-card {
+    width: min(420px, 100%);
+    background-color: rgba(20, 20, 20, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+    pointer-events: auto;
+  }
+
+  .deepwiki-overlay--error .deepwiki-overlay-card {
+    border-color: rgba(255, 76, 76, 0.4);
+    background-color: rgba(24, 8, 8, 0.92);
+  }
+
+  .deepwiki-overlay--info .deepwiki-overlay-card {
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .deepwiki-overlay-copy {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+  }
+
+  .deepwiki-overlay-title {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .deepwiki-overlay-description {
+    font-size: 0.95rem;
+    margin: 0;
+    color: var(--color-text-secondary);
+    line-height: 1.4;
+  }
+
+  .deepwiki-overlay-details {
+    font-size: 0.8rem;
+    margin: 0;
+    color: var(--color-text-tertiary);
+  }
+
+  .deepwiki-overlay-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+  }
+
+  .deepwiki-overlay-actions button {
+    border-radius: var(--radius-sm);
+    padding: 0.45rem 0.9rem;
+    background: var(--color-accent);
+    color: var(--color-background);
+    font-weight: 500;
+    transition: opacity var(--transition-fast);
+  }
+
+  .deepwiki-overlay-actions button:hover {
+    opacity: 0.9;
+  }
+
+  .deepwiki-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(255, 255, 255, 0.15);
+    border-top-color: var(--color-accent);
+    border-radius: 50%;
+    animation: deepwiki-spin 1s linear infinite;
+    align-self: center;
+  }
+
+  .deepwiki-status-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .deepwiki-overlay--error .deepwiki-status-icon {
+    background-color: rgba(220, 38, 38, 0.2);
+    color: rgb(248, 113, 113);
+  }
+
+  .deepwiki-overlay--info .deepwiki-status-icon {
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  @keyframes deepwiki-spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .terminal-content {

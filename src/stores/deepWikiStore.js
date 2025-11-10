@@ -8,6 +8,7 @@ const initialState = {
   status: { state: 'stopped', message: 'DeepWiki idle', logs: [] },
   settings: null,
   error: null,
+  browserErrors: {},
 };
 
 const normalizeSettings = (settings = {}) => ({
@@ -32,6 +33,38 @@ function createDeepWikiStore() {
     });
     unsubscribe();
     return snapshot;
+  };
+
+  const setBrowserError = (browserId, payload) => {
+    if (!browserId) return;
+    update((state) => ({
+      ...state,
+      browserErrors: {
+        ...state.browserErrors,
+        [browserId]: {
+          browserId,
+          timestamp: Date.now(),
+          ...payload,
+        },
+      },
+      error: payload?.message || state.error,
+    }));
+  };
+
+  const clearBrowserError = (browserId) => {
+    if (!browserId) return;
+    update((state) => {
+      if (!state.browserErrors?.[browserId]) {
+        return state;
+      }
+      const nextErrors = { ...state.browserErrors };
+      delete nextErrors[browserId];
+      return {
+        ...state,
+        browserErrors: nextErrors,
+        error: Object.keys(nextErrors).length === 0 ? null : state.error,
+      };
+    });
   };
 
   const isServiceRunning = () => {
@@ -134,6 +167,7 @@ function createDeepWikiStore() {
     }
     editorStore.removeBrowserTabs(browserId);
     browserStore.removeBrowser(browserId);
+    clearBrowserError(browserId);
   }
 
   async function disableAllBrowsers() {
@@ -162,7 +196,10 @@ function createDeepWikiStore() {
       browserStore.addBrowser(browserId, initialUrl, workspace.id, {
         title: 'DeepWiki',
         type: 'deepwiki',
-        metadata: { workspaceId: workspace.id },
+        metadata: {
+          workspaceId: workspace.id,
+          workspaceName: getWorkspaceName(workspace.path),
+        },
       });
       editorStore.addBrowser(browserId, initialUrl, { title: 'DeepWiki' });
     }
@@ -170,9 +207,9 @@ function createDeepWikiStore() {
     return browserId;
   }
 
-  async function navigateBrowser(browserId, url) {
+  async function navigateBrowser(browserId, url, { force = false } = {}) {
     const existing = browsersSnapshot.find((b) => b.id === browserId);
-    if (existing?.url === url) {
+    if (!force && existing?.url === url) {
       return;
     }
     browserStore.updateBrowserState(browserId, { url });
@@ -205,7 +242,7 @@ function createDeepWikiStore() {
     const status = getSnapshot().status;
     const ready = status?.state === 'running';
     if (ready) {
-      await navigateBrowser(browserId, url);
+      await navigateBrowser(browserId, url, { force: forceNavigate });
       return browserId;
     }
 
@@ -254,7 +291,9 @@ function createDeepWikiStore() {
       });
 
       if (window.electronAPI.onBrowserError) {
-        window.electronAPI.onBrowserError(({ browserId, error }) => {
+        window.electronAPI.onBrowserError((payload = {}) => {
+          const { browserId, code, description, url: failingUrl } = payload;
+          const rawError = payload.error || payload.message || '';
           if (!browserId || !browserId.startsWith('deepwiki-')) {
             return;
           }
@@ -263,18 +302,25 @@ function createDeepWikiStore() {
           const url = workspaceForBrowser ? buildPluginUrl(workspaceForBrowser) : null;
           const frontendPort = getCurrentSettings()?.frontendPort ?? 3007;
           const fallbackUrl = url || `http://localhost:${frontendPort}/ide-plugin`;
-          const message = `DeepWiki UI isn't reachable at ${fallbackUrl}. Start or restart the services from the DeepWiki menu.`;
+          const message = rawError
+            ? rawError
+            : `DeepWiki UI isn't reachable at ${failingUrl || fallbackUrl}. Start or restart the services from the DeepWiki menu.`;
 
-          update((state) => ({
-            ...state,
-            status: {
-              ...state.status,
-              state: state.status.state === 'running' ? 'error' : state.status.state,
-              message,
-              error: error || message,
-            },
-            error: error || message,
-          }));
+          setBrowserError(browserId, {
+            message,
+            code: code ?? null,
+            url: failingUrl || fallbackUrl,
+            workspaceId: workspaceForBrowser?.id || null,
+          });
+        });
+      }
+
+      if (window.electronAPI.onBrowserLoading) {
+        window.electronAPI.onBrowserLoading(({ browserId, isLoading }) => {
+          if (!browserId || !browserId.startsWith('deepwiki-') || !isLoading) {
+            return;
+          }
+          clearBrowserError(browserId);
         });
       }
 
