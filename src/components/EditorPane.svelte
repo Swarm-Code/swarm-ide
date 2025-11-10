@@ -2,6 +2,9 @@
   import { editorStore } from '../stores/editorStore.js';
   import EditorTab from './EditorTab.svelte';
   import MonacoEditor from './MonacoEditor.svelte';
+  import TipTapEditor from './TipTapEditor.svelte';
+  import DiffEditor from './DiffEditor.svelte';
+  import CommitView from './CommitView.svelte';
 
   export let pane;
   export let isActive = false;
@@ -215,12 +218,30 @@
   <div class="editor-content">
     {#if activeTab}
       {#key activeTab.id}
-        <MonacoEditor
-          content={activeTab.content || ''}
-          language={getLanguageFromFilename(activeTab.name)}
-          onChange={handleEditorChange}
-          readOnly={false}
-        />
+        {#if activeTab.type === 'diff'}
+          <DiffEditor
+            originalContent={activeTab.originalContent || ''}
+            modifiedContent={activeTab.modifiedContent || ''}
+            language={activeTab.language || 'plaintext'}
+            filePath={activeTab.filePath || ''}
+            isStaged={activeTab.isStaged || false}
+          />
+        {:else if activeTab.type === 'commit'}
+          <CommitView />
+        {:else if activeTab.type === 'mind'}
+          <TipTapEditor
+            content={activeTab.content || ''}
+            filePath={activeTab.path}
+            onContentChange={handleEditorChange}
+          />
+        {:else}
+          <MonacoEditor
+            content={activeTab.content || ''}
+            language={getLanguageFromFilename(activeTab.name)}
+            onChange={handleEditorChange}
+            readOnly={false}
+          />
+        {/if}
       {/key}
     {:else}
       <div class="empty-pane">

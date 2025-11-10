@@ -1,7 +1,7 @@
 <script>
   import { editorStore } from '../stores/editorStore.js';
   import { terminalStore } from '../stores/terminalStore.js';
-  import { activeWorkspacePath } from '../stores/workspaceStore.js';
+  import { workspaceStore, activeWorkspacePath } from '../stores/workspaceStore.js';
   import Terminal from './Terminal.svelte';
 
   export let pane;
@@ -9,6 +9,7 @@
 
   let currentWorkspacePath = null;
   let allTerminals = [];
+  let workspaces = [];
 
   activeWorkspacePath.subscribe((path) => {
     currentWorkspacePath = path;
@@ -16,6 +17,10 @@
 
   terminalStore.subscribe((state) => {
     allTerminals = state.terminals;
+  });
+
+  workspaceStore.subscribe((state) => {
+    workspaces = state.workspaces;
   });
 
   // Get terminal objects for this pane

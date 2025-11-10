@@ -3,10 +3,12 @@
   import { editorStore } from '../stores/editorStore.js';
   import { browserStore } from '../stores/browserStore.js';
   import { terminalStore } from '../stores/terminalStore.js';
-  import { workspaceStore } from '../stores/workspaceStore.js';
+  import { workspaceStore, activeWorkspacePath } from '../stores/workspaceStore.js';
+  import { canvasStore } from '../stores/canvasStore.js';
 
   let activePanel = 'explorer';
   let activeWorkspaceId = null;
+  let currentWorkspacePath = null;
 
   appStore.subscribe((state) => {
     activePanel = state.activePanel;
@@ -14,6 +16,10 @@
 
   workspaceStore.subscribe((state) => {
     activeWorkspaceId = state.activeWorkspaceId;
+  });
+
+  activeWorkspacePath.subscribe((path) => {
+    currentWorkspacePath = path;
   });
 
   function handlePanelClick(panel) {
@@ -56,6 +62,16 @@
     editorStore.addBrowser(browserId);
     
     console.log('[ActivityBar.handleBrowserClick] ✅ Browser creation complete');
+  }
+
+  function handleMindClick() {
+    // Switch to or create Mind canvas
+    canvasStore.getOrCreateMindCanvas();
+  }
+
+  function handleGitClick() {
+    // Switch to or create Git canvas
+    canvasStore.getOrCreateGitCanvas();
   }
 </script>
 
@@ -102,6 +118,37 @@
         stroke-linejoin="round"
         stroke-width="2"
         d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+      />
+    </svg>
+  </button>
+
+  <button
+    class="activity-button"
+    on:click={handleMindClick}
+    title="Mind Space"
+  >
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+      />
+    </svg>
+  </button>
+
+  <button
+    class="activity-button"
+    class:active={activePanel === 'git'}
+    on:click={handleGitClick}
+    title="Source Control"
+  >
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        d="M9 11l3-3m0 0l3 3m-3-3v8m0-13a9 9 0 110 18 9 9 0 010-18z"
       />
     </svg>
   </button>

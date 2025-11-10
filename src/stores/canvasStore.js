@@ -12,6 +12,7 @@ function getInitialCanvasState() {
       {
         id: 'canvas-1',
         name: 'Main',
+        type: 'editor', // 'editor' or 'mind'
         color: '#0071e3',
         createdAt: Date.now(),
       }
@@ -64,10 +65,11 @@ function createCanvasStore() {
     subscribe,
 
     // Add new canvas to current workspace
-    addCanvas: (name, color = '#0071e3') => update((state) => {
+    addCanvas: (name, color = '#0071e3', type = 'editor') => update((state) => {
       const newCanvas = {
         id: `canvas-${state.nextCanvasId}`,
         name: name || `Canvas ${state.nextCanvasId}`,
+        type, // 'editor' or 'mind'
         color,
         createdAt: Date.now(),
       };
@@ -79,6 +81,76 @@ function createCanvasStore() {
         nextCanvasId: state.nextCanvasId + 1,
       };
     }),
+
+    // Get or create Mind canvas
+    getOrCreateMindCanvas: () => {
+      let mindCanvas = null;
+      let needsCreate = false;
+      
+      update((state) => {
+        mindCanvas = state.canvases.find(c => c.type === 'mind');
+        
+        if (!mindCanvas) {
+          needsCreate = true;
+          mindCanvas = {
+            id: `canvas-${state.nextCanvasId}`,
+            name: 'Mind',
+            type: 'mind',
+            color: '#af52de',
+            createdAt: Date.now(),
+          };
+          
+          return {
+            ...state,
+            canvases: [...state.canvases, mindCanvas],
+            activeCanvasId: mindCanvas.id,
+            nextCanvasId: state.nextCanvasId + 1,
+          };
+        } else {
+          return {
+            ...state,
+            activeCanvasId: mindCanvas.id,
+          };
+        }
+      });
+      
+      return mindCanvas;
+    },
+
+    // Get or create Git canvas
+    getOrCreateGitCanvas: () => {
+      let gitCanvas = null;
+      let needsCreate = false;
+      
+      update((state) => {
+        gitCanvas = state.canvases.find(c => c.type === 'git');
+        
+        if (!gitCanvas) {
+          needsCreate = true;
+          gitCanvas = {
+            id: `canvas-${state.nextCanvasId}`,
+            name: 'Git',
+            type: 'git',
+            color: '#ff9500',
+            createdAt: Date.now(),
+          };
+          
+          return {
+            ...state,
+            canvases: [...state.canvases, gitCanvas],
+            activeCanvasId: gitCanvas.id,
+            nextCanvasId: state.nextCanvasId + 1,
+          };
+        } else {
+          return {
+            ...state,
+            activeCanvasId: gitCanvas.id,
+          };
+        }
+      });
+      
+      return gitCanvas;
+    },
 
     // Remove canvas (can't remove last one)
     removeCanvas: (canvasId) => update((state) => {

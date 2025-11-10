@@ -1,14 +1,28 @@
 <script>
   import { editorStore } from '../stores/editorStore.js';
   import { fileExplorerStore } from '../stores/fileExplorerStore.js';
+  import { canvasStore, activeCanvas } from '../stores/canvasStore.js';
+  import { activeWorkspacePath } from '../stores/workspaceStore.js';
   import EditorSplitView from './EditorSplitView.svelte';
+  import MindCanvas from './MindCanvas.svelte';
+  import GitCanvas from './GitCanvas.svelte';
 
   let layout = null;
   let activePaneId = null;
+  let currentCanvas = null;
+  let workspacePath = null;
 
   editorStore.subscribe((state) => {
     layout = state.layout;
     activePaneId = state.activePaneId;
+  });
+
+  activeCanvas.subscribe((canvas) => {
+    currentCanvas = canvas;
+  });
+
+  activeWorkspacePath.subscribe((path) => {
+    workspacePath = path;
   });
 
   // Listen for file selection in explorer
@@ -29,7 +43,14 @@
 </script>
 
 <div class="editor-canvas">
-  {#if layout}
+  {#if currentCanvas?.type === 'git'}
+    <!-- Git canvas shows full git interface -->
+    <GitCanvas />
+  {:else if currentCanvas?.type === 'mind'}
+    <!-- Mind canvas shows TipTap editor for notes -->
+    <MindCanvas />
+  {:else if layout}
+    <!-- Regular editor canvas shows split view -->
     <EditorSplitView {layout} {activePaneId} />
   {:else}
     <div class="empty-editor">
