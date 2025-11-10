@@ -58,6 +58,7 @@
     "monaco-languageclient": "^10.2.0",
     "node-pty": "^1.0.0",
     "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.4.394",
     "simple-git": "^3.30.0",
     "ssh2": "^1.17.0",
     "vscode-jsonrpc": "^8.2.1",
