@@ -1828,6 +1828,36 @@ ipcMain.handle('ssh:sftp:readFile', async (event, { connectionId, remotePath }) 
   }
 });
 
+// SFTP Operations - Read Binary File
+ipcMain.handle('ssh:sftp:readFileBinary', async (event, { connectionId, remotePath }) => {
+  try {
+    process.stdout.write(`[SFTP] 📄 Reading binary file: ${remotePath} for connection: ${connectionId}\n`);
+    const sftp = sshConnectionManager.getSftpSession(connectionId);
+    if (!sftp) {
+      process.stdout.write(`[SFTP] ❌ SFTP session not found for connection: ${connectionId}\n`);
+      return { success: false, error: 'SSH connection or SFTP session not found' };
+    }
+
+    return new Promise((resolve) => {
+      sftp.readFile(remotePath, (err, data) => {
+        if (err) {
+          process.stdout.write(`[SFTP] ❌ Error reading binary file: ${err.message}\n`);
+          resolve({ success: false, error: err.message });
+          return;
+        }
+
+        // Convert Buffer to ArrayBuffer for transfer
+        const arrayBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+        process.stdout.write(`[SFTP] ✅ Binary file read successfully, size: ${data.length} bytes\n`);
+        resolve({ success: true, data: Array.from(data) }); // Convert to array for IPC transfer
+      });
+    });
+  } catch (error) {
+    process.stdout.write(`[SFTP] ❌ Exception reading binary file: ${error.message}\n`);
+    return { success: false, error: error.message };
+  }
+});
+
 // SFTP Operations - Write File
 ipcMain.handle('ssh:sftp:writeFile', async (event, { connectionId, remotePath, content }) => {
   try {

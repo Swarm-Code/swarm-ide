@@ -78,6 +78,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // SFTP APIs
   sshSftpReadDir: (connectionId, remotePath) => ipcRenderer.invoke('ssh:sftp:readdir', { connectionId, remotePath }),
   sshSftpReadFile: (connectionId, remotePath) => ipcRenderer.invoke('ssh:sftp:readFile', { connectionId, remotePath }),
+  sshSftpReadFileBinary: (connectionId, remotePath) => ipcRenderer.invoke('ssh:sftp:readFileBinary', { connectionId, remotePath }),
   sshSftpWriteFile: (connectionId, remotePath, content) => ipcRenderer.invoke('ssh:sftp:writeFile', { connectionId, remotePath, content }),
   sshSftpMkdir: (connectionId, remotePath) => ipcRenderer.invoke('ssh:sftp:mkdir', { connectionId, remotePath }),
   sshSftpUnlink: (connectionId, remotePath) => ipcRenderer.invoke('ssh:sftp:unlink', { connectionId, remotePath }),

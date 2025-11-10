@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { workspaceStore } from '../stores/workspaceStore.js';
 
   export let filePath = '';
   export let fileName = '';
@@ -8,6 +9,8 @@
   let fileType = 'unknown';
   let loading = true;
   let error = null;
+  let isSSH = false;
+  let sshConnectionId = null;
 
   const PDF_EXTENSIONS = new Set(['.pdf']);
   const WORD_EXTENSIONS = new Set(['.doc', '.docx']);
@@ -37,6 +40,22 @@
     error = null;
 
     try {
+      // Check if current workspace is SSH
+      let activeWorkspace = null;
+      const unsubscribe = workspaceStore.subscribe(state => {
+        activeWorkspace = state.workspaces.find(w => w.id === state.activeWorkspaceId);
+      });
+      unsubscribe();
+
+      isSSH = activeWorkspace?.isSSH || false;
+      sshConnectionId = activeWorkspace?.sshConnection?.id || null;
+
+      console.log('[DocumentViewer] Loading file:', {
+        path: filePath,
+        isSSH,
+        connectionId: sshConnectionId
+      });
+
       fileType = detectFileType(filePath);
 
       if (fileType === 'pdf') {
@@ -67,7 +86,19 @@
       throw new Error('Electron API not available');
     }
 
-    const result = await window.electronAPI.readFileBinary(filePath);
+    let result;
+    if (isSSH && sshConnectionId) {
+      console.log('[DocumentViewer] Reading PDF via SFTP');
+      result = await window.electronAPI.sshSftpReadFileBinary(sshConnectionId, filePath);
+      if (result.success) {
+        // Convert array back to Uint8Array
+        result.data = new Uint8Array(result.data);
+      }
+    } else {
+      console.log('[DocumentViewer] Reading PDF from local filesystem');
+      result = await window.electronAPI.readFileBinary(filePath);
+    }
+
     if (!result.success) {
       throw new Error(result.error || 'Failed to read PDF');
     }
@@ -90,7 +121,17 @@
       throw new Error('Electron API not available');
     }
 
-    const result = await window.electronAPI.readFileBinary(filePath);
+    let result;
+    if (isSSH && sshConnectionId) {
+      console.log('[DocumentViewer] Reading Word doc via SFTP');
+      result = await window.electronAPI.sshSftpReadFileBinary(sshConnectionId, filePath);
+      if (result.success) {
+        result.data = new Uint8Array(result.data);
+      }
+    } else {
+      result = await window.electronAPI.readFileBinary(filePath);
+    }
+
     if (!result.success) {
       throw new Error(result.error || 'Failed to read Word document');
     }
@@ -107,7 +148,17 @@
       throw new Error('Electron API not available');
     }
 
-    const result = await window.electronAPI.readFileBinary(filePath);
+    let result;
+    if (isSSH && sshConnectionId) {
+      console.log('[DocumentViewer] Reading Excel via SFTP');
+      result = await window.electronAPI.sshSftpReadFileBinary(sshConnectionId, filePath);
+      if (result.success) {
+        result.data = new Uint8Array(result.data);
+      }
+    } else {
+      result = await window.electronAPI.readFileBinary(filePath);
+    }
+
     if (!result.success) {
       throw new Error(result.error || 'Failed to read Excel document');
     }
@@ -143,12 +194,21 @@
       throw new Error('Electron API not available');
     }
 
-    const result = await window.electronAPI.readFile(filePath);
-    if (result.error) {
-      throw new Error(result.message || 'Failed to read file');
+    let result;
+    if (isSSH && sshConnectionId) {
+      console.log('[DocumentViewer] Reading text file via SFTP');
+      result = await window.electronAPI.sshSftpReadFile(sshConnectionId, filePath);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to read file');
+      }
+      content = result.content || '';
+    } else {
+      result = await window.electronAPI.readFile(filePath);
+      if (result.error) {
+        throw new Error(result.message || 'Failed to read file');
+      }
+      content = result.content || '';
     }
-
-    content = result.content || '';
   }
 
   $: if (filePath) {
