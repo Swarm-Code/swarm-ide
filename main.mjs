@@ -1114,11 +1114,27 @@ ipcMain.handle('fs:openInExplorer', async (event, filePath) => {
   }
 });
 
+// Helper function to check if workspace path is SSH
+function isSSHWorkspace(workspacePath) {
+  if (!workspacePath) return false;
+  if (workspacePath.startsWith('ssh://')) return true;
+  
+  // Check electron-store for SSH flag
+  try {
+    const workspaces = store.get('workspaces', []);
+    const workspace = workspaces.find(w => w.path === workspacePath);
+    return workspace?.isSSH || false;
+  } catch (e) {
+    return false;
+  }
+}
+
 // Git IPC Handlers
 ipcMain.handle('git:status', async (event, { cwd }) => {
   try {
-    // Skip if SSH path
-    if (cwd && cwd.startsWith('ssh://')) {
+    // Skip if SSH workspace
+    if (isSSHWorkspace(cwd)) {
+      process.stdout.write(`[GIT] Skipping git:status for SSH workspace: ${cwd}\n`);
       return { files: [], staged: [], modified: [], not_added: [], deleted: [], renamed: [] };
     }
     
@@ -1134,8 +1150,9 @@ ipcMain.handle('git:status', async (event, { cwd }) => {
 
 ipcMain.handle('git:branches', async (event, { cwd }) => {
   try {
-    // Skip if SSH path
-    if (cwd && cwd.startsWith('ssh://')) {
+    // Skip if SSH workspace
+    if (isSSHWorkspace(cwd)) {
+      process.stdout.write(`[GIT] Skipping git:branches for SSH workspace: ${cwd}\n`);
       return { all: [], branches: {}, current: '' };
     }
     
@@ -1151,8 +1168,9 @@ ipcMain.handle('git:branches', async (event, { cwd }) => {
 
 ipcMain.handle('git:log', async (event, { cwd, maxCount = 50 }) => {
   try {
-    // Skip if SSH path
-    if (cwd && cwd.startsWith('ssh://')) {
+    // Skip if SSH workspace
+    if (isSSHWorkspace(cwd)) {
+      process.stdout.write(`[GIT] Skipping git:log for SSH workspace: ${cwd}\n`);
       return { all: [], latest: null, total: 0 };
     }
     
