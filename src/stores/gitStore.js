@@ -31,6 +31,37 @@ function createGitStore() {
   async function loadGitData(workspacePath) {
     if (!workspacePath || !window.electronAPI?.gitStatus) return;
     
+    // Check if this is an SSH workspace by looking at the workspace store
+    let isSSH = false;
+    if (window.electronAPI?.workspaceGet) {
+      try {
+        const workspaces = await window.electronAPI.workspaceGet();
+        const workspace = workspaces?.find(w => w.path === workspacePath);
+        isSSH = workspace?.isSSH || false;
+      } catch (e) {
+        // Fallback: check if path starts with ssh://
+        isSSH = workspacePath.startsWith('ssh://');
+      }
+    }
+    
+    // Skip Git operations for SSH workspaces
+    if (isSSH) {
+      update((state) => ({
+        ...state,
+        workspaceGitData: {
+          ...state.workspaceGitData,
+          [workspacePath]: {
+            status: { files: [], staged: [], modified: [], not_added: [], deleted: [], renamed: [] },
+            branches: { all: [], branches: {}, current: '' },
+            log: { all: [], latest: null, total: 0 },
+            lastUpdated: Date.now(),
+            isSSH: true
+          }
+        }
+      }));
+      return;
+    }
+    
     try {
       const [status, branches, log] = await Promise.all([
         window.electronAPI.gitStatus({ cwd: workspacePath }),
