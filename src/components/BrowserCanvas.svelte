@@ -106,11 +106,11 @@
       dpr
     });
     
-    if (window.electronAPI?.setBrowserBounds) {
-      window.electronAPI.setBrowserBounds(activeBrowserId, bounds);
-      log('✅ setBrowserBounds called');
+    if (window.electronAPI?.browserSetBounds) {
+      window.electronAPI.browserSetBounds({ browserId: activeBrowserId, bounds });
+      log('✅ browserSetBounds called');
     } else {
-      log('❌ setBrowserBounds not available');
+      log('❌ browserSetBounds not available');
     }
   }
 
@@ -122,11 +122,15 @@
     activeBrowserId = browserId;
     
     // Create the actual browser in Electron
-    if (window.electronAPI?.createBrowser) {
-      log('📞 Calling createBrowser API', { browserId });
-      window.electronAPI.createBrowser(browserId, 'https://www.google.com', activeWorkspaceId);
+    if (window.electronAPI?.browserCreate) {
+      log('📞 Calling browserCreate API', { browserId });
+      window.electronAPI.browserCreate({ 
+        browserId, 
+        url: 'https://www.google.com', 
+        workspaceId: activeWorkspaceId 
+      });
     } else {
-      log('❌ createBrowser API not available');
+      log('❌ browserCreate API not available');
     }
   }
 
@@ -138,8 +142,8 @@
     event.stopPropagation();
     
     // Hide browser bounds
-    if (window.electronAPI?.setBrowserBounds) {
-      window.electronAPI.setBrowserBounds(browserId, { x: 0, y: 0, width: 0, height: 0 });
+    if (window.electronAPI?.browserSetBounds) {
+      window.electronAPI.browserSetBounds({ browserId, bounds: { x: 0, y: 0, width: 0, height: 0 } });
     }
     
     browserStore.removeBrowser(browserId);
@@ -147,33 +151,33 @@
 
   function handleNavigate(event) {
     const url = event.detail.url;
-    if (activeBrowserId && window.electronAPI?.navigateBrowser) {
-      window.electronAPI.navigateBrowser(activeBrowserId, url);
+    if (activeBrowserId && window.electronAPI?.browserNavigate) {
+      window.electronAPI.browserNavigate({ browserId: activeBrowserId, url });
       browserStore.updateBrowserUrl(activeBrowserId, url);
     }
   }
 
   function handleBack() {
     if (activeBrowserId && window.electronAPI?.browserGoBack) {
-      window.electronAPI.browserGoBack(activeBrowserId);
+      window.electronAPI.browserGoBack({ browserId: activeBrowserId });
     }
   }
 
   function handleForward() {
     if (activeBrowserId && window.electronAPI?.browserGoForward) {
-      window.electronAPI.browserGoForward(activeBrowserId);
+      window.electronAPI.browserGoForward({ browserId: activeBrowserId });
     }
   }
 
   function handleReload() {
     if (activeBrowserId && window.electronAPI?.browserReload) {
-      window.electronAPI.browserReload(activeBrowserId);
+      window.electronAPI.browserReload({ browserId: activeBrowserId });
     }
   }
 
   function handleStop() {
     if (activeBrowserId && window.electronAPI?.browserStop) {
-      window.electronAPI.browserStop(activeBrowserId);
+      window.electronAPI.browserStop({ browserId: activeBrowserId });
     }
   }
 
