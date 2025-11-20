@@ -3,11 +3,17 @@
   import { appStore } from './stores/appStore.js';
   import WelcomeScreen from './components/WelcomeScreen.svelte';
   import IDEWindow from './components/IDEWindow.svelte';
+  import { initializeLogCapture } from './logCapture.js';
 
   let currentProject = null;
 
   appStore.subscribe((state) => {
     currentProject = state.currentProject;
+  });
+
+  onMount(() => {
+    // Initialize console log capturing
+    initializeLogCapture();
   });
 </script>
 

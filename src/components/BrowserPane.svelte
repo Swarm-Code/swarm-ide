@@ -3,6 +3,7 @@
   import { editorStore } from '../stores/editorStore.js';
   import { browserStore } from '../stores/browserStore.js';
   import { activeWorkspacePath } from '../stores/workspaceStore.js';
+  import BrowserNavigation from './BrowserNavigation.svelte';
 
   export let pane;
   export let isActive = false;
@@ -153,38 +154,7 @@
     editorStore.addBrowser(browserId);
   }
 
-  // URL bar state
-  let urlInput = activeBrowser?.url || '';
-  
-  $: if (activeBrowser) {
-    urlInput = activeBrowser.url;
-  }
-
-  async function handleUrlEnter(event) {
-    if (event.key === 'Enter' && activeBrowser && window.electronAPI) {
-      let url = urlInput.trim();
-      
-      // Add protocol if missing
-      if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        // Check if it looks like a domain
-        if (url.includes('.') && !url.includes(' ')) {
-          url = 'https://' + url;
-        } else {
-          // Treat as search query
-          url = 'https://www.google.com/search?q=' + encodeURIComponent(url);
-        }
-      }
-      
-      // Navigate via Electron
-      await window.electronAPI.browserNavigate({
-        browserId: activeBrowser.id,
-        url
-      });
-      
-      // Update store
-      browserStore.navigate(activeBrowser.id, url);
-    }
-  }
+  // Navigation handlers for BrowserNavigation component
 
   async function handleGoBack() {
     if (activeBrowser && window.electronAPI) {
@@ -274,59 +244,29 @@
   </div>
 
   {#if activeBrowser}
-    <div class="browser-toolbar">
-      <button 
-        class="nav-button"
-        disabled={!activeBrowser.canGoBack}
-        on:click={handleGoBack}
-        title="Back"
-      >
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="1.5"
-            d="M10 12L6 8l4-4"
-          />
-        </svg>
-      </button>
-      <button 
-        class="nav-button"
-        disabled={!activeBrowser.canGoForward}
-        on:click={handleGoForward}
-        title="Forward"
-      >
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="1.5"
-            d="M6 12l4-4-4-4"
-          />
-        </svg>
-      </button>
-      <button 
-        class="nav-button"
-        on:click={handleReload}
-        title="Reload"
-      >
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="1.5"
-            d="M4 8a4 4 0 017.5-2m.5 6a4 4 0 01-7.5 2m0-4V4m0 0h4M12 12V8m0 4H8"
-          />
-        </svg>
-      </button>
-      <input
-        type="text"
-        class="url-input"
-        bind:value={urlInput}
-        on:keydown={handleUrlEnter}
-        placeholder="Enter URL or search..."
-      />
-    </div>
+    <BrowserNavigation
+      browserId={activeBrowser.id}
+      url={activeBrowser.url}
+      canGoBack={activeBrowser.canGoBack}
+      canGoForward={activeBrowser.canGoForward}
+      isLoading={activeBrowser.isLoading}
+      on:navigate={async (e) => {
+        if (window.electronAPI) {
+          await window.electronAPI.browserNavigate({
+            browserId: activeBrowser.id,
+            url: e.detail.url
+          });
+        }
+      }}
+      on:back={handleGoBack}
+      on:forward={handleGoForward}
+      on:reload={handleReload}
+      on:stop={async () => {
+        if (window.electronAPI && activeBrowser) {
+          await window.electronAPI.browserStop({ browserId: activeBrowser.id });
+        }
+      }}
+    />
   {/if}
 
   <div 

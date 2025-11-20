@@ -72,6 +72,8 @@ function decrypt(text) {
 
 // Browser management
 const browsers = new Map(); // browserId -> WebContentsView
+const browserBounds = new Map(); // Track last bounds for each browser
+const workspaceBrowsers = new Map(); // Track which browsers belong to which workspace
 let currentlyFocusedBrowserId = null; // Track which browser has focus (prevents event interception)
 
 function createWindow() {
@@ -487,17 +489,33 @@ ipcMain.handle('browser:create', (event, { browserId, url, workspaceId }) => {
       return { success: true, alreadyExists: true };
     }
     
+    // 🔧 PERSISTENT BROWSERS: Set up persistent session with cookies
+    // Use app's userData directory for persistent storage
+    const userDataPath = app.getPath('userData');
+    const browserProfilePath = path.join(userDataPath, 'browser-profiles', 'default');
+    
     const view = new WebContentsView({
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: true,
+        // 🔧 FIX: Enable automatic zoom adjustment to fit content to view bounds
+        zoomFactor: 1.0,
+        // 🔧 PERSISTENT SESSION: Enable persistent cookies and storage
+        partition: 'persist:browserprofile', // This creates a persistent session
+        webSecurity: true,
       }
     });
 
     // Set User-Agent to Chrome on Windows to prevent content blocking
     const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
     view.webContents.setUserAgent(userAgent);
+    
+    // 🔧 FIX: Set visual zoom level to fit browser content within pane bounds
+    // This ensures web pages render at the right scale for the container
+    view.webContents.setVisualZoomLevelLimits(0.5, 3.0).catch(err => {
+      console.log('[Browser] Could not set zoom limits:', err);
+    });
 
     // Prevent Ctrl+R from reloading the main Electron app (should only reload the browser page)
     view.webContents.on('before-input-event', (event, input) => {
@@ -537,6 +555,39 @@ ipcMain.handle('browser:create', (event, { browserId, url, workspaceId }) => {
     });
 
     browsers.set(browserId, view);
+    
+    // Track which workspace this browser belongs to
+    if (workspaceId) {
+      if (!workspaceBrowsers.has(workspaceId)) {
+        workspaceBrowsers.set(workspaceId, new Set());
+      }
+      workspaceBrowsers.get(workspaceId).add(browserId);
+    }
+
+    // 🔧 FIX: Handle middle-click and target="_blank" - open in new tab instead of new window
+    view.webContents.setWindowOpenHandler(({ url, frameName, disposition }) => {
+      console.log(`[Browser] Window open request: ${url}, disposition: ${disposition}`);
+      
+      // disposition can be: 'new-window', 'foreground-tab', 'background-tab', 'save-to-disk', 'other'
+      // IMPORTANT: 'other' is often middle-click, so we need to handle it too
+      // Only allow 'save-to-disk' and 'current-tab' to proceed normally
+      if (disposition !== 'save-to-disk' && disposition !== 'current-tab') {
+        const mainWindow = BrowserWindow.getAllWindows()[0];
+        if (mainWindow) {
+          // Send request to renderer to create a new browser tab in the current pane
+          mainWindow.webContents.send('browser:open-in-tab', { 
+            url,
+            sourceId: browserId,
+            background: disposition === 'background-tab'
+          });
+        }
+        // Deny the window creation - we'll handle it as a tab
+        return { action: 'deny' };
+      }
+      
+      // Allow save-to-disk and current-tab dispositions
+      return { action: 'allow' };
+    });
 
     // Navigation events - send to renderer
     view.webContents.on('did-navigate', (event, url) => {
@@ -733,9 +784,6 @@ ipcMain.handle('browser:create', (event, { browserId, url, workspaceId }) => {
   }
 });
 
-// Track previous bounds to avoid redundant updates
-const browserBounds = new Map(); // browserId -> bounds
-
 // Set browser bounds (position and size)
 ipcMain.handle('browser:setBounds', (event, { browserId, bounds }) => {
   try {
@@ -774,37 +822,22 @@ ipcMain.handle('browser:setBounds', (event, { browserId, bounds }) => {
     // We must ensure bounds never exceed the window
     const windowBounds = mainWindow.getContentBounds();
     
-    // Use exact bounds - no safety inset (browser-content div already has containment)
+    // 🔧 FIX (Linux): Don't clamp x/y positions - they come from getBoundingClientRect()
+    // and are already correct. Only clamp width/height to fit within window.
+    // The old logic was: Math.min(bounds.x, windowBounds.width) which caused
+    // browsers to render off-screen when panes were on the right side.
     const clampedBounds = {
-      x: Math.max(0, Math.min(bounds.x, windowBounds.width)),
-      y: Math.max(0, Math.min(bounds.y, windowBounds.height)),
-      width: Math.max(0, Math.min(bounds.width, windowBounds.width - bounds.x)),
-      height: Math.max(0, Math.min(bounds.height, windowBounds.height - bounds.y))
+      x: Math.max(0, bounds.x),
+      y: Math.max(0, bounds.y),
+      // Clamp width so x + width doesn't exceed window width
+      width: Math.max(0, Math.min(bounds.width, Math.max(0, windowBounds.width - bounds.x))),
+      // Clamp height so y + height doesn't exceed window height
+      height: Math.max(0, Math.min(bounds.height, Math.max(0, windowBounds.height - bounds.y)))
     };
     
-    // Log if clamping was necessary
-    if (clampedBounds.x !== bounds.x || 
-        clampedBounds.y !== bounds.y || 
-        clampedBounds.width !== bounds.width || 
-        clampedBounds.height !== bounds.height) {
-
-    }
-
-    // Add view at index 0 to keep it BELOW main window's webContents
-    // This allows DOM elements (dropdowns, modals) to render ABOVE the browser
-    const contentView = mainWindow.contentView;
-    
-
-    
-    // 🔧 FIX 2: Only add view if not already present - REMOVE the re-order cycle
-    if (!contentView.children.includes(view)) {
-
-      contentView.addChildView(view, 0);
-    } else {
-
-    }
-
-    // Set bounds (using clamped values to ensure they fit in window)
+    // 🔧 FIX: Set bounds BEFORE adding to hierarchy (Linux fix)
+    // On Linux, if view is added to contentView without bounds first,
+    // it might render at (0,0) with undefined size and not update properly
     const roundedBounds = {
       x: Math.round(clampedBounds.x),
       y: Math.round(clampedBounds.y),
@@ -812,9 +845,52 @@ ipcMain.handle('browser:setBounds', (event, { browserId, bounds }) => {
       height: Math.round(clampedBounds.height)
     };
     
+    // DETAILED LOGGING for browser bounds (goes to terminal)
+    console.log('[🌐 BROWSER:SET_BOUNDS] ========================================');
+    console.log(`[🌐 BROWSER:SET_BOUNDS] Browser ID: ${browserId}`);
+    console.log('[🌐 BROWSER:SET_BOUNDS] RECEIVED from renderer:');
+    console.log(`[🌐 BROWSER:SET_BOUNDS]   x=${bounds.x} y=${bounds.y} w=${bounds.width} h=${bounds.height}`);
+    console.log('[🌐 BROWSER:SET_BOUNDS] WINDOW bounds:');
+    console.log(`[🌐 BROWSER:SET_BOUNDS]   w=${windowBounds.width} h=${windowBounds.height}`);
+    
+    const wasClamped = clampedBounds.x !== bounds.x || 
+                       clampedBounds.y !== bounds.y || 
+                       clampedBounds.width !== bounds.width || 
+                       clampedBounds.height !== bounds.height;
+    
+    if (wasClamped) {
+      console.log('[🌐 BROWSER:SET_BOUNDS] ⚠️  CLAMPED:');
+      console.log(`[🌐 BROWSER:SET_BOUNDS]   x=${clampedBounds.x} y=${clampedBounds.y} w=${clampedBounds.width} h=${clampedBounds.height}`);
+    }
+    
+    console.log('[🌐 BROWSER:SET_BOUNDS] ROUNDED FINAL:');
+    console.log(`[🌐 BROWSER:SET_BOUNDS]   x=${roundedBounds.x} y=${roundedBounds.y} w=${roundedBounds.width} h=${roundedBounds.height}`);
+    console.log(`[🌐 BROWSER:SET_BOUNDS] Platform: ${process.platform}`);
+    console.log('[🌐 BROWSER:SET_BOUNDS] FITS CHECK:');
+    console.log(`[🌐 BROWSER:SET_BOUNDS]   Right:  ${roundedBounds.x} + ${roundedBounds.width} = ${roundedBounds.x + roundedBounds.width} (≤ ${windowBounds.width}? ${roundedBounds.x + roundedBounds.width <= windowBounds.width})`);
+    console.log(`[🌐 BROWSER:SET_BOUNDS]   Bottom: ${roundedBounds.y} + ${roundedBounds.height} = ${roundedBounds.y + roundedBounds.height} (≤ ${windowBounds.height}? ${roundedBounds.y + roundedBounds.height <= windowBounds.height})`);
+    console.log('[🌐 BROWSER:SET_BOUNDS] ========================================');
+    
+    // Set bounds FIRST
     view.setBounds(roundedBounds);
     
-
+    // 🔧 FIX: Dynamically adjust zoom factor based on container size
+    // This helps the browser content fit properly within the pane
+    // Calculate zoom based on typical viewport width (1920px) vs actual width
+    const idealWidth = 1920;
+    const zoomFactor = Math.min(1.5, Math.max(0.5, roundedBounds.width / idealWidth));
+    view.webContents.setZoomFactor(zoomFactor);
+    console.log(`[🌐 BROWSER:SET_BOUNDS] Applied zoom factor: ${zoomFactor.toFixed(2)} (width: ${roundedBounds.width}px)`);
+    
+    // THEN add view to hierarchy at index 0 to keep it BELOW main window's webContents
+    // This allows DOM elements (dropdowns, modals) to render ABOVE the browser
+    const contentView = mainWindow.contentView;
+    
+    // 🔧 FIX 2: Only add view if not already present - REMOVE the re-order cycle
+    if (!contentView.children.includes(view)) {
+      contentView.addChildView(view, 0);
+      console.log(`[🌐 BROWSER:SET_BOUNDS] Added view to contentView hierarchy`);
+    }
 
     return { success: true };
   } catch (error) {
@@ -996,7 +1072,7 @@ ipcMain.handle('browser:focus', (event, { browserId }) => {
   }
 });
 
-// Destroy browser
+// Destroy browser (now just hides it for persistence)
 ipcMain.handle('browser:destroy', (event, { browserId }) => {
   try {
     const view = browsers.get(browserId);
@@ -1012,21 +1088,22 @@ ipcMain.handle('browser:destroy', (event, { browserId }) => {
       }
     }
 
-    // Close the webContents
-    if (!view.webContents.isDestroyed()) {
-      view.webContents.close();
-    }
+    // 🔧 PERSISTENT BROWSERS: Don't actually destroy, just remove from view
+    // This keeps the browser session alive with cookies and state
+    // The browser remains in the browsers Map for reuse
+    console.log(`[browser:destroy] Browser ${browserId} hidden but kept alive for persistence`);
 
     // Clean up cached bounds
     browserBounds.delete(browserId);
     
     // Clear focus tracking if this browser was focused
     if (currentlyFocusedBrowserId === browserId) {
-
       currentlyFocusedBrowserId = null;
     }
     
-    browsers.delete(browserId);
+    // 🔧 PERSISTENT BROWSERS: Don't delete from Map, keep it alive
+    // browsers.delete(browserId); // COMMENTED OUT - Keep browser instance alive
+    
     return { success: true };
   } catch (error) {
     console.error('Error destroying browser:', error);
@@ -1082,6 +1159,58 @@ ipcMain.handle('browsers:showAfterOverlay', async () => {
     return { success: true };
   } catch (error) {
     console.error('Error showing browsers after overlay:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// 🔧 PERSISTENT BROWSERS: Workspace-specific browser management
+ipcMain.handle('browsers:hideWorkspace', async (event, { workspaceId }) => {
+  try {
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (!mainWindow || !mainWindow.contentView) {
+      return { success: false, error: 'Main window not found' };
+    }
+
+    const workspaceBrowserSet = workspaceBrowsers.get(workspaceId);
+    if (!workspaceBrowserSet) {
+      return { success: true }; // No browsers for this workspace
+    }
+
+    const contentView = mainWindow.contentView;
+    for (const browserId of workspaceBrowserSet) {
+      const view = browsers.get(browserId);
+      if (view && contentView.children.includes(view)) {
+        contentView.removeChildView(view);
+        console.log(`[browsers:hideWorkspace] Hidden browser ${browserId} for workspace ${workspaceId}`);
+      }
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error hiding workspace browsers:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('browsers:showWorkspace', async (event, { workspaceId }) => {
+  try {
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (!mainWindow || !mainWindow.contentView) {
+      return { success: false, error: 'Main window not found' };
+    }
+
+    const workspaceBrowserSet = workspaceBrowsers.get(workspaceId);
+    if (!workspaceBrowserSet) {
+      return { success: true }; // No browsers for this workspace
+    }
+
+    // Note: Browsers will be re-added when their bounds are set
+    // This just ensures they're available for display
+    console.log(`[browsers:showWorkspace] Ready to show browsers for workspace ${workspaceId}`);
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error showing workspace browsers:', error);
     return { success: false, error: error.message };
   }
 });

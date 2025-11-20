@@ -5,6 +5,7 @@
   import { terminalStore } from '../stores/terminalStore.js';
   import { appStore } from '../stores/appStore.js';
   import { activeWorkspacePath } from '../stores/workspaceStore.js';
+  import { browserLogger } from '../utils/browserLogger.js';
   import EditorTab from './EditorTab.svelte';
   import MonacoEditor from './MonacoEditor.svelte';
   import MediaViewer from './MediaViewer.svelte';
@@ -87,6 +88,37 @@
         isLoading: data.isLoading
       });
     });
+
+    // 🔧 FIX: Handle middle-click and target="_blank" - create new tab in current pane
+    window.electronAPI.onBrowserOpenInTab((data) => {
+      console.log('[UnifiedPane] Browser open-in-tab request:', data);
+      
+      // Find the source browser's tab to get its pane
+      const sourceTab = pane.tabs.find(t => t.type === 'browser' && t.browserId === data.sourceId);
+      
+      // Only handle if this pane contains the source browser
+      if (sourceTab) {
+        // Generate new browser ID
+        const newBrowserId = `browser-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+        
+        // Add browser to store
+        browserStore.addBrowser(newBrowserId, data.url, $activeWorkspacePath);
+        
+        // Add tab to this pane
+        editorStore.addBrowserTab(pane.id, newBrowserId);
+        
+        // If not a background tab, activate it
+        if (!data.background) {
+          // Small delay to ensure tab is created
+          setTimeout(() => {
+            const newTab = pane.tabs.find(t => t.type === 'browser' && t.browserId === newBrowserId);
+            if (newTab) {
+              editorStore.setActiveTab(pane.id, newTab.id);
+            }
+          }, 10);
+        }
+      }
+    });
   });
 
   onDestroy(() => {
@@ -102,6 +134,36 @@
 
   $: activeTab = pane.tabs.find(t => t.id === pane.activeTabId);
   $: activeBrowser = activeTab?.type === 'browser' ? allBrowsers.find(b => b.id === activeTab.browserId) : null;
+  
+  // Log browser tab rendering
+  $: if (activeTab?.type === 'browser' && activeBrowser) {
+    browserLogger.logTabRender(activeBrowser.id, {
+      id: activeTab.id,
+      name: activeTab.title || 'Untitled'
+    }, {
+      id: pane.id,
+      isActive: isActive
+    });
+    
+    // Log content div dimensions on next tick
+    setTimeout(() => {
+      const contentDiv = document.querySelector(`[data-pane-id="${pane.id}"] .browser-content`);
+      if (contentDiv) {
+        const rect = contentDiv.getBoundingClientRect();
+        browserLogger.logContentDiv(activeBrowser.id, pane.id, {
+          isVisible: contentDiv.offsetParent !== null,
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          left: Math.round(rect.left),
+          top: Math.round(rect.top),
+          clientWidth: contentDiv.clientWidth,
+          clientHeight: contentDiv.clientHeight
+        });
+        
+        browserLogger.logVisibility(activeBrowser.id, contentDiv.offsetParent !== null, 'tab rendered');
+      }
+    }, 0);
+  }
 
   function handlePaneClick() {
     editorStore.setActivePane(pane.id);
@@ -615,6 +677,20 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
         <p>No file or browser open</p>
+      </div>
+    {/if}
+    
+    <!-- Fallback container for terminal positioning when terminal is not active tab -->
+    <!-- This ensures terminals can always be positioned even when a different tab type is active -->
+    {#if activeTab && activeTab.type !== 'terminal' && pane.tabs.some(t => t.type === 'terminal')}
+      <div 
+        class="terminal-content" 
+        data-terminal-location="canvas-pane" 
+        data-pane-id={pane.id}
+        data-active-terminal={pane.tabs.find(t => t.type === 'terminal')?.terminalId}
+        style="visibility: hidden; pointer-events: none;"
+      >
+        <!-- Fallback container for positioning when terminal is not the active tab -->
       </div>
     {/if}
   </div>

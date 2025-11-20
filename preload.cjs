@@ -43,10 +43,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onBrowserLoading: (callback) => ipcRenderer.on('browser:loading', (event, data) => callback(data)),
   onBrowserError: (callback) => ipcRenderer.on('browser:error', (event, data) => callback(data)),
   onBrowserKeyboardNav: (callback) => ipcRenderer.on('browser:keyboard-nav', (event, data) => callback(data)),
+  onBrowserOpenInTab: (callback) => ipcRenderer.on('browser:open-in-tab', (event, data) => callback(data)),
   // Overlay management
   browsersHideForOverlay: () => ipcRenderer.invoke('browsers:hideForOverlay'),
   browsersShowAfterOverlay: () => ipcRenderer.invoke('browsers:showAfterOverlay'),
   onBrowsersRepositionAfterOverlay: (callback) => ipcRenderer.on('browsers:repositionAfterOverlay', () => callback()),
+  // Workspace browser management
+  browsersHideWorkspace: (workspaceId) => ipcRenderer.invoke('browsers:hideWorkspace', { workspaceId }),
+  browsersShowWorkspace: (workspaceId) => ipcRenderer.invoke('browsers:showWorkspace', { workspaceId }),
   // Mind file APIs
   mindList: (workspacePath) => ipcRenderer.invoke('mind:list', workspacePath),
   mindRead: (opts) => ipcRenderer.invoke('mind:read', opts),

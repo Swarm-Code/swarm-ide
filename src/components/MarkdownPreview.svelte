@@ -165,18 +165,22 @@
   .preview-content :global(h1) {
     font-size: 2em;
     font-weight: 600;
-    margin-top: 24px;
-    margin-bottom: 16px;
+    margin-top: 28px;
+    margin-bottom: 12px;
     padding-bottom: 8px;
     border-bottom: 1px solid var(--color-border);
     color: var(--color-text-primary);
+  }
+
+  .preview-content :global(h1:first-child) {
+    margin-top: 0;
   }
 
   .preview-content :global(h2) {
     font-size: 1.5em;
     font-weight: 600;
     margin-top: 24px;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
     padding-bottom: 8px;
     border-bottom: 1px solid var(--color-border);
     color: var(--color-text-primary);
@@ -185,8 +189,8 @@
   .preview-content :global(h3) {
     font-size: 1.25em;
     font-weight: 600;
-    margin-top: 20px;
-    margin-bottom: 12px;
+    margin-top: 18px;
+    margin-bottom: 10px;
     color: var(--color-text-primary);
   }
 
@@ -194,14 +198,14 @@
   .preview-content :global(h5),
   .preview-content :global(h6) {
     font-weight: 600;
-    margin-top: 16px;
-    margin-bottom: 12px;
+    margin-top: 14px;
+    margin-bottom: 8px;
     color: var(--color-text-primary);
   }
 
   .preview-content :global(p) {
     margin-top: 0;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
     line-height: 1.6;
   }
 
@@ -218,13 +222,17 @@
   .preview-content :global(ul),
   .preview-content :global(ol) {
     margin-top: 0;
-    margin-bottom: 16px;
-    padding-left: 32px;
+    margin-bottom: 12px;
+    padding-left: 24px;
   }
 
   .preview-content :global(li) {
-    margin-bottom: 4px;
+    margin-bottom: 6px;
     line-height: 1.6;
+  }
+
+  .preview-content :global(li p) {
+    margin-bottom: 4px;
   }
 
   /* Code blocks */
@@ -232,9 +240,9 @@
     background-color: var(--color-surface-secondary);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
-    padding: 16px;
+    padding: 12px 16px;
     overflow-x: auto;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
     font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Courier New', monospace;
     font-size: 0.9em;
     line-height: 1.5;
@@ -246,19 +254,21 @@
     border-radius: var(--radius-sm);
     font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Courier New', monospace;
     font-size: 0.9em;
+    color: var(--color-text-primary);
   }
 
   .preview-content :global(pre code) {
     background-color: transparent;
     padding: 0;
     border-radius: 0;
+    color: inherit;
   }
 
   /* Blockquotes */
   .preview-content :global(blockquote) {
-    margin: 0 0 16px 0;
-    padding-left: 16px;
-    border-left: 4px solid var(--color-border);
+    margin: 0 0 12px 0;
+    padding-left: 12px;
+    border-left: 3px solid var(--color-accent);
     color: var(--color-text-secondary);
   }
 
@@ -266,7 +276,7 @@
   .preview-content :global(table) {
     width: 100%;
     border-collapse: collapse;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
   }
 
   .preview-content :global(th),
@@ -281,25 +291,31 @@
     font-weight: 600;
   }
 
-  /* Images */
+  /* Images - proper container styling */
   .preview-content :global(img) {
     max-width: 100%;
     height: auto;
     border-radius: var(--radius-md);
-    margin-bottom: 16px;
+    margin: 12px 0;
+    display: block;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .preview-content :global(p > img) {
+    margin: 12px 0;
   }
 
   /* Horizontal rule */
   .preview-content :global(hr) {
     border: none;
     border-top: 1px solid var(--color-border);
-    margin: 24px 0;
+    margin: 20px 0;
   }
 
   /* Mermaid diagrams */
   .preview-content :global(.mermaid-diagram) {
-    margin: 24px 0;
-    padding: 16px;
+    margin: 16px 0;
+    padding: 12px;
     background-color: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
@@ -313,8 +329,8 @@
   }
 
   .preview-content :global(.mermaid-error) {
-    margin: 24px 0;
-    padding: 16px;
+    margin: 12px 0;
+    padding: 12px;
     background-color: rgba(220, 38, 38, 0.1);
     border: 1px solid rgba(220, 38, 38, 0.3);
     border-radius: var(--radius-md);
@@ -322,7 +338,7 @@
 
   .preview-content :global(.mermaid-error pre) {
     background-color: rgba(0, 0, 0, 0.2);
-    margin-bottom: 12px;
+    margin-bottom: 8px;
   }
 
   .preview-content :global(.error-message) {

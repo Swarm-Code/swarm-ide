@@ -7,6 +7,8 @@
   import { browserStore } from '../stores/browserStore.js';
   import { editorStore } from '../stores/editorStore.js';
   import { activeWorkspacePath } from '../stores/workspaceStore.js';
+  import { outputStore } from '../stores/outputStore.js';
+  import { browserLogger } from '../utils/browserLogger.js';
   import ActivityBar from './ActivityBar.svelte';
   import WorkspaceSwitcher from './WorkspaceSwitcher.svelte';
   import CanvasSwitcher from './CanvasSwitcher.svelte';
@@ -18,6 +20,7 @@
   import DiagnosticsPanel from './DiagnosticsPanel.svelte';
   import Terminal from './Terminal.svelte';
   import ChatPanel from './ChatPanel.svelte';
+  import OutputPanel from './OutputPanel.svelte';
   import SSHQuickLauncher from './SSHQuickLauncher.svelte';
 
   let currentProject = null;
@@ -25,6 +28,7 @@
   let terminalVisible = false;
   let diagnosticsVisible = false;
   let chatVisible = false; // Chat panel hidden by default
+  let outputVisible = false; // Output panel hidden by default
   let activePanel = 'explorer'; // Track which panel is active
   let activeWorkspaceId = null;
   let workspaces = [];
@@ -34,6 +38,16 @@
   let activeTerminalId = null;
   let editorLayout = null;
   let currentCanvas = null;
+  
+  // Resizable panel sizes
+  let sidebarWidth = 260; // File browser width
+  let outputHeight = 40; // Output panel height in percentage
+  let isResizingSidebar = false;
+  let isResizingOutput = false;
+  let resizeStartX = 0;
+  let resizeStartY = 0;
+  let resizeStartWidth = 0;
+  let resizeStartHeight = 0;
   // Initialize to default state to prevent null errors
   let currentEditorState = {
     layout: { type: 'pane', id: 'pane-1', tabs: [], activeTabId: null },
@@ -235,6 +249,19 @@
         );
         const owningTab = owningPane?.tabs?.find(t => t.browserId === browserId);
         
+        // Log tab selection and visibility via browserLogger
+        const isTabActive = owningPane?.activeTabId === owningTab?.id;
+        const isContainerVisible = container.offsetParent !== null;
+        browserLogger.logTabSelection(browserId, paneId, isTabActive, isContainerVisible);
+        
+        // Log pane dimensions
+        browserLogger.logPaneDimensions(paneId, browserId, {
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          left: Math.round(rect.left),
+          top: Math.round(rect.top)
+        });
+        
         console.log('[IDEWindow] 🎯 POSITIONING BROWSER:', {
           browserId: browserId,
           browserURL: browser.url,
@@ -275,9 +302,11 @@
         // We must ensure it never exceeds window boundaries
         const windowWidth = window.innerWidth;
         const windowHeight = window.innerHeight;
+        const dpr = window.devicePixelRatio;
         
-        // No safety inset here - use exact bounds from container
-        // The browser-content div already has proper containment CSS
+        // 🔧 FIX: Use container rect directly - it already represents the correct pane size
+        // The browser should fill the entire container (which is the pane's content area)
+        // Clamp to window size in CSS pixels (not divided by DPR) to prevent gaps
         const bounds = {
           x: Math.round(Math.max(0, rect.left)),
           y: Math.round(Math.max(0, rect.top)),
@@ -296,45 +325,61 @@
           continue;
         }
         
-        console.log('[IDEWindow] 🎯 Browser content container calculations for', browserId, ':');
-        console.log('[IDEWindow]   Window:', { width: windowWidth, height: windowHeight });
-        console.log('[IDEWindow]   Raw rect:', {
-          left: rect.left,
-          top: rect.top,
-          width: rect.width,
-          height: rect.height,
-          right: rect.right,
-          bottom: rect.bottom
-        });
+        // Log container and window dimensions via browserLogger
+        browserLogger.logDimensions('WINDOW', windowWidth, windowHeight, dpr);
         
-        // Log clamping details with safety inset
-        console.log('[IDEWindow] 🔒 Bounds calculation (exact fit):', {
-          original: {
-            x: Math.round(rect.left),
-            y: Math.round(rect.top),
-            width: Math.round(rect.width),
-            height: Math.round(rect.height)
-          },
-          finalBounds: bounds,
-          overflow: {
-            right: `${bounds.x} + ${bounds.width} = ${bounds.x + bounds.width} (window: ${windowWidth})`,
-            bottom: `${bounds.y} + ${bounds.height} = ${bounds.y + bounds.height} (window: ${windowHeight})`,
-            exceedsRight: bounds.x + bounds.width > windowWidth,
-            exceedsBottom: bounds.y + bounds.height > windowHeight
-          }
-        });
+        // Log DPR adjustment details
+        const originalBounds = {
+          width: Math.round(rect.width),
+          height: Math.round(rect.height)
+        };
+        browserLogger.logDPRCalculation(browserId, 
+          { width: windowWidth, height: windowHeight },
+          dpr,
+          { width: windowWidth, height: windowHeight },  // No DPR adjustment for clamping
+          originalBounds,
+          bounds
+        );
+        
+        browserLogger.logContainerCalculation(browserId, {
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          left: Math.round(rect.left),
+          top: Math.round(rect.top)
+        }, bounds);
         
         // Call Electron to position WebContentsView
         try {
+          // 🔧 FIX (DPR): Scale bounds by DPR for Electron
+          // getBoundingClientRect() returns CSS pixels
+          // Electron's setBounds() expects physical pixels
+          // When DPR < 1.0, we need to multiply by DPR to convert CSS → physical
+          const scaledBounds = {
+            x: Math.round(bounds.x * dpr),
+            y: Math.round(bounds.y * dpr),
+            width: Math.round(bounds.width * dpr),
+            height: Math.round(bounds.height * dpr)
+          };
+          
           await window.electronAPI.browserSetBounds({
             browserId: browserId,
-            bounds
+            bounds: scaledBounds
           });
           
-          // Cache the bounds we just sent
+          // Cache the bounds we just sent (store CSS pixels for comparison)
           cachedBrowserBounds.set(browserId, bounds);
           
-          console.log('[IDEWindow] ✅ Positioned browser', browserId, 'with bounds:', bounds);
+          // Log successful positioning (show both CSS and physical pixels)
+          browserLogger.logSetBounds(browserId, scaledBounds, { width: windowWidth, height: windowHeight });
+          
+          // Log the scaling that was applied
+          if (dpr !== 1.0) {
+            browserLogger.logEvent('DPR_SCALED', browserId, {
+              cssPixels: bounds,
+              physicalPixels: scaledBounds,
+              scale: dpr.toFixed(4)
+            });
+          }
           
           // Auto-focus the browser after positioning if it's the active one
           const isActiveBrowser = Array.from(canvasPanes).some(
@@ -368,6 +413,11 @@
             await window.electronAPI.browserHide({ browserId: browser.id });
             // Clear cached bounds when hiding
             cachedBrowserBounds.delete(browser.id);
+            
+            // Log visibility change via browserLogger
+            const reason = !isInCurrentWorkspace ? 'different workspace' : 'not visible in pane';
+            browserLogger.logVisibility(browser.id, false, reason);
+            
             if (!isInCurrentWorkspace) {
               console.log('[IDEWindow] Hiding browser', browser.id, '- different workspace');
             } else {
@@ -412,9 +462,25 @@
     activePanel = state.activePanel;
   });
 
-  workspaceStore.subscribe((state) => {
+  workspaceStore.subscribe(async (state) => {
+    const previousWorkspaceId = activeWorkspaceId;
     activeWorkspaceId = state.activeWorkspaceId;
     workspaces = state.workspaces;
+    
+    // 🔧 PERSISTENT BROWSERS: Hide/show browsers on workspace change
+    if (previousWorkspaceId !== activeWorkspaceId && window.electronAPI) {
+      // Hide browsers from previous workspace
+      if (previousWorkspaceId) {
+        await window.electronAPI.browsersHideWorkspace(previousWorkspaceId);
+        console.log(`[IDEWindow] Hidden browsers for workspace ${previousWorkspaceId}`);
+      }
+      
+      // Show browsers for new workspace
+      if (activeWorkspaceId) {
+        await window.electronAPI.browsersShowWorkspace(activeWorkspaceId);
+        console.log(`[IDEWindow] Showing browsers for workspace ${activeWorkspaceId}`);
+      }
+    }
   });
 
   $: activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
@@ -463,6 +529,53 @@
     terminalStore.addTerminal(terminalId, workspaceId);
     
     console.log('[IDEWindow] SSH terminal created:', terminalId);
+  }
+
+  // Sidebar resize handlers
+  function handleSidebarResizeStart(e) {
+    isResizingSidebar = true;
+    resizeStartX = e.clientX;
+    resizeStartWidth = sidebarWidth;
+    document.addEventListener('mousemove', handleSidebarResizeMove);
+    document.addEventListener('mouseup', handleSidebarResizeEnd);
+  }
+
+  function handleSidebarResizeMove(e) {
+    if (!isResizingSidebar) return;
+    const delta = e.clientX - resizeStartX;
+    sidebarWidth = Math.max(150, Math.min(500, resizeStartWidth + delta)); // Min 150px, max 500px
+  }
+
+  function handleSidebarResizeEnd() {
+    isResizingSidebar = false;
+    document.removeEventListener('mousemove', handleSidebarResizeMove);
+    document.removeEventListener('mouseup', handleSidebarResizeEnd);
+  }
+
+  // Output panel resize handlers
+  function handleOutputResizeStart(e) {
+    isResizingOutput = true;
+    resizeStartY = e.clientY;
+    resizeStartHeight = outputHeight;
+    document.addEventListener('mousemove', handleOutputResizeMove);
+    document.addEventListener('mouseup', handleOutputResizeEnd);
+  }
+
+  function handleOutputResizeMove(e) {
+    if (!isResizingOutput) return;
+    const editorArea = document.querySelector('.editor-area');
+    if (!editorArea) return;
+    
+    const containerHeight = editorArea.parentElement.clientHeight;
+    const delta = e.clientY - resizeStartY;
+    const deltaPercent = (delta / containerHeight) * 100;
+    outputHeight = Math.max(10, Math.min(80, resizeStartHeight - deltaPercent)); // Min 10%, max 80%
+  }
+
+  function handleOutputResizeEnd() {
+    isResizingOutput = false;
+    document.removeEventListener('mousemove', handleOutputResizeMove);
+    document.removeEventListener('mouseup', handleOutputResizeEnd);
   }
 
   function handleKeydown(event) {
@@ -664,6 +777,7 @@
   let editorAreaElement;
   let cachedBrowserBounds = new Map(); // browserId -> bounds (for deduplication)
   let positionBrowsersTimeout = null; // Debounce timer
+  let positionTerminalsTimeout = null; // Debounce timer for terminal positioning
   let terminalComponents = new Map(); // terminalId -> Terminal component instance
   let lastEditorLayoutJson = ''; // Track layout changes for cache invalidation
   let navigationThrottleTimeout = null; // Throttle rapid navigation to prevent state corruption
@@ -823,10 +937,11 @@
 
   <div class="ide-content">
     <ActivityBar 
+      bind:outputVisible
       {terminalVisible} 
       onToggleTerminal={() => terminalVisible = !terminalVisible}
     />
-    <div class="sidebar" class:hidden={!explorerVisible || currentCanvas?.type === 'git'}>
+    <div class="sidebar" class:hidden={!explorerVisible || currentCanvas?.type === 'git'} style="width: {sidebarWidth}px">
       {#if activePanel === 'git' && !activeWorkspace?.isSSH}
         <GitPanel />
       {:else if currentCanvas?.type === 'mind'}
@@ -834,12 +949,25 @@
       {:else}
         <FileExplorer projectPath={workspacePath} />
       {/if}
+      <div 
+        class="sidebar-resize-handle" 
+        on:mousedown={handleSidebarResizeStart}
+        class:resizing={isResizingSidebar}
+      ></div>
     </div>
     <div class="main-area">
-      <div class="editor-area" style="height: {terminalVisible || diagnosticsVisible ? '60%' : '100%'}">
+      <div class="editor-area" style="height: {outputVisible ? (100 - outputHeight) + '%' : '100%'}">
         <EditorCanvas />
       </div>
-      <!-- Bottom panel removed - terminals now only in canvas -->
+      <!-- Output Panel - Bottom horizontal -->
+      <div class="output-panel-container" class:hidden={!outputVisible} style="height: {outputHeight}%">
+        <div 
+          class="output-resize-handle" 
+          on:mousedown={handleOutputResizeStart}
+          class:resizing={isResizingOutput}
+        ></div>
+        <OutputPanel />
+      </div>
     </div>
     <div class="chat-sidebar" class:hidden={!chatVisible}>
       <ChatPanel />
@@ -948,14 +1076,32 @@
   }
 
   .sidebar {
-    width: 260px;
     background-color: var(--color-surface-secondary);
     border-right: 1px solid var(--color-border);
     overflow-y: auto;
+    position: relative;
+    flex-shrink: 0;
   }
 
   .sidebar.hidden {
     display: none;
+  }
+
+  .sidebar-resize-handle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    cursor: col-resize;
+    background-color: transparent;
+    transition: background-color var(--transition-fast);
+    z-index: 100;
+  }
+
+  .sidebar-resize-handle:hover,
+  .sidebar-resize-handle.resizing {
+    background-color: var(--color-accent);
   }
 
   .ssh-placeholder {
@@ -1049,6 +1195,37 @@
   .terminal-area.hidden,
   .diagnostics-area.hidden {
     display: none;
+  }
+
+  .output-panel-container {
+    background-color: var(--color-background);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--color-border);
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .output-panel-container.hidden {
+    display: none;
+  }
+
+  .output-resize-handle {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    cursor: row-resize;
+    background-color: transparent;
+    transition: background-color var(--transition-fast);
+    z-index: 100;
+  }
+
+  .output-resize-handle:hover,
+  .output-resize-handle.resizing {
+    background-color: var(--color-accent);
   }
 
   .chat-sidebar {
