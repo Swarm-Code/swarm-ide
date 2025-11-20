@@ -3,6 +3,7 @@
   import { fileExplorerStore } from '../stores/fileExplorerStore.js';
   import { workspaceStore } from '../stores/workspaceStore.js';
   import ContextMenu from './ContextMenu.svelte';
+  import IconRenderer from './IconRenderer.svelte';
 
   export let item;
   export let level = 0;
@@ -640,25 +641,7 @@
   {/if}
   
   <div class="file-icon">
-    {#if item.isDirectory}
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-        />
-      </svg>
-    {:else}
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="2"
-          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-        />
-      </svg>
-    {/if}
+    <IconRenderer name={item.name} isFolder={item.isDirectory} size="16px" />
   </div>
   <span class="file-name">{item.name}</span>
 </button>
@@ -668,25 +651,7 @@
     <div class="new-item-container" style="padding-left: {(level + 1) * 16 + 8}px">
       <span class="chevron-spacer"></span>
       <div class="file-icon">
-        {#if newItemType === 'folder'}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-            />
-          </svg>
-        {:else}
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-            />
-          </svg>
-        {/if}
+        <IconRenderer name={newItemType === 'folder' ? 'folder' : 'file'} isFolder={newItemType === 'folder'} size="16px" />
       </div>
       <input
         type="text"

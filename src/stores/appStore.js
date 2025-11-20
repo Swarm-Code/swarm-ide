@@ -8,6 +8,7 @@ function createAppStore() {
     activePanel: 'explorer', // 'explorer', 'git', 'search'
     sidebarVisible: true, // sidebar visibility
     overlayVisible: false, // tracks if any overlay (workspace switcher, modals) is open
+    iconTheme: 'material', // 'material' or 'vscode'
   });
 
   return {
@@ -34,6 +35,7 @@ function createAppStore() {
       ...state,
       overlayVisible: visible
     })),
+    setIconTheme: (theme) => update((state) => ({ ...state, iconTheme: theme })),
   };
 }
 

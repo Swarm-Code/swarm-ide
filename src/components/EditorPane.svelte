@@ -1,15 +1,20 @@
 <script>
+  import { onMount, onDestroy } from 'svelte';
   import { editorStore } from '../stores/editorStore.js';
+  import { workspaceStore } from '../stores/workspaceStore.js';
   import EditorTab from './EditorTab.svelte';
   import MonacoEditor from './MonacoEditor.svelte';
   import TipTapEditor from './TipTapEditor.svelte';
   import DiffEditor from './DiffEditor.svelte';
   import CommitView from './CommitView.svelte';
+  import TimelinePanel from './TimelinePanel.svelte';
 
   export let pane;
   export let isActive = false;
 
   let dragOverIndex = null;
+  let showTimeline = false;
+  let timelineWidth = 250;
 
   function handleTabSelect(event) {
     editorStore.setActiveTab(pane.id, event.detail.tabId);
@@ -140,9 +145,85 @@
   function handleEditorChange(newContent) {
     if (activeTab) {
       editorStore.setTabDirty(pane.id, activeTab.id, true);
-      // TODO: Update tab content in store
+      editorStore.updateTabContent(activeTab.id, newContent);
     }
   }
+  
+  async function handleSave(content) {
+    if (!activeTab || activeTab.type !== 'editor') return;
+    
+    const filePath = activeTab.path;
+    if (!filePath) return;
+    
+    // Get current workspace to check if SSH
+    let activeWorkspace = null;
+    const unsubscribe = workspaceStore.subscribe(state => {
+      activeWorkspace = state.workspaces.find(w => w.id === state.activeWorkspaceId);
+    });
+    unsubscribe();
+    
+    try {
+      let result;
+      
+      if (activeWorkspace?.isSSH) {
+        // Save via SFTP
+        const connectionId = activeWorkspace.sshConnection.id;
+        result = await window.electronAPI.sshSftpWriteFile(connectionId, filePath, content);
+      } else {
+        // Save locally
+        result = await window.electronAPI.writeFile(filePath, content);
+        
+        // Save timeline snapshot for local files
+        if (result && result.success && activeWorkspace?.path) {
+          await window.electronAPI.timelineSaveSnapshot({
+            workspacePath: activeWorkspace.path,
+            filePath,
+            content,
+            source: 'user'
+          });
+        }
+      }
+      
+      if (result && result.success) {
+        editorStore.setTabDirty(pane.id, activeTab.id, false);
+        console.log('[EditorPane] File saved:', filePath);
+      } else {
+        console.error('[EditorPane] Failed to save:', result?.error);
+        alert(`Failed to save file: ${result?.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('[EditorPane] Save error:', error);
+      alert(`Failed to save file: ${error.message}`);
+    }
+  }
+
+  function toggleTimeline() {
+    showTimeline = !showTimeline;
+  }
+
+  function handleTimelineEntrySelect(entry, content) {
+    // Open diff view comparing current with selected snapshot
+    if (activeTab && activeTab.type === 'editor') {
+      console.log('[EditorPane] Timeline entry selected:', entry.id);
+      // Could open a diff view here
+    }
+  }
+
+  // Listen for timeline restore events
+  onMount(() => {
+    const handleRestore = (event) => {
+      const { filePath: restoredPath, content } = event.detail;
+      if (activeTab && activeTab.path === restoredPath) {
+        editorStore.updateTabContent(activeTab.id, content);
+      }
+    };
+    
+    window.addEventListener('timeline:restored', handleRestore);
+    
+    return () => {
+      window.removeEventListener('timeline:restored', handleRestore);
+    };
+  });
 </script>
 
 <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -178,6 +259,19 @@
       {/each}
     </div>
     <div class="tab-actions">
+      {#if activeTab && activeTab.type === 'editor'}
+        <button
+          class="action-button"
+          class:active={showTimeline}
+          on:click={toggleTimeline}
+          title="Toggle Timeline"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
+            <circle cx="8" cy="8" r="6" stroke-width="1.5" />
+            <path stroke-linecap="round" stroke-width="1.5" d="M8 5v3l2 2" />
+          </svg>
+        </button>
+      {/if}
       <button
         class="action-button"
         on:click={handleSplitHorizontal}
@@ -215,45 +309,59 @@
     </div>
   </div>
 
-  <div class="editor-content">
-    {#if activeTab}
-      {#key activeTab.id}
-        {#if activeTab.type === 'diff'}
-          <DiffEditor
-            originalContent={activeTab.originalContent || ''}
-            modifiedContent={activeTab.modifiedContent || ''}
-            language={activeTab.language || 'plaintext'}
-            filePath={activeTab.filePath || ''}
-            isStaged={activeTab.isStaged || false}
-          />
-        {:else if activeTab.type === 'commit'}
-          <CommitView />
-        {:else if activeTab.type === 'mind'}
-          <TipTapEditor
-            content={activeTab.content || ''}
-            filePath={activeTab.path}
-            onContentChange={handleEditorChange}
-          />
-        {:else}
-          <MonacoEditor
-            content={activeTab.content || ''}
-            language={getLanguageFromFilename(activeTab.name)}
-            onChange={handleEditorChange}
-            readOnly={false}
-          />
-        {/if}
-      {/key}
-    {:else}
-      <div class="empty-pane">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-          />
-        </svg>
-        <p>No file open</p>
+  <div class="editor-content-wrapper">
+    <div class="editor-content">
+      {#if activeTab}
+        {#key activeTab.id}
+          {#if activeTab.type === 'diff'}
+            <DiffEditor
+              originalContent={activeTab.originalContent || ''}
+              modifiedContent={activeTab.modifiedContent || ''}
+              language={activeTab.language || 'plaintext'}
+              filePath={activeTab.filePath || ''}
+              isStaged={activeTab.isStaged || false}
+            />
+          {:else if activeTab.type === 'commit'}
+            <CommitView />
+          {:else if activeTab.type === 'mind'}
+            <TipTapEditor
+              content={activeTab.content || ''}
+              filePath={activeTab.path}
+              onContentChange={handleEditorChange}
+            />
+          {:else}
+            <MonacoEditor
+              content={activeTab.content || ''}
+              language={getLanguageFromFilename(activeTab.name)}
+              onChange={handleEditorChange}
+              onSave={handleSave}
+              filePath={activeTab.path}
+              readOnly={false}
+            />
+          {/if}
+        {/key}
+      {:else}
+        <div class="empty-pane">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+            />
+          </svg>
+          <p>No file open</p>
+        </div>
+      {/if}
+    </div>
+    
+    {#if showTimeline && activeTab && activeTab.type === 'editor'}
+      <div class="timeline-container" style="width: {timelineWidth}px">
+        <TimelinePanel
+          filePath={activeTab.path}
+          onSelectEntry={handleTimelineEntrySelect}
+          onClose={() => showTimeline = false}
+        />
       </div>
     {/if}
   </div>
@@ -338,12 +446,29 @@
     height: 14px;
   }
 
+  .action-button.active {
+    background-color: var(--color-accent);
+    color: white;
+  }
+
+  .editor-content-wrapper {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
   .editor-content {
     flex: 1;
     overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .timeline-container {
+    flex-shrink: 0;
+    height: 100%;
+    overflow: hidden;
   }
 
   .empty-pane {

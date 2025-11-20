@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readDirectory: (path) => ipcRenderer.invoke('fs:readDirectory', path),
   readFile: (path) => ipcRenderer.invoke('fs:readFile', path),
   readFileBinary: (path) => ipcRenderer.invoke('fs:readFileBinary', path),
+  writeFile: (path, content) => ipcRenderer.invoke('fs:writeFile', path, content),
   openInExplorer: (path) => ipcRenderer.invoke('fs:openInExplorer', path),
   // Workspace APIs
   workspaceGetAll: () => ipcRenderer.invoke('workspace:getAll'),
@@ -90,4 +91,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sshSftpRmdir: (connectionId, remotePath) => ipcRenderer.invoke('ssh:sftp:rmdir', { connectionId, remotePath }),
   sshSftpRename: (connectionId, oldPath, newPath) => ipcRenderer.invoke('ssh:sftp:rename', { connectionId, oldPath, newPath }),
   sshSftpStat: (connectionId, remotePath) => ipcRenderer.invoke('ssh:sftp:stat', { connectionId, remotePath }),
+  // Timeline/History APIs
+  timelineSaveSnapshot: (opts) => ipcRenderer.invoke('timeline:saveSnapshot', opts),
+  timelineGetEntries: (opts) => ipcRenderer.invoke('timeline:getEntries', opts),
+  timelineGetSnapshot: (opts) => ipcRenderer.invoke('timeline:getSnapshot', opts),
+  timelineRestoreSnapshot: (opts) => ipcRenderer.invoke('timeline:restoreSnapshot', opts),
+  timelineWatchFile: (opts) => ipcRenderer.invoke('timeline:watchFile', opts),
+  timelineUnwatchFile: (opts) => ipcRenderer.invoke('timeline:unwatchFile', opts),
+  onTimelineFileChanged: (callback) => ipcRenderer.on('timeline:fileChanged', (event, data) => callback(data)),
+  // Clipboard and file upload APIs
+  getClipboardImage: () => ipcRenderer.invoke('clipboard:getImage'),
+  uploadFile: (opts) => ipcRenderer.invoke('file:upload', opts),
+  sshSftpUploadFile: (connectionId, remotePath, filePath) => ipcRenderer.invoke('ssh:sftp:uploadFile', { connectionId, remotePath, filePath }),
 });

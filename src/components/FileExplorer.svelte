@@ -17,9 +17,11 @@
   let contextMenuX = 0;
   let contextMenuY = 0;
   let isDragOver = false;
-  let showMindPanel = false;
-  let mindFiles = [];
-  let newMindName = '';
+  
+  // Search state
+  let showSearch = false;
+  let searchQuery = '';
+  let searchResults = [];
   
   // Auto-refresh interval
   let refreshInterval = null;
@@ -176,6 +178,61 @@
     stopAutoRefresh();
   });
 
+  // Deep compare trees to check if anything actually changed
+  function treesEqual(a, b) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i].name !== b[i].name || 
+          a[i].path !== b[i].path || 
+          a[i].isDirectory !== b[i].isDirectory) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // Deep merge that preserves children and returns same reference if unchanged
+  function mergeTreeItems(currentTree, newItems) {
+    let hasChanges = false;
+    
+    if (currentTree.length !== newItems.length) {
+      hasChanges = true;
+    }
+    
+    const merged = newItems.map(newItem => {
+      const existing = currentTree.find(f => f.path === newItem.path);
+      
+      if (!existing) {
+        hasChanges = true;
+        return newItem;
+      }
+      
+      // Check if item properties changed
+      if (existing.name !== newItem.name || 
+          existing.isDirectory !== newItem.isDirectory) {
+        hasChanges = true;
+        return existing.children 
+          ? { ...newItem, children: existing.children }
+          : newItem;
+      }
+      
+      // Return existing reference to prevent re-render
+      return existing;
+    });
+    
+    // Check for removed items
+    if (!hasChanges) {
+      for (const curr of currentTree) {
+        if (!newItems.find(n => n.path === curr.path)) {
+          hasChanges = true;
+          break;
+        }
+      }
+    }
+    
+    return hasChanges ? merged : null;
+  }
+
   async function loadDirectory(path, silent = false) {
     if (!window.electronAPI) {
       console.error('Electron API not available');
@@ -188,15 +245,13 @@
     }
     const items = await window.electronAPI.readDirectory(path);
     
-    // Only update if there are actual changes (compare stringified versions)
-    const currentTreeString = JSON.stringify(fileTree);
-    const newTreeString = JSON.stringify(items);
-    
-    if (currentTreeString !== newTreeString) {
+    // Merge and only update if there are actual changes
+    const merged = mergeTreeItems(fileTree, items);
+    if (merged) {
       if (!silent) {
         console.log('[FileExplorer] 🔄 File tree changed, updating...');
       }
-      fileExplorerStore.setFileTree(items);
+      fileExplorerStore.setFileTree(merged);
     }
   }
   
@@ -208,13 +263,11 @@
       
       if (!result.success) return;
 
-      // Only update if there are actual changes
-      const currentTreeString = JSON.stringify(fileTree);
-      const newTreeString = JSON.stringify(result.items);
-      
-      if (currentTreeString !== newTreeString) {
+      // Merge and only update if there are actual changes
+      const merged = mergeTreeItems(fileTree, result.items);
+      if (merged) {
         console.log('[FileExplorer] 🔄 SSH file tree changed, updating...');
-        fileExplorerStore.setFileTree(result.items);
+        fileExplorerStore.setFileTree(merged);
       }
     } catch (error) {
       // Silently fail on refresh errors
@@ -287,65 +340,52 @@
     }
   }
 
-  async function loadMindFiles() {
-    if (!window.electronAPI || !currentWorkspacePath) return;
-    
-    const result = await window.electronAPI.mindList(currentWorkspacePath);
-    if (result.success) {
-      mindFiles = result.files;
+  // Search files recursively
+  function searchFilesRecursive(items, query, results = []) {
+    const lowerQuery = query.toLowerCase();
+    for (const item of items) {
+      if (item.name.toLowerCase().includes(lowerQuery)) {
+        results.push(item);
+      }
+      if (item.children) {
+        searchFilesRecursive(item.children, query, results);
+      }
+    }
+    return results;
+  }
+  
+  function handleSearch() {
+    if (!searchQuery.trim()) {
+      searchResults = [];
+      return;
+    }
+    searchResults = searchFilesRecursive(fileTree, searchQuery.trim());
+  }
+  
+  function handleSearchKeydown(e) {
+    if (e.key === 'Enter') {
+      handleSearch();
+    } else if (e.key === 'Escape') {
+      showSearch = false;
+      searchQuery = '';
+      searchResults = [];
     }
   }
-
-  async function handleCreateMind() {
-    if (!newMindName.trim() || !currentWorkspacePath || !window.electronAPI) return;
-    
-    const name = newMindName.trim();
-    
-    const result = await window.electronAPI.mindWrite({
-      workspacePath: currentWorkspacePath,
-      name,
-      content: '<p>Start writing...</p>'
-    });
-    
-    if (result.success) {
-      editorStore.openMind(name, '<p>Start writing...</p>');
-      await loadMindFiles();
-      newMindName = '';
+  
+  function handleSearchResultClick(item) {
+    if (item.isDirectory) {
+      fileExplorerStore.toggleFolder(item.path);
+    } else {
+      fileExplorerStore.selectFile(item);
+      editorStore.openFile(item.path, item.name);
     }
+    showSearch = false;
+    searchQuery = '';
+    searchResults = [];
   }
-
-  async function handleOpenMind(name) {
-    if (!currentWorkspacePath || !window.electronAPI) return;
-    
-    const result = await window.electronAPI.mindRead({
-      workspacePath: currentWorkspacePath,
-      name
-    });
-    
-    if (result.success) {
-      editorStore.openMind(name, result.content);
-    }
-  }
-
-  async function handleDeleteMind(name, event) {
-    event.stopPropagation();
-    
-    if (!confirm(`Delete mind "${name}"?`)) return;
-    
-    if (!currentWorkspacePath || !window.electronAPI) return;
-    
-    const result = await window.electronAPI.mindDelete({
-      workspacePath: currentWorkspacePath,
-      name
-    });
-    
-    if (result.success) {
-      await loadMindFiles();
-    }
-  }
-
-  $: if (showMindPanel && currentWorkspacePath) {
-    loadMindFiles();
+  
+  $: if (searchQuery) {
+    handleSearch();
   }
 
   function handleContextMenu(event) {
@@ -401,6 +441,50 @@
     closeContextMenu();
   }
 
+  async function handleCreateFile() {
+    if (!currentWorkspacePath) return;
+    
+    const fileName = prompt('Enter file name:');
+    if (!fileName || !fileName.trim()) return;
+    
+    if (!window.electronAPI) return;
+    
+    try {
+      const filePath = `${currentWorkspacePath}/${fileName.trim()}`;
+      const result = await window.electronAPI.createFile(filePath);
+      
+      if (result.success) {
+        await loadDirectory(currentWorkspacePath);
+      } else {
+        alert(`Failed to create file: ${result.error}`);
+      }
+    } catch (error) {
+      alert(`Error creating file: ${error.message}`);
+    }
+  }
+
+  async function handleCreateFolder() {
+    if (!currentWorkspacePath) return;
+    
+    const folderName = prompt('Enter folder name:');
+    if (!folderName || !folderName.trim()) return;
+    
+    if (!window.electronAPI) return;
+    
+    try {
+      const folderPath = `${currentWorkspacePath}/${folderName.trim()}`;
+      const result = await window.electronAPI.createFolder(folderPath);
+      
+      if (result.success) {
+        await loadDirectory(currentWorkspacePath);
+      } else {
+        alert(`Failed to create folder: ${result.error}`);
+      }
+    } catch (error) {
+      alert(`Error creating folder: ${error.message}`);
+    }
+  }
+
   // Drag and drop handlers for root-level drops
   function handleExplorerDragEnter(event) {
     event.preventDefault();
@@ -435,48 +519,133 @@
     if (files.length === 0) return;
 
     try {
-      const existingContents = await window.electronAPI.readDirectory(currentWorkspacePath);
-      const existingNames = new Set(existingContents.map(f => f.name));
+      // For SSH workspaces, use SFTP upload
+      if (activeWorkspace?.isSSH && activeWorkspace?.sshConnection?.id) {
+        console.log('[FileExplorer] 🔌 SSH drag-drop, uploading files via SFTP');
+        const connectionId = activeWorkspace.sshConnection.id;
 
-      for (const file of files) {
-        const fileName = file.name;
-        let destinationPath = `${currentWorkspacePath}/${fileName}`;
-        let finalFileName = fileName;
+        for (const file of files) {
+          const fileName = file.name;
+          let remoteDestPath = `${currentWorkspacePath}/${fileName}`;
 
-        if (existingNames.has(fileName)) {
-          let counter = 1;
-          const nameParts = fileName.split('.');
-          const hasExtension = nameParts.length > 1;
-          const ext = hasExtension ? nameParts.pop() : '';
-          const baseName = nameParts.join('.');
+          try {
+            const result = await window.electronAPI.sshSftpUploadFile(
+              connectionId,
+              remoteDestPath,
+              file.path
+            );
 
-          while (existingNames.has(finalFileName)) {
-            if (hasExtension) {
-              finalFileName = `${baseName} (${counter}).${ext}`;
-            } else {
-              finalFileName = `${fileName} (${counter})`;
+            if (!result.success) {
+              console.error('SSH upload failed:', result.error);
+              alert(`Failed to upload ${fileName}: ${result.error}`);
             }
-            counter++;
+          } catch (uploadError) {
+            console.error('SSH upload error:', uploadError);
+            alert(`Error uploading ${fileName}: ${uploadError.message}`);
           }
-          destinationPath = `${currentWorkspacePath}/${finalFileName}`;
-          existingNames.add(finalFileName);
         }
 
-        const result = await window.electronAPI.copyPath({
-          sourcePath: file.path,
+        // Reload directory after uploads
+        await loadSSHDirectory(connectionId, currentWorkspacePath);
+      } else {
+        // Local drag-drop
+        console.log('[FileExplorer] 📁 Local drag-drop, copying files');
+        const existingContents = await window.electronAPI.readDirectory(currentWorkspacePath);
+        const existingNames = new Set(existingContents.map(f => f.name));
+
+        for (const file of files) {
+          const fileName = file.name;
+          let destinationPath = `${currentWorkspacePath}/${fileName}`;
+          let finalFileName = fileName;
+
+          if (existingNames.has(fileName)) {
+            let counter = 1;
+            const nameParts = fileName.split('.');
+            const hasExtension = nameParts.length > 1;
+            const ext = hasExtension ? nameParts.pop() : '';
+            const baseName = nameParts.join('.');
+
+            while (existingNames.has(finalFileName)) {
+              if (hasExtension) {
+                finalFileName = `${baseName} (${counter}).${ext}`;
+              } else {
+                finalFileName = `${fileName} (${counter})`;
+              }
+              counter++;
+            }
+            destinationPath = `${currentWorkspacePath}/${finalFileName}`;
+            existingNames.add(finalFileName);
+          }
+
+          const result = await window.electronAPI.uploadFile({
+            sourcePath: file.path,
+            destinationPath: destinationPath
+          });
+
+          if (!result.success) {
+            console.error('Copy failed:', result.error);
+            alert(`Failed to copy ${fileName}: ${result.error}`);
+          }
+        }
+
+        await loadDirectory(currentWorkspacePath);
+      }
+    } catch (error) {
+      console.error('Drop error:', error);
+      alert(`Failed to upload files: ${error.message}`);
+    }
+  }
+
+  async function handlePasteScreenshot() {
+    if (!currentWorkspacePath || !window.electronAPI) return;
+
+    try {
+      const imageResult = await window.electronAPI.getClipboardImage();
+      if (!imageResult.success) {
+        alert(imageResult.error || 'No image in clipboard');
+        return;
+      }
+
+      const fileName = imageResult.filename;
+      const sourcePath = imageResult.path;
+
+      // Paste into workspace
+      if (activeWorkspace?.isSSH && activeWorkspace?.sshConnection?.id) {
+        console.log('[FileExplorer] 🔌 Pasting screenshot to SSH via SFTP');
+        const connectionId = activeWorkspace.sshConnection.id;
+        const remoteDestPath = `${currentWorkspacePath}/${fileName}`;
+
+        const result = await window.electronAPI.sshSftpUploadFile(
+          connectionId,
+          remoteDestPath,
+          sourcePath
+        );
+
+        if (result.success) {
+          console.log('[FileExplorer] Screenshot saved to SSH:', remoteDestPath);
+          await loadSSHDirectory(connectionId, currentWorkspacePath);
+        } else {
+          alert(`Failed to paste screenshot: ${result.error}`);
+        }
+      } else {
+        console.log('[FileExplorer] 📁 Pasting screenshot to local workspace');
+        const destinationPath = `${currentWorkspacePath}/${fileName}`;
+
+        const result = await window.electronAPI.uploadFile({
+          sourcePath: sourcePath,
           destinationPath: destinationPath
         });
 
-        if (!result.success) {
-          console.error('Copy failed:', result.error);
-          alert(`Failed to copy ${fileName}: ${result.error}`);
+        if (result.success) {
+          console.log('[FileExplorer] Screenshot saved to:', destinationPath);
+          await loadDirectory(currentWorkspacePath);
+        } else {
+          alert(`Failed to paste screenshot: ${result.error}`);
         }
       }
-
-      await loadDirectory(currentWorkspacePath);
     } catch (error) {
-      console.error('Drop error:', error);
-      alert(`Failed to copy files: ${error.message}`);
+      console.error('Paste screenshot error:', error);
+      alert(`Error pasting screenshot: ${error.message}`);
     }
   }
 
@@ -490,6 +659,11 @@
       label: 'Go to Parent Folder',
       icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>',
       action: handleGoToParent,
+    },
+    {
+      label: 'Paste Screenshot',
+      icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>',
+      action: handlePasteScreenshot,
     },
   ];
 </script>
@@ -506,47 +680,70 @@
   role="tree"
   tabindex="-1"
 >
-  <div class="mind-section">
-    <button 
-      class="mind-toggle" 
-      class:active={showMindPanel}
-      on:click={() => showMindPanel = !showMindPanel}
-    >
-      <svg class="chevron" class:open={showMindPanel} viewBox="0 0 16 16" fill="none" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 4l4 4-4 4" />
-      </svg>
-      <span>🧠 Mind</span>
-    </button>
+  <div class="search-section">
+    <div class="button-row">
+      <button 
+        class="search-toggle" 
+        class:active={showSearch}
+        on:click={() => showSearch = !showSearch}
+        title="Search files (Ctrl+P)"
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 11l3 3m-4.5-2a4.5 4.5 0 110-9 4.5 4.5 0 010 9z" />
+        </svg>
+      </button>
 
-    {#if showMindPanel}
-      <div class="mind-panel">
-        <div class="mind-create">
-          <input
-            type="text"
-            class="mind-input"
-            bind:value={newMindName}
-            placeholder="New mind note..."
-            on:keydown={(e) => e.key === 'Enter' && handleCreateMind()}
-          />
-          <button class="mind-create-btn" on:click={handleCreateMind} disabled={!newMindName.trim()}>
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 4v8m-4-4h8" />
-            </svg>
-          </button>
-        </div>
+      <button 
+        class="action-button" 
+        on:click={handleCreateFile}
+        title="Create new file"
+        disabled={!currentWorkspacePath}
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 2v12M2 8h12" />
+        </svg>
+      </button>
 
-        <div class="mind-list">
-          {#each mindFiles as mind}
-            <button class="mind-item" on:click={() => handleOpenMind(mind.name)}>
-              <span class="mind-name">{mind.name}</span>
-              <button class="mind-delete" on:click={(e) => handleDeleteMind(mind.name, e)} title="Delete">
+      <button 
+        class="action-button" 
+        on:click={handleCreateFolder}
+        title="Create new folder"
+        disabled={!currentWorkspacePath}
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2 4v8a1 1 0 001 1h10a1 1 0 001-1V6a1 1 0 00-1-1H8L7 4H3a1 1 0 00-1 1zM8 8v3m-1.5-1.5h3" />
+        </svg>
+      </button>
+    </div>
+
+    {#if showSearch}
+      <div class="search-panel">
+        <input
+          type="text"
+          class="search-input"
+          bind:value={searchQuery}
+          placeholder="Search files..."
+          on:keydown={handleSearchKeydown}
+          autofocus
+        />
+        {#if searchResults.length > 0}
+          <div class="search-results">
+            {#each searchResults.slice(0, 20) as item}
+              <button class="search-result-item" on:click={() => handleSearchResultClick(item)}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4l8 8m0-8l-8 8" />
+                  {#if item.isDirectory}
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2 4v8a1 1 0 001 1h10a1 1 0 001-1V6a1 1 0 00-1-1H8L7 4H3a1 1 0 00-1 1z" />
+                  {:else}
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 2v12h8V6l-4-4H4zm4 0v4h4" />
+                  {/if}
                 </svg>
+                <span class="result-name">{item.name}</span>
               </button>
-            </button>
-          {/each}
-        </div>
+            {/each}
+          </div>
+        {:else if searchQuery}
+          <div class="no-results">No files found</div>
+        {/if}
       </div>
     {/if}
   </div>
@@ -596,58 +793,87 @@
     border: 3px dashed var(--color-accent);
   }
 
-  .mind-section {
+  .search-section {
+    padding: var(--spacing-xs);
     border-bottom: 1px solid var(--color-border);
   }
 
-  .mind-toggle {
+  .button-row {
+    display: flex;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-xs);
+  }
+
+  .search-toggle {
+    width: 28px;
+    height: 28px;
     display: flex;
     align-items: center;
-    gap: var(--spacing-xs);
-    width: 100%;
-    padding: var(--spacing-sm) var(--spacing-md);
+    justify-content: center;
     background: transparent;
-    border: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
     color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--transition-fast);
+    flex-shrink: 0;
   }
 
-  .mind-toggle:hover {
+  .search-toggle:hover {
     background-color: var(--color-surface-hover);
     color: var(--color-text-primary);
+    border-color: var(--color-border-secondary);
   }
 
-  .mind-toggle.active {
-    color: var(--color-text-primary);
+  .search-toggle.active {
+    background-color: var(--color-accent);
+    color: white;
+    border-color: var(--color-accent);
   }
 
-  .chevron {
-    width: 12px;
-    height: 12px;
-    transition: transform var(--transition-fast);
+  .search-toggle svg {
+    width: 14px;
+    height: 14px;
   }
 
-  .chevron.open {
-    transform: rotate(90deg);
-  }
-
-  .mind-panel {
-    padding: var(--spacing-sm);
-    background-color: var(--color-surface-hover);
-  }
-
-  .mind-create {
+  .action-button {
+    width: 28px;
+    height: 28px;
     display: flex;
-    gap: var(--spacing-xs);
-    margin-bottom: var(--spacing-sm);
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
   }
 
-  .mind-input {
-    flex: 1;
-    padding: var(--spacing-xs);
+  .action-button:hover:not(:disabled) {
+    background-color: var(--color-surface-hover);
+    color: var(--color-text-primary);
+    border-color: var(--color-border-secondary);
+  }
+
+  .action-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .action-button svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .search-panel {
+    margin-top: var(--spacing-xs);
+  }
+
+  .search-input {
+    width: 100%;
+    padding: var(--spacing-sm);
     background-color: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
@@ -656,97 +882,56 @@
     outline: none;
   }
 
-  .mind-input:focus {
+  .search-input:focus {
     border-color: var(--color-accent);
   }
 
-  .mind-create-btn {
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--color-accent);
-    border: none;
-    border-radius: var(--radius-sm);
-    color: white;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-  }
-
-  .mind-create-btn:hover:not(:disabled) {
-    background-color: var(--color-accent-hover);
-  }
-
-  .mind-create-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .mind-create-btn svg {
-    width: 14px;
-    height: 14px;
-  }
-
-  .mind-list {
+  .search-results {
+    margin-top: var(--spacing-xs);
+    max-height: 200px;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 2px;
   }
 
-  .mind-item {
+  .search-result-item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: var(--spacing-sm);
     padding: var(--spacing-xs) var(--spacing-sm);
-    background-color: var(--color-surface);
+    background: transparent;
     border: none;
     border-radius: var(--radius-sm);
     color: var(--color-text-primary);
     font-size: var(--font-size-sm);
     cursor: pointer;
-    transition: all var(--transition-fast);
-  }
-
-  .mind-item:hover {
-    background-color: var(--color-surface-secondary);
-  }
-
-  .mind-name {
-    flex: 1;
     text-align: left;
+    transition: background var(--transition-fast);
+  }
+
+  .search-result-item:hover {
+    background-color: var(--color-surface-hover);
+  }
+
+  .search-result-item svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    color: var(--color-text-tertiary);
+  }
+
+  .result-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .mind-delete {
-    width: 20px;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: var(--radius-sm);
-    color: var(--color-text-secondary);
-    opacity: 0;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-  }
-
-  .mind-item:hover .mind-delete {
-    opacity: 1;
-  }
-
-  .mind-delete:hover {
-    background-color: var(--color-error);
-    color: white;
-  }
-
-  .mind-delete svg {
-    width: 12px;
-    height: 12px;
+  .no-results {
+    padding: var(--spacing-sm);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-tertiary);
+    text-align: center;
   }
 
   .file-list {

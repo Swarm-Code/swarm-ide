@@ -12,6 +12,8 @@
   import DocumentViewer from './DocumentViewer.svelte';
   import MarkdownPreview from './MarkdownPreview.svelte';
   import TipTapEditor from './TipTapEditor.svelte';
+  import ConfirmDialog from './ConfirmDialog.svelte';
+import { workspaceStore } from '../stores/workspaceStore.js';
 
   export let pane;
   export let isActive = false;
@@ -20,9 +22,16 @@
   const createdBrowsers = new Set();
   let dragOverIndex = null;
   let overlayVisible = false;
+  let confirmDialogOpen = false;
+  let closeTabPending = null;
+  let activeWorkspace = null;
 
   browserStore.subscribe((state) => {
     allBrowsers = state.browsers;
+  });
+
+  workspaceStore.subscribe((state) => {
+    activeWorkspace = state.workspaces.find(w => w.id === state.activeWorkspaceId);
   });
 
   appStore.subscribe((state) => {
@@ -175,17 +184,39 @@
 
   function handleTabClose(event) {
     const tab = pane.tabs.find(t => t.id === event.detail.tabId);
-    if (tab) {
-      if (tab.type === 'browser' && window.electronAPI && createdBrowsers.has(tab.browserId)) {
-        window.electronAPI.browserDestroy({ browserId: tab.browserId });
-        createdBrowsers.delete(tab.browserId);
-        browserStore.removeBrowser(tab.browserId);
-      } else if (tab.type === 'terminal') {
-        // Remove terminal completely (kill the process)
-        terminalStore.removeTerminal(tab.terminalId);
-      }
-      editorStore.closeTab(pane.id, event.detail.tabId);
+    if (!tab) return;
+
+    // Check for unsaved changes in editor tabs
+    if (tab.type === 'editor' && tab.isDirty) {
+      closeTabPending = { tabId: tab.id, tab };
+      confirmDialogOpen = true;
+      return;
     }
+
+    // Proceed with closing
+    closeTabInternal(tab);
+  }
+
+  function closeTabInternal(tab) {
+    if (tab.type === 'browser' && window.electronAPI && createdBrowsers.has(tab.browserId)) {
+      window.electronAPI.browserDestroy({ browserId: tab.browserId });
+      createdBrowsers.delete(tab.browserId);
+      browserStore.removeBrowser(tab.browserId);
+    } else if (tab.type === 'terminal') {
+      terminalStore.removeTerminal(tab.terminalId);
+    }
+    editorStore.closeTab(pane.id, tab.id);
+  }
+
+  function handleConfirmClose() {
+    if (closeTabPending) {
+      closeTabInternal(closeTabPending.tab);
+      closeTabPending = null;
+    }
+  }
+
+  function handleCancelClose() {
+    closeTabPending = null;
   }
 
   function handleSplitHorizontal() {
@@ -308,6 +339,33 @@
       editorStore.setTabDirty(pane.id, activeTab.id, true);
       // Update content for live preview
       activeTab.content = newContent;
+    }
+  }
+
+  async function handleEditorSave(content) {
+    if (!activeTab || activeTab.type !== 'editor') return;
+    
+    console.log('[UnifiedPane] Saving file:', activeTab.path);
+    
+    if (!window.electronAPI) return;
+    
+    let result;
+    
+    // Check if SSH workspace
+    if (activeWorkspace?.isSSH && activeWorkspace?.sshConnection?.id) {
+      console.log('[UnifiedPane] 🔌 SSH workspace detected, using SFTP');
+      const connectionId = activeWorkspace.sshConnection.id;
+      result = await window.electronAPI.sshSftpWriteFile(connectionId, activeTab.path, content);
+    } else {
+      console.log('[UnifiedPane] 📁 Local workspace, using local FS');
+      result = await window.electronAPI.writeFile(activeTab.path, content);
+    }
+    
+    if (result.success) {
+      editorStore.setTabDirty(pane.id, activeTab.id, false);
+      console.log('[UnifiedPane] File saved successfully:', activeTab.path);
+    } else {
+      console.error('[UnifiedPane] Failed to save file:', result.error);
     }
   }
 
@@ -588,6 +646,7 @@
                   content={activeTab.content || ''}
                   language={getLanguageFromFilename(activeTab.name)}
                   onChange={handleEditorChange}
+                  onSave={handleEditorSave}
                   readOnly={false}
                   scrollSync={scrollSync}
                 />
@@ -611,6 +670,7 @@
               content={activeTab.content || ''}
               language={getLanguageFromFilename(activeTab.name)}
               onChange={handleEditorChange}
+              onSave={handleEditorSave}
               readOnly={false}
             />
           {/if}
@@ -695,6 +755,17 @@
     {/if}
   </div>
 </div>
+
+<ConfirmDialog
+  isOpen={confirmDialogOpen}
+  title="Close without saving?"
+  message={closeTabPending ? `The file "${closeTabPending.tab.name}" has unsaved changes. Are you sure you want to close it without saving?` : ''}
+  confirmText="Close"
+  cancelText="Cancel"
+  isDangerous={true}
+  onConfirm={handleConfirmClose}
+  onCancel={handleCancelClose}
+/>
 
 <style>
   .unified-pane {

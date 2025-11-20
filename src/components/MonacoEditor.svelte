@@ -8,6 +8,7 @@
   export let content = '';
   export let language = 'javascript';
   export let onChange = null;
+  export let onSave = null; // Callback when Ctrl+S is pressed
   export let readOnly = false;
   export let filePath = null; // File path for LSP
   export let scrollSync = null; // { onEditorScroll: (percent) => void }
@@ -18,6 +19,7 @@
   let lspInitialized = false;
   let currentLanguage = language;
   let isScrolling = false;
+  let saveCallback = onSave; // Track save callback for updates
 
   async function initializeLsp() {
     if (!hasLspSupport(language)) {
@@ -134,6 +136,20 @@
         }));
       }
     );
+    
+    // Ctrl+S: Save file
+    editor.addCommand(
+      monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
+      () => {
+        console.log('[MonacoEditor] Ctrl+S pressed, saveCallback:', !!saveCallback);
+        if (saveCallback) {
+          saveCallback(editor.getValue());
+        }
+      }
+    );
+    
+    // Ctrl+Z: Undo (Monaco handles this natively)
+    // Ctrl+Shift+Z or Ctrl+Y: Redo (Monaco handles this natively)
 
     // Listen for content changes
     editor.onDidChangeModelContent(() => {
@@ -236,6 +252,9 @@
   $: if (editor && editor.updateOptions) {
     editor.updateOptions({ readOnly });
   }
+
+  // Update save callback when onSave prop changes
+  $: saveCallback = onSave;
 </script>
 
 <div class="monaco-editor-wrapper" bind:this={editorContainer}></div>

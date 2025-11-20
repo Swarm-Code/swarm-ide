@@ -23,6 +23,7 @@
   import ChatPanel from './ChatPanel.svelte';
   import OutputPanel from './OutputPanel.svelte';
   import SSHQuickLauncher from './SSHQuickLauncher.svelte';
+  import IconThemeSettings from './IconThemeSettings.svelte';
 
   let currentProject = null;
   let explorerVisible = true; // Local state like terminal
@@ -926,6 +927,7 @@
     </div>
     <div class="header-right">
       <SSHQuickLauncher onConnect={handleSSHConnect} />
+      <IconThemeSettings />
       <button class="chat-toggle-button" on:click={() => chatVisible = !chatVisible} title={chatVisible ? 'Hide Chat' : 'Show Chat'}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <path

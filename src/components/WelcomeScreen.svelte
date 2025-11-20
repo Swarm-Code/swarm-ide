@@ -9,10 +9,334 @@
   let recentProjects = [];
   let lastSession = null;
   let showSSHDialog = false;
-  let showSSHMenu = false;
+  let showSSHConnectionsMenu = false;
   let editingConnection = null;
+  
+  // Text animation state - 1:1 tte decrypt effect
+  let logoChars = [];
+  let suffixText = '';
+  let showContent = false;
+  let characterLines = [];
+  let characterLineColors = [];
+  const targetText = 'SWARM';
+  const targetSuffix = 'IDE';
+  
+  // Swarm character ASCII art - lines for animation
+  const swarmCharacterLines = [
+    '         ⣿⣿⣿⣿⣿⣿⣿            ⣿⣿⣿⣿⣿⣿⣿         ',
+    '         ⣿⣿⣿⣿⣿⣿⣿            ⣿⣿⣿⣿⣿⣿⣿         ',
+    '         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿         ',
+    '         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿         ',
+    '    ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿         ',
+    '    ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿   ⣿⣿⣿⣿⣿⣿⣿   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿     ',
+    '    ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿    ⣿⣿⣿⣿⣿⣿   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿     ',
+    '         ⣿⣿⣿⣿⣿⣿    ⣿⣿⣿⣿⣿⣿   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿     ',
+    '         ⣿⣿⣿⣿⣿⣿    ⣿⣿⣿⣿⣿⣿   ⣿⣿⣿⣿⣿⣿          ',
+    '         ⣿⣿⣿⣿⣿⣿    ⣿⣿⣿⣿⣿⣿   ⣿⣿⣿⣿⣿⣿          ',
+    '         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿          ',
+    '         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿          ',
+    '     ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿     ',
+    '    ⣿⣿⣿⣿⣿⣿    ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿    ⣿⣿⣿⣿⣿⣿     ',
+    '    ⣿⣿⣿⣿⣿⣿    ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿    ⣿⣿⣿⣿⣿⣿     ',
+    '    ⣿⣿⣿⣿⣿⣿    ⣿⣿⣿⣿⣿⣿    ⣿⣿⣿⣿⣿               ',
+    '              ⣿⣿⣿⣿⣿⣿    ⣿⣿⣿⣿⣿               ',
+    '              ⣿⣿⣿⣿⣿⣿    ⣿⣿⣿⣿⣿               '
+  ];
+
+  // Fallback ASCII art using standard characters for better cross-system compatibility
+  const swarmCharacterLinesFallback = [
+    '         ##########            ##########         ',
+    '         ##########            ##########         ',
+    '         #################### ####################         ',
+    '         #################### ####################         ',
+    '    #################### #################### ####################         ',
+    '    ####################   ##########   ####################     ',
+    '    ####################    ##########   ####################     ',
+    '         ##########    ##########   ####################     ',
+    '         ##########    ##########          ',
+    '         ##########    ##########          ',
+    '         #################### ####################          ',
+    '         #################### ####################          ',
+    '     #################### #################### ####################     ',
+    '    ####################    ####################    ####################     ',
+    '    ####################    ####################    ####################     ',
+    '    ####################    ##################               ',
+    '              ##################               ',
+    '              ##################               '
+  ];
+
+  // Swarm character ASCII art - large version
+  const swarmCharacterLarge = `                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                            ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                            ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                            ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                            ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                            ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+          ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿          
+         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿          
+         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿          
+         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿          
+          ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿          
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿          
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+                  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                   
+         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿          
+         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿          
+         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿          
+         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿          
+         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿          
+         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿         ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿          
+                            ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                             
+                            ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                             
+                            ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                             
+                            ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿                             
+                            ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿        ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿`;
+  
+  // Use medium by default, can add responsive logic later
+  // Note: swarmCharacter is now dynamically assigned based on Unicode support below
+  
+  // Encrypted symbols from tte decrypt effect
+  const keyboard = Array.from({length: 94}, (_, i) => String.fromCharCode(33 + i));
+  const blocks = ['█', '▉', '▊', '▋', '▌', '▍', '▎', '▏', '▐', '░', '▒', '▓'];
+  const boxDrawing = ['─', '│', '┌', '┐', '└', '┘', '├', '┤', '┬', '┴', '┼', '═', '║', '╔', '╗', '╚', '╝', '╠', '╣', '╦', '╩', '╬'];
+  const braille = ['⠀', '⠁', '⠂', '⠃', '⠄', '⠅', '⠆', '⠇', '⠈', '⠉', '⠊', '⠋', '⠌', '⠍', '⠎', '⠏', '⠐', '⠑', '⠒', '⠓', '⠔', '⠕', '⠖', '⠗', '⠘', '⠙', '⠚', '⠛', '⠜', '⠝', '⠞', '⠟', '⠠', '⠡', '⠢', '⠣', '⠤', '⠥', '⠦', '⠧', '⠨', '⠩', '⠪', '⠫', '⠬', '⠭', '⠮', '⠯', '⠰', '⠱', '⠲', '⠳', '⠴', '⠵', '⠶', '⠷', '⠸', '⠹', '⠺', '⠻', '⠼', '⠽', '⠾', '⠿', '⡀', '⡁', '⡂', '⡃', '⡄', '⡅', '⡆', '⡇', '⡈', '⡉', '⡊', '⡋', '⡌', '⡍', '⡎', '⡏', '⡐', '⡑', '⡒', '⡓', '⡔', '⡕', '⡖', '⡗', '⡘', '⡙', '⡚', '⡛', '⡜', '⡝', '⡞', '⡟', '⡠', '⡡', '⡢', '⡣', '⡤', '⡥', '⡦', '⡧', '⡨', '⡩', '⡪', '⡫', '⡬', '⡭', '⡮', '⡯', '⡰', '⡱', '⡲', '⡳', '⡴', '⡵', '⡶', '⡷', '⡸', '⡹', '⡺', '⡻', '⡼', '⡽', '⡾', '⡿', '⢀', '⢁', '⢂', '⢃', '⢄', '⢅', '⢆', '⢇', '⢈', '⢉', '⢊', '⢋', '⢌', '⢍', '⢎', '⢏', '⢐', '⢑', '⢒', '⢓', '⢔', '⢕', '⢖', '⢗', '⢘', '⢙', '⢚', '⢛', '⢜', '⢝', '⢞', '⢟', '⢠', '⢡', '⢢', '⢣', '⢤', '⢥', '⢦', '⢧', '⢨', '⢩', '⢪', '⢫', '⢬', '⢭', '⢮', '⢯', '⢰', '⢱', '⢲', '⢳', '⢴', '⢵', '⢶', '⢷', '⢸', '⢹', '⢺', '⢻', '⢼', '⢽', '⢾', '⢿', '⣀', '⣁', '⣂', '⣃', '⣄', '⣅', '⣆', '⣇', '⣈', '⣉', '⣊', '⣋', '⣌', '⣍', '⣎', '⣏', '⣐', '⣑', '⣒', '⣓', '⣔', '⣕', '⣖', '⣗', '⣘', '⣙', '⣚', '⣛', '⣜', '⣝', '⣞', '⣟', '⣠', '⣡', '⣢', '⣣', '⣤', '⣥', '⣦', '⣧', '⣨', '⣩', '⣪', '⣫', '⣬', '⣭', '⣮', '⣯', '⣰', '⣱', '⣲', '⣳', '⣴', '⣵', '⣶', '⣷', '⣸', '⣹', '⣺', '⣻', '⣼', '⣽', '⣾', '⣿'];
+  const encryptedSymbols = [...keyboard, ...blocks, ...boxDrawing, ...braille];
+  
+  // Ciphertext colors (green shades like tte)
+  const cipherColors = ['#008000', '#00cb00', '#00ff00'];
+  // Final color (orange/gold like tte default)
+  const finalColor = '#eda000';
+
+  // Function to check if Unicode characters render properly
+  function testUnicodeSupport() {
+    // Check if we're in a browser environment
+    if (typeof document === 'undefined') {
+      console.warn('Document not available, assuming Unicode support');
+      return false; // Safer default for SSR or non-browser environments
+    }
+
+    try {
+      const testDiv = document.createElement('div');
+      testDiv.innerHTML = '⣿';
+      testDiv.style.fontFamily = 'monospace';
+      testDiv.style.fontSize = '14px';
+      testDiv.style.position = 'absolute';
+      testDiv.style.visibility = 'hidden';
+      testDiv.style.display = 'block';
+      document.body.appendChild(testDiv);
+
+      const width = testDiv.offsetWidth;
+      const height = testDiv.offsetHeight;
+
+      document.body.removeChild(testDiv);
+
+      // Return true if character has reasonable dimensions (rendered properly)
+      return width > 0 && height > 0;
+    } catch (error) {
+      console.warn('Unicode support test failed:', error);
+      return false; // Fallback to standard characters if test fails
+    }
+  }
+
+  // Determine which ASCII art to use based on font support
+  const useUnicodeFont = testUnicodeSupport();
+  const swarmCharacter = useUnicodeFont ? swarmCharacterLines : swarmCharacterLinesFallback;
+
+  function randomSymbol() {
+    return encryptedSymbols[Math.floor(Math.random() * encryptedSymbols.length)];
+  }
+  
+  function randomColor() {
+    return cipherColors[Math.floor(Math.random() * cipherColors.length)];
+  }
+  
+  async function animateLogo() {
+    try {
+      // Phase 0: Animate character line by line with hacker effect
+      characterLines = [];
+      characterLineColors = [];
+    
+    for (let i = 0; i < swarmCharacterLines.length; i++) {
+      // Add scrambled line first
+      let scrambledLine = '';
+      const targetLine = swarmCharacterLines[i];
+      for (let j = 0; j < targetLine.length; j++) {
+        if (targetLine[j] === ' ') {
+          scrambledLine += ' ';
+        } else {
+          scrambledLine += encryptedSymbols[Math.floor(Math.random() * encryptedSymbols.length)];
+        }
+      }
+      characterLines = [...characterLines, scrambledLine];
+      characterLineColors = [...characterLineColors, randomColor()];
+      await new Promise(r => setTimeout(r, 25));
+      
+      // Decrypt to final
+      characterLines[i] = targetLine;
+      characterLineColors[i] = randomColor();
+      characterLines = [...characterLines];
+      characterLineColors = [...characterLineColors];
+    }
+    
+    // Flash all lines to final color
+    await new Promise(r => setTimeout(r, 150));
+    for (let i = 0; i < characterLineColors.length; i++) {
+      characterLineColors[i] = finalColor;
+    }
+    characterLineColors = [...characterLineColors];
+    
+    await new Promise(r => setTimeout(r, 300));
+    
+    // Initialize character states
+    logoChars = targetText.split('').map((char, i) => ({
+      symbol: ' ',
+      color: randomColor(),
+      final: char,
+      phase: 'hidden',
+      index: i
+    }));
+    
+    // Phase 1: Typing effect - characters appear with block animation
+    for (let i = 0; i < logoChars.length; i++) {
+      logoChars[i].phase = 'typing';
+      
+      // Block sequence like tte: ▉ ▓ ▒ ░ then random symbol
+      const typingBlocks = ['▉', '▓', '▒', '░'];
+      for (const block of typingBlocks) {
+        logoChars[i].symbol = block;
+        logoChars[i].color = randomColor();
+        logoChars = [...logoChars];
+        await new Promise(r => setTimeout(r, 25));
+      }
+      
+      logoChars[i].symbol = randomSymbol();
+      logoChars[i].color = randomColor();
+      logoChars = [...logoChars];
+      
+      // Small delay between characters (75% chance)
+      if (Math.random() < 0.75) {
+        await new Promise(r => setTimeout(r, 15));
+      }
+    }
+    
+    await new Promise(r => setTimeout(r, 100));
+    
+    // Phase 2: Fast decrypt - all characters scramble rapidly
+    const fastDecryptFrames = 25;
+    for (let frame = 0; frame < fastDecryptFrames; frame++) {
+      for (let i = 0; i < logoChars.length; i++) {
+        logoChars[i].symbol = randomSymbol();
+        logoChars[i].color = randomColor();
+      }
+      logoChars = [...logoChars];
+      await new Promise(r => setTimeout(r, 20));
+    }
+    
+    // Phase 3: Slow decrypt - characters resolve at different times
+    const resolveDelays = logoChars.map(() => Math.floor(Math.random() * 15) + 1);
+    const maxDelay = Math.max(...resolveDelays);
+    
+    for (let frame = 0; frame < maxDelay + 10; frame++) {
+      for (let i = 0; i < logoChars.length; i++) {
+        if (frame >= resolveDelays[i] && logoChars[i].phase !== 'resolved') {
+          // Discovered - flash white then settle to final color
+          if (logoChars[i].phase !== 'discovering') {
+            logoChars[i].phase = 'discovering';
+            logoChars[i].symbol = logoChars[i].final;
+            logoChars[i].color = '#ffffff';
+          } else {
+            logoChars[i].phase = 'resolved';
+            logoChars[i].color = finalColor;
+          }
+        } else if (logoChars[i].phase !== 'resolved' && logoChars[i].phase !== 'discovering') {
+          // Still decrypting - random symbols with varying speed
+          if (Math.random() < 0.7) {
+            logoChars[i].symbol = randomSymbol();
+            logoChars[i].color = randomColor();
+          }
+        }
+      }
+      logoChars = [...logoChars];
+      await new Promise(r => setTimeout(r, 40));
+    }
+    
+    // Ensure all resolved
+    for (let i = 0; i < logoChars.length; i++) {
+      logoChars[i].symbol = logoChars[i].final;
+      logoChars[i].color = finalColor;
+      logoChars[i].phase = 'resolved';
+    }
+    logoChars = [...logoChars];
+    
+    // Small pause then animate suffix
+    await new Promise(r => setTimeout(r, 150));
+    
+    for (let i = 0; i <= targetSuffix.length; i++) {
+      suffixText = targetSuffix.slice(0, i);
+      await new Promise(r => setTimeout(r, 60));
+    }
+    
+    await new Promise(r => setTimeout(r, 200));
+    showContent = true;
+
+    } catch (error) {
+      console.error('ASCII art animation failed:', error);
+
+      // Fallback to simple display if animation fails
+      try {
+        // Use fallback ASCII art if main one fails
+        characterLines = swarmCharacterLinesFallback;
+        characterLineColors = swarmCharacterLinesFallback.map(() => finalColor);
+        characterLines = [...characterLines];
+        characterLineColors = [...characterLineColors];
+
+        // Show simple logo text
+        logoChars = targetText.split('').map((char, i) => ({
+          symbol: char,
+          color: finalColor,
+          final: char,
+          phase: 'resolved',
+          index: i
+        }));
+        logoChars = [...logoChars];
+
+        suffixText = targetSuffix;
+        showContent = true;
+
+        console.log('Fallback ASCII art displayed successfully');
+      } catch (fallbackError) {
+        console.error('Fallback display also failed:', fallbackError);
+
+        // Ultimate fallback - show just text
+        logoChars = targetText.split('').map((char, i) => ({
+          symbol: char,
+          color: finalColor,
+          final: char,
+          phase: 'resolved',
+          index: i
+        }));
+        logoChars = [...logoChars];
+        suffixText = targetSuffix;
+        showContent = true;
+      }
+    }
+  }
 
   onMount(async () => {
+    // Start logo animation
+    animateLogo();
+    
     if (window.electronAPI) {
       recentProjects = await window.electronAPI.getRecentProjects();
       lastSession = await window.electronAPI.workspaceGetLastSession();
@@ -68,7 +392,7 @@
   }
 
   async function handleQuickConnect(connection) {
-    showSSHMenu = false;
+    showSSHConnectionsMenu = false;
     
     let credentials = connection.credentials;
     
@@ -159,14 +483,13 @@
   }
 
   function handleNewSSHConnection() {
-    showSSHMenu = false;
     editingConnection = null;
     showSSHDialog = true;
   }
 
   function handleEditConnection(connection, event) {
     event.stopPropagation();
-    showSSHMenu = false;
+    showSSHConnectionsMenu = false;
     editingConnection = connection;
     showSSHDialog = true;
   }
@@ -222,18 +545,16 @@
   <div class="welcome-content">
     <!-- Compact Header -->
     <header class="header">
+      {#if characterLines.length > 0}
+        <pre class="swarm-character">{#each characterLines as line, i}<span style="color: {characterLineColors[i]}">{line}</span>{'\n'}{/each}</pre>
+      {/if}
       <div class="logo">
-        <div class="logo-mark">
-          <svg viewBox="0 0 24 24" fill="none">
-            <path d="M13 3L4 14h7l-2 7 9-11h-7l2-7z" fill="currentColor"/>
-          </svg>
-        </div>
-        <span class="logo-text">SWARM<span class="logo-suffix">IDE</span></span>
+        <span class="logo-text">{#each logoChars as char}<span style="color: {char.color}">{char.symbol}</span>{/each}<span class="logo-suffix">{suffixText}</span></span>
       </div>
     </header>
 
     <!-- Start Section - Card Grid -->
-    <section class="section">
+    <section class="section" class:visible={showContent}>
       <h2 class="section-title">Start</h2>
       <div class="action-grid">
         <button class="action-card" on:click={handleOpenProject}>
@@ -248,55 +569,17 @@
           </div>
         </button>
 
-        <div class="action-card-wrapper">
-          <button class="action-card" on:click={() => showSSHMenu = !showSSHMenu}>
-            <div class="card-icon ssh">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-              </svg>
-            </div>
-            <div class="card-content">
-              <span class="card-title">SSH Remote</span>
-              <span class="card-desc">Connect to server</span>
-            </div>
-          </button>
-
-          {#if showSSHMenu}
-            <div class="dropdown-menu">
-              {#if $sshStore.connections.length > 0}
-                <div class="dropdown-section">
-                  <div class="dropdown-label">Saved Connections</div>
-                  {#each $sshStore.connections as connection}
-                    <div class="dropdown-item-row">
-                      <button class="dropdown-item" on:click={() => handleQuickConnect(connection)}>
-                        <span class="item-name">{connection.name}</span>
-                        <span class="item-meta">{connection.username}@{connection.host}</span>
-                      </button>
-                      <div class="item-actions">
-                        <button class="action-btn edit" on:click={(e) => handleEditConnection(connection, e)} title="Edit">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                          </svg>
-                        </button>
-                        <button class="action-btn delete" on:click={(e) => handleRemoveConnection(connection.id, e)} title="Delete">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
-              <button class="dropdown-item new" on:click={handleNewSSHConnection}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                </svg>
-                <span>New Connection</span>
-              </button>
-            </div>
-          {/if}
-        </div>
+        <button class="action-card" on:click={() => showSSHConnectionsMenu = true}>
+          <div class="card-icon ssh">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+          </div>
+          <div class="card-content">
+            <span class="card-title">SSH Remote</span>
+            <span class="card-desc">Connect to server</span>
+          </div>
+        </button>
 
         {#if lastSession && lastSession.workspaces && lastSession.workspaces.length > 0}
           <button class="action-card" on:click={handleRestoreSession}>
@@ -316,7 +599,7 @@
 
     <!-- Recent Projects Section -->
     {#if recentProjects.length > 0}
-      <section class="section">
+      <section class="section" class:visible={showContent}>
         <h2 class="section-title">Recent</h2>
         <div class="recent-grid">
           {#each recentProjects.slice(0, 6) as project}
@@ -337,12 +620,78 @@
     {/if}
 
     <!-- Footer -->
-    <footer class="footer">
+    <footer class="footer" class:visible={showContent}>
       <span class="shortcut"><kbd>⌘</kbd><kbd>O</kbd> Open</span>
       <span class="shortcut"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>P</kbd> Commands</span>
     </footer>
   </div>
 </div>
+
+{#if showSSHConnectionsMenu}
+  <div class="ssh-menu-overlay" on:click={() => showSSHConnectionsMenu = false}>
+    <div class="ssh-menu-container" on:click|stopPropagation>
+      <div class="ssh-menu-header">
+        <h2>SSH Connections</h2>
+        <button class="close-btn" on:click={() => showSSHConnectionsMenu = false}>×</button>
+      </div>
+
+      <div class="ssh-menu-content">
+        {#if $sshStore.connections.length > 0}
+          <div class="connections-section">
+            <h3 class="section-label">Saved Connections</h3>
+            <div class="connections-list">
+              {#each $sshStore.connections as connection}
+                <div class="connection-item">
+                  <button class="connection-button" on:click={() => {
+                    handleQuickConnect(connection);
+                    showSSHConnectionsMenu = false;
+                  }}>
+                    <div class="connection-info">
+                      <span class="connection-name">{connection.name}</span>
+                      <span class="connection-meta">{connection.username}@{connection.host}:{connection.port}</span>
+                    </div>
+                    <span class="connection-arrow">→</span>
+                  </button>
+                  <div class="connection-actions">
+                    <button class="icon-btn edit-btn" on:click={(e) => {
+                      e.stopPropagation();
+                      handleEditConnection(connection, e);
+                      showSSHConnectionsMenu = false;
+                    }} title="Edit">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                      </svg>
+                    </button>
+                    <button class="icon-btn delete-btn" on:click={(e) => {
+                      e.stopPropagation();
+                      handleRemoveConnection(connection.id, e);
+                    }} title="Delete">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+        <div class="new-connection-section">
+          <button class="new-connection-btn" on:click={() => {
+            showSSHConnectionsMenu = false;
+            handleNewSSHConnection();
+          }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            <span>New Connection</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <SSHConnectionDialog 
   bind:show={showSSHDialog}
@@ -401,32 +750,43 @@
   .header {
     text-align: center;
     margin-bottom: var(--spacing-xl);
-    animation: fadeInUp 500ms ease-out;
+  }
+
+  .swarm-character {
+    font-family: var(--font-family-mono);
+    font-size: 14px;
+    line-height: 1.1;
+    letter-spacing: 0;
+    white-space: pre;
+    margin: 0 0 var(--spacing-md) 0;
+    animation: fadeInUp 400ms ease-out;
+    transition: color 100ms ease;
+    /* Improve Unicode character rendering */
+    font-variant-ligatures: none;
+    font-feature-settings: normal;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   .logo {
     display: inline-flex;
     align-items: center;
-    gap: var(--spacing-sm);
-  }
-
-  .logo-mark {
-    width: 28px;
-    height: 28px;
-    color: var(--color-accent);
-  }
-
-  .logo-mark svg {
-    width: 100%;
-    height: 100%;
+    justify-content: center;
   }
 
   .logo-text {
     font-family: var(--font-family-mono);
-    font-size: 24px;
+    font-size: 48px;
     font-weight: 700;
-    color: var(--color-text-primary);
-    letter-spacing: -0.02em;
+    letter-spacing: 0.15em;
+    min-width: 280px;
+    display: inline-block;
+    text-align: center;
+  }
+  
+  .logo-text span {
+    transition: color 80ms ease;
   }
 
   .logo-suffix {
@@ -437,16 +797,22 @@
   /* Sections */
   .section {
     margin-bottom: var(--spacing-lg);
-    animation: fadeInUp 500ms ease-out;
-    animation-fill-mode: both;
+    opacity: 0;
+    transform: translateY(12px);
+    transition: all 400ms ease-out;
+  }
+
+  .section.visible {
+    opacity: 1;
+    transform: translateY(0);
   }
 
   .section:nth-child(2) {
-    animation-delay: 100ms;
+    transition-delay: 50ms;
   }
 
   .section:nth-child(3) {
-    animation-delay: 200ms;
+    transition-delay: 100ms;
   }
 
   .section-title {
@@ -466,9 +832,6 @@
     gap: var(--spacing-sm);
   }
 
-  .action-card-wrapper {
-    position: relative;
-  }
 
   .action-card {
     display: flex;
@@ -544,72 +907,161 @@
     text-overflow: ellipsis;
   }
 
-  /* Dropdown Menu */
-  .dropdown-menu {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    right: 0;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-    z-index: 100;
-    overflow: hidden;
-    min-width: 220px;
-    animation: scaleIn 150ms ease-out;
-    transform-origin: top center;
+  /* SSH Menu */
+  .ssh-menu-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: var(--z-modal);
+    backdrop-filter: blur(4px);
   }
 
-  .dropdown-section {
-    padding: var(--spacing-xs) 0;
+  .ssh-menu-container {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    width: 90%;
+    max-width: 500px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--color-border);
+    animation: scaleIn 200ms ease-out;
+  }
+
+  .ssh-menu-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-lg);
     border-bottom: 1px solid var(--color-border);
   }
 
-  .dropdown-label {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--color-text-tertiary);
-    padding: var(--spacing-xs) var(--spacing-sm);
+  .ssh-menu-header h2 {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+    margin: 0;
   }
 
-  .dropdown-item-row {
+  .ssh-menu-header .close-btn {
+    background: none;
+    border: none;
+    color: var(--color-text-secondary);
+    font-size: 32px;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
     display: flex;
     align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+  }
+
+  .ssh-menu-header .close-btn:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-text-primary);
+  }
+
+  .ssh-menu-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+
+  .connections-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-tertiary);
+    margin: 0 0 var(--spacing-sm) 0;
+  }
+
+  .connections-list {
+    display: flex;
+    flex-direction: column;
     gap: var(--spacing-xs);
   }
 
-  .dropdown-item-row:hover {
-    background: var(--color-surface-hover);
+  .connection-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm);
+    background: var(--color-background);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    transition: all 100ms ease;
   }
 
-  .dropdown-item {
-    display: flex;
-    flex-direction: column;
+  .connection-item:hover {
+    background: var(--color-surface-hover);
+    border-color: var(--color-border-secondary);
+  }
+
+  .connection-button {
     flex: 1;
-    padding: var(--spacing-sm) var(--spacing-sm);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     background: none;
     border: none;
-    text-align: left;
+    padding: 0;
     cursor: pointer;
-    transition: background 100ms ease;
+    text-align: left;
   }
 
-  .dropdown-item-row .dropdown-item:hover {
-    background: transparent;
-  }
-
-  .item-actions {
+  .connection-info {
     display: flex;
+    flex-direction: column;
     gap: 2px;
-    padding-right: var(--spacing-xs);
+    min-width: 0;
   }
 
-  .action-btn {
-    width: 24px;
-    height: 24px;
+  .connection-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-primary);
+  }
+
+  .connection-meta {
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-family-mono);
+  }
+
+  .connection-arrow {
+    color: var(--color-text-tertiary);
+    transition: color 100ms ease;
+  }
+
+  .connection-button:hover .connection-arrow {
+    color: var(--color-accent);
+  }
+
+  .connection-actions {
+    display: flex;
+    gap: 4px;
+  }
+
+  .icon-btn {
+    width: 28px;
+    height: 28px;
     padding: 0;
     background: none;
     border: none;
@@ -622,46 +1074,54 @@
     transition: all 100ms ease;
   }
 
-  .action-btn svg {
-    width: 12px;
-    height: 12px;
-  }
-
-  .action-btn.edit:hover {
-    background: rgba(0, 113, 227, 0.1);
-    color: var(--color-accent);
-  }
-
-  .action-btn.delete:hover {
-    background: rgba(255, 59, 48, 0.1);
-    color: #ff3b30;
-  }
-
-  .dropdown-item.new {
-    flex-direction: row;
-    align-items: center;
-    gap: var(--spacing-xs);
-    color: var(--color-accent);
-    font-size: 12px;
-    font-weight: 500;
-    padding: var(--spacing-sm);
-  }
-
-  .dropdown-item.new svg {
+  .icon-btn svg {
     width: 14px;
     height: 14px;
   }
 
-  .item-name {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--color-text-primary);
+  .icon-btn.edit-btn:hover {
+    background: rgba(0, 113, 227, 0.1);
+    color: var(--color-accent);
   }
 
-  .item-meta {
-    font-size: 10px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-family-mono);
+  .icon-btn.delete-btn:hover {
+    background: rgba(255, 59, 48, 0.1);
+    color: #ff3b30;
+  }
+
+  .new-connection-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    padding-top: var(--spacing-sm);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .new-connection-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+    background: var(--color-accent);
+    border: none;
+    border-radius: var(--radius-md);
+    color: white;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .new-connection-btn:hover {
+    background: var(--color-accent-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 113, 227, 0.2);
+  }
+
+  .new-connection-btn svg {
+    width: 16px;
+    height: 16px;
   }
 
   /* Recent Grid */
@@ -736,9 +1196,13 @@
     gap: var(--spacing-lg);
     padding-top: var(--spacing-lg);
     border-top: 1px solid var(--color-border);
-    animation: fadeIn 600ms ease-out;
-    animation-delay: 300ms;
-    animation-fill-mode: both;
+    opacity: 0;
+    transition: opacity 400ms ease-out;
+    transition-delay: 150ms;
+  }
+
+  .footer.visible {
+    opacity: 1;
   }
 
   .shortcut {

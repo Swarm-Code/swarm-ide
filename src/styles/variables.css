@@ -34,10 +34,14 @@
   --spacing-3xl: 64px;
   
   /* Typography */
-  --font-family-base: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 
+  --font-family-base: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
-  --font-family-mono: 'SF Mono', Monaco, 'Cascadia Code', 'Courier New', monospace;
-  --font-family-terminal: 'Courier New', 'Courier', monospace;
+  --font-family-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Source Code Pro',
+    'Consolas', 'Inconsolata', Monaco, 'Menlo', 'DejaVu Sans Mono', 'Noto Sans Mono', 'Liberation Mono',
+    'Courier New', monospace;
+  --font-family-terminal: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Source Code Pro',
+    'Consolas', 'Inconsolata', Monaco, 'Menlo', 'DejaVu Sans Mono', 'Noto Sans Mono', 'Liberation Mono',
+    'Courier New', 'Courier', monospace;
   
   --font-size-xs: 11px;
   --font-size-sm: 13px;

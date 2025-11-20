@@ -1,7 +1,8 @@
-import { app, BrowserWindow, ipcMain, dialog, WebContentsView, Menu, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, WebContentsView, Menu, shell, clipboard } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import Store from 'electron-store';
 import os from 'os';
 import pty from 'node-pty';
@@ -88,6 +89,8 @@ function createWindow() {
     },
   });
 
+  mainWindow.removeMenu();
+
   // Prevent Ctrl+R and F5 from reloading the entire Electron app
   // BUT: Only intercept when main window has focus, not when browser views are focused
   mainWindow.webContents.on('before-input-event', (event, input) => {
@@ -135,7 +138,8 @@ function createWindow() {
             "default-src 'self'; " +
             "script-src 'self'; " +
             "style-src 'self' 'unsafe-inline'; " +
-            "font-src 'self' data:"
+            "font-src 'self' data:; " +
+            "img-src 'self' data:"
           ]
         }
       });
@@ -149,7 +153,7 @@ function createWindow() {
 
   // Always load from dist folder (production build)
   mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
-  mainWindow.webContents.openDevTools();
+  // mainWindow.webContents.openDevTools(); // Uncomment for debugging
 }
 
 // IPC Handlers
@@ -333,6 +337,224 @@ ipcMain.handle('fs:readFileBinary', async (event, filePath) => {
       success: false,
       error: error.message
     };
+  }
+});
+
+// Write file
+ipcMain.handle('fs:writeFile', async (event, filePath, content) => {
+  try {
+    await fs.writeFile(filePath, content, 'utf-8');
+    return { success: true };
+  } catch (error) {
+    console.error('Error writing file:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
+// Clipboard - Get image from clipboard
+ipcMain.handle('clipboard:getImage', async (event) => {
+  try {
+    const image = clipboard.readImage();
+    if (image.isEmpty()) {
+      return { success: false, error: 'No image in clipboard' };
+    }
+    
+    // Create temp file for the image
+    const tempDir = path.join(app.getPath('temp'), 'swarmide-clipboard');
+    await fs.mkdir(tempDir, { recursive: true });
+    
+    // Generate unique filename
+    const timestamp = Date.now();
+    const filename = `screenshot-${timestamp}.png`;
+    const filepath = path.join(tempDir, filename);
+    
+    // Save PNG to temp file
+    const pngBuffer = image.toPNG();
+    await fs.writeFile(filepath, pngBuffer);
+    
+    return { 
+      success: true, 
+      path: filepath,
+      filename: filename
+    };
+  } catch (error) {
+    console.error('Error reading clipboard image:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// File Upload - Copy file to destination
+ipcMain.handle('file:upload', async (event, { sourcePath, destinationPath }) => {
+  try {
+    await fs.copyFile(sourcePath, destinationPath);
+    return { success: true };
+  } catch (error) {
+    console.error('Error uploading file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Timeline/History management (stored in .swarm/history/)
+// Save a snapshot of a file
+ipcMain.handle('timeline:saveSnapshot', async (event, { workspacePath, filePath, content, source = 'user' }) => {
+  try {
+    const historyDir = path.join(workspacePath, '.swarm', 'history');
+    await fs.mkdir(historyDir, { recursive: true });
+    
+    // Create a hash of the file path for the folder name
+    const fileHash = crypto.createHash('md5').update(filePath).digest('hex').substring(0, 12);
+    const fileHistoryDir = path.join(historyDir, fileHash);
+    await fs.mkdir(fileHistoryDir, { recursive: true });
+    
+    // Save metadata file if it doesn't exist
+    const metaPath = path.join(fileHistoryDir, 'meta.json');
+    try {
+      await fs.access(metaPath);
+    } catch {
+      await fs.writeFile(metaPath, JSON.stringify({ filePath }), 'utf-8');
+    }
+    
+    // Create snapshot with timestamp
+    const timestamp = Date.now();
+    const snapshotName = `${timestamp}-${source}.snapshot`;
+    const snapshotPath = path.join(fileHistoryDir, snapshotName);
+    
+    await fs.writeFile(snapshotPath, content, 'utf-8');
+    
+    // Keep only last 100 snapshots per file
+    const entries = await fs.readdir(fileHistoryDir);
+    const snapshots = entries.filter(e => e.endsWith('.snapshot')).sort();
+    if (snapshots.length > 100) {
+      const toDelete = snapshots.slice(0, snapshots.length - 100);
+      for (const snap of toDelete) {
+        await fs.unlink(path.join(fileHistoryDir, snap));
+      }
+    }
+    
+    return { success: true, timestamp };
+  } catch (error) {
+    console.error('Error saving timeline snapshot:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get timeline entries for a file
+ipcMain.handle('timeline:getEntries', async (event, { workspacePath, filePath }) => {
+  try {
+    const historyDir = path.join(workspacePath, '.swarm', 'history');
+    const fileHash = crypto.createHash('md5').update(filePath).digest('hex').substring(0, 12);
+    const fileHistoryDir = path.join(historyDir, fileHash);
+    
+    try {
+      await fs.access(fileHistoryDir);
+    } catch {
+      return { success: true, entries: [] };
+    }
+    
+    const files = await fs.readdir(fileHistoryDir);
+    const snapshots = files.filter(f => f.endsWith('.snapshot'));
+    
+    const entries = snapshots.map(snap => {
+      const parts = snap.replace('.snapshot', '').split('-');
+      const timestamp = parseInt(parts[0]);
+      const source = parts.slice(1).join('-') || 'unknown';
+      return {
+        id: snap,
+        timestamp,
+        source,
+        date: new Date(timestamp).toISOString(),
+      };
+    }).sort((a, b) => b.timestamp - a.timestamp);
+    
+    return { success: true, entries };
+  } catch (error) {
+    console.error('Error getting timeline entries:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get snapshot content
+ipcMain.handle('timeline:getSnapshot', async (event, { workspacePath, filePath, snapshotId }) => {
+  try {
+    const historyDir = path.join(workspacePath, '.swarm', 'history');
+    const fileHash = crypto.createHash('md5').update(filePath).digest('hex').substring(0, 12);
+    const snapshotPath = path.join(historyDir, fileHash, snapshotId);
+    
+    const content = await fs.readFile(snapshotPath, 'utf-8');
+    return { success: true, content };
+  } catch (error) {
+    console.error('Error getting snapshot:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Restore a snapshot (copy content back to original file)
+ipcMain.handle('timeline:restoreSnapshot', async (event, { workspacePath, filePath, snapshotId }) => {
+  try {
+    const historyDir = path.join(workspacePath, '.swarm', 'history');
+    const fileHash = crypto.createHash('md5').update(filePath).digest('hex').substring(0, 12);
+    const snapshotPath = path.join(historyDir, fileHash, snapshotId);
+    
+    const content = await fs.readFile(snapshotPath, 'utf-8');
+    await fs.writeFile(filePath, content, 'utf-8');
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error restoring snapshot:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Watch file for external changes (agent edits)
+const fileWatchers = new Map();
+
+ipcMain.handle('timeline:watchFile', async (event, { workspacePath, filePath }) => {
+  try {
+    const watchKey = `${workspacePath}:${filePath}`;
+    
+    if (fileWatchers.has(watchKey)) {
+      return { success: true, message: 'Already watching' };
+    }
+    
+    const watcher = fsSync.watch(filePath, async (eventType) => {
+      if (eventType === 'change') {
+        try {
+          const content = await fs.readFile(filePath, 'utf-8');
+          // Notify renderer about external change
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('timeline:fileChanged', { filePath, content });
+          }
+        } catch (err) {
+          console.error('Error reading changed file:', err);
+        }
+      }
+    });
+    
+    fileWatchers.set(watchKey, watcher);
+    return { success: true };
+  } catch (error) {
+    console.error('Error watching file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('timeline:unwatchFile', async (event, { workspacePath, filePath }) => {
+  try {
+    const watchKey = `${workspacePath}:${filePath}`;
+    const watcher = fileWatchers.get(watchKey);
+    
+    if (watcher) {
+      watcher.close();
+      fileWatchers.delete(watchKey);
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error unwatching file:', error);
+    return { success: false, error: error.message };
   }
 });
 
@@ -2038,6 +2260,32 @@ ipcMain.handle('ssh:sftp:writeFile', async (event, { connectionId, remotePath, c
 
     return new Promise((resolve) => {
       sftp.writeFile(remotePath, content, 'utf8', (err) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+          return;
+        }
+
+        resolve({ success: true });
+      });
+    });
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// SFTP Operations - Upload File (from local to remote)
+ipcMain.handle('ssh:sftp:uploadFile', async (event, { connectionId, remotePath, filePath }) => {
+  try {
+    const sftp = sshConnectionManager.getSftpSession(connectionId);
+    if (!sftp) {
+      return { success: false, error: 'SSH connection or SFTP session not found' };
+    }
+
+    // Read local file
+    const fileContent = await fs.readFile(filePath);
+
+    return new Promise((resolve) => {
+      sftp.writeFile(remotePath, fileContent, (err) => {
         if (err) {
           resolve({ success: false, error: err.message });
           return;

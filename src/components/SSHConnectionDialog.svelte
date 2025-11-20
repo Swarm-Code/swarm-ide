@@ -347,8 +347,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 10000;
+    z-index: var(--z-modal);
     backdrop-filter: blur(4px);
+    pointer-events: auto;
   }
 
   .dialog {
@@ -358,6 +359,8 @@
     max-width: 500px;
     box-shadow: var(--shadow-lg);
     border: 1px solid var(--color-border);
+    pointer-events: auto;
+    position: relative;
   }
 
   .dialog-header {
@@ -435,6 +438,7 @@
     color: var(--color-text-primary);
     font-size: var(--font-size-base);
     transition: all var(--transition-fast);
+    pointer-events: auto;
   }
 
   input[type="text"]:focus,
@@ -543,6 +547,7 @@
     font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: all var(--transition-fast);
+    pointer-events: auto;
   }
 
   .secondary-btn {
