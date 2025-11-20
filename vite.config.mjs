@@ -7,10 +7,22 @@ export default defineConfig({
   server: {
     port: 5173
   },
+  optimizeDeps: {
+    exclude: ['monaco-editor']
+  },
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
     emptyOutDir: true,
     copyPublicDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          monaco: ['monaco-editor'],
+          'mermaid': ['mermaid'],
+          'tiptap': ['@tiptap/core', '@tiptap/starter-kit'],
+        }
+      }
+    }
   }
 });

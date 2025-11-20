@@ -1,7 +1,6 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { marked } from 'marked';
-  import mermaid from 'mermaid';
   import hljs from 'highlight.js';
 
   export let content = '';
@@ -11,9 +10,12 @@
   let previewContainer;
   let renderedHtml = '';
   let isScrolling = false;
+  let mermaid = null;
 
-  // Configure mermaid
-  onMount(() => {
+  // Lazy load mermaid on mount
+  onMount(async () => {
+    const mermaidModule = await import('mermaid');
+    mermaid = mermaidModule.default;
     mermaid.initialize({
       startOnLoad: false,
       theme: isDarkTheme ? 'dark' : 'default',
