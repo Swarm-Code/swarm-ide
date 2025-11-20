@@ -13,13 +13,19 @@
   $: isBrowserMode = currentCanvas?.type === 'browser';
   
   function switchToEditor() {
-    // Find first editor canvas or create one
-    canvasStore.subscribe((state) => {
+    // Find first editor canvas and switch to it
+    let editorCanvasId = null;
+    const unsubscribe = canvasStore.subscribe((state) => {
       const editorCanvas = state.canvases.find(c => c.type === 'editor');
       if (editorCanvas) {
-        canvasStore.setActiveCanvas(editorCanvas.id);
+        editorCanvasId = editorCanvas.id;
       }
-    })();
+    });
+    unsubscribe();
+    
+    if (editorCanvasId) {
+      canvasStore.setActiveCanvas(editorCanvasId);
+    }
   }
   
   function switchToBrowser() {

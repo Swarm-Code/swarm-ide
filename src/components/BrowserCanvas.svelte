@@ -56,7 +56,9 @@
     };
     
     console.log('[BrowserCanvas] Positioning browser', activeBrowserId, bounds);
-    window.electronAPI.setBrowserBounds(activeBrowserId, bounds);
+    if (window.electronAPI?.setBrowserBounds) {
+      window.electronAPI.setBrowserBounds(activeBrowserId, bounds);
+    }
   }
 
   function handleAddBrowser() {
