@@ -9,25 +9,50 @@
   let activeWorkspaceId = null;
   let browserContentRef = null;
 
+  // Logging helper
+  function log(message, data = null) {
+    const logMsg = `[🌐 BrowserCanvas] ${message}`;
+    if (data) {
+      console.log(logMsg, data);
+    } else {
+      console.log(logMsg);
+    }
+  }
+
   const unsubBrowser = browserStore.subscribe((state) => {
+    const oldBrowsers = browsers;
     browsers = state.browsers.filter(b => b.workspaceId === activeWorkspaceId);
+    
+    log('Store update', {
+      totalBrowsers: state.browsers.length,
+      workspaceBrowsers: browsers.length,
+      activeWorkspaceId,
+      activeBrowserId
+    });
     
     // Auto-select first browser if none active
     if (browsers.length > 0 && !activeBrowserId) {
       activeBrowserId = browsers[0].id;
+      log('Auto-selected first browser', activeBrowserId);
     }
     
     // Clear selection if active browser was removed
     if (activeBrowserId && !browsers.find(b => b.id === activeBrowserId)) {
       activeBrowserId = browsers.length > 0 ? browsers[0].id : null;
+      log('Active browser removed, new selection', activeBrowserId);
     }
   });
 
   const unsubWorkspace = workspaceStore.subscribe((state) => {
+    const oldId = activeWorkspaceId;
     activeWorkspaceId = state.activeWorkspaceId;
+    if (oldId !== activeWorkspaceId) {
+      log('Workspace changed', { from: oldId, to: activeWorkspaceId });
+    }
   });
 
   onDestroy(() => {
+    log('Component destroying');
     unsubBrowser();
     unsubWorkspace();
   });
@@ -36,6 +61,7 @@
 
   // Position browser when active browser changes or on mount
   $: if (activeBrowserId && browserContentRef) {
+    log('Reactive trigger: positioning browser', { activeBrowserId, hasRef: !!browserContentRef });
     positionBrowser();
   }
 
@@ -43,7 +69,25 @@
     await tick();
     await new Promise(resolve => requestAnimationFrame(resolve));
     
-    if (!browserContentRef || !activeBrowserId || !window.electronAPI) return;
+    log('positionBrowser() called', {
+      hasRef: !!browserContentRef,
+      activeBrowserId,
+      hasElectronAPI: !!window.electronAPI,
+      hasSetBounds: !!window.electronAPI?.setBrowserBounds
+    });
+    
+    if (!browserContentRef) {
+      log('❌ No browserContentRef');
+      return;
+    }
+    if (!activeBrowserId) {
+      log('❌ No activeBrowserId');
+      return;
+    }
+    if (!window.electronAPI) {
+      log('❌ No electronAPI');
+      return;
+    }
     
     const rect = browserContentRef.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1.0;
@@ -55,20 +99,34 @@
       height: Math.round(rect.height * dpr)
     };
     
-    console.log('[BrowserCanvas] Positioning browser', activeBrowserId, bounds);
+    log('📐 Setting bounds', {
+      browserId: activeBrowserId,
+      cssRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      scaledBounds: bounds,
+      dpr
+    });
+    
     if (window.electronAPI?.setBrowserBounds) {
       window.electronAPI.setBrowserBounds(activeBrowserId, bounds);
+      log('✅ setBrowserBounds called');
+    } else {
+      log('❌ setBrowserBounds not available');
     }
   }
 
   function handleAddBrowser() {
     const browserId = `browser-${Date.now()}`;
+    log('➕ Creating new browser', { browserId, activeWorkspaceId });
+    
     browserStore.addBrowser(browserId, 'https://www.google.com', activeWorkspaceId);
     activeBrowserId = browserId;
     
     // Create the actual browser in Electron
     if (window.electronAPI?.createBrowser) {
+      log('📞 Calling createBrowser API', { browserId });
       window.electronAPI.createBrowser(browserId, 'https://www.google.com', activeWorkspaceId);
+    } else {
+      log('❌ createBrowser API not available');
     }
   }
 
@@ -120,13 +178,29 @@
   }
 
   onMount(() => {
+    log('🎬 MOUNTED', {
+      browsersCount: browsers.length,
+      activeWorkspaceId,
+      activeBrowserId,
+      hasRef: !!browserContentRef
+    });
+    
     // Create initial browser if none exist
     if (browsers.length === 0) {
+      log('No browsers exist, creating initial browser');
       handleAddBrowser();
+    } else {
+      log('Existing browsers found', browsers.map(b => b.id));
     }
     
     // Reposition on window resize
     window.addEventListener('resize', positionBrowser);
+    
+    // Force initial positioning after a short delay
+    setTimeout(() => {
+      log('⏰ Delayed positioning trigger');
+      positionBrowser();
+    }, 100);
     
     return () => {
       window.removeEventListener('resize', positionBrowser);
