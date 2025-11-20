@@ -46,22 +46,9 @@
   }
 
   function handleBrowserClick() {
-    console.log('[ActivityBar.handleBrowserClick] Creating browser...');
-    console.log('[ActivityBar.handleBrowserClick] activeWorkspaceId:', activeWorkspaceId);
-    
-    // Create a new browser instance
-    const browserId = `browser-${Date.now()}`;
-    const workspaceId = activeWorkspaceId;
-    
-    console.log('[ActivityBar.handleBrowserClick] browserId:', browserId);
-    
-    // Add to browser store
-    browserStore.addBrowser(browserId, 'https://www.google.com', workspaceId);
-    
-    // Add browser pane to editor canvas
-    editorStore.addBrowser(browserId);
-    
-    console.log('[ActivityBar.handleBrowserClick] ✅ Browser creation complete');
+    console.log('[ActivityBar.handleBrowserClick] Switching to browser canvas...');
+    // Switch to or create Browser canvas
+    canvasStore.getOrCreateBrowserCanvas();
   }
 
   function handleMindClick() {

@@ -6,6 +6,7 @@
   import EditorSplitView from './EditorSplitView.svelte';
   import MindCanvas from './MindCanvas.svelte';
   import GitCanvas from './GitCanvas.svelte';
+  import BrowserCanvas from './BrowserCanvas.svelte';
 
   let layout = null;
   let activePaneId = null;
@@ -49,6 +50,9 @@
   {:else if currentCanvas?.type === 'mind'}
     <!-- Mind canvas shows TipTap editor for notes -->
     <MindCanvas />
+  {:else if currentCanvas?.type === 'browser'}
+    <!-- Browser canvas shows full browser experience -->
+    <BrowserCanvas />
   {:else if layout}
     <!-- Regular editor canvas shows split view -->
     <EditorSplitView {layout} {activePaneId} />

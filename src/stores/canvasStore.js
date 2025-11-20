@@ -152,6 +152,39 @@ function createCanvasStore() {
       return gitCanvas;
     },
 
+    // Get or create Browser canvas
+    getOrCreateBrowserCanvas: () => {
+      let browserCanvas = null;
+      
+      update((state) => {
+        browserCanvas = state.canvases.find(c => c.type === 'browser');
+        
+        if (!browserCanvas) {
+          browserCanvas = {
+            id: `canvas-${state.nextCanvasId}`,
+            name: 'Browser',
+            type: 'browser',
+            color: '#4a9eff',
+            createdAt: Date.now(),
+          };
+          
+          return {
+            ...state,
+            canvases: [...state.canvases, browserCanvas],
+            activeCanvasId: browserCanvas.id,
+            nextCanvasId: state.nextCanvasId + 1,
+          };
+        } else {
+          return {
+            ...state,
+            activeCanvasId: browserCanvas.id,
+          };
+        }
+      });
+      
+      return browserCanvas;
+    },
+
     // Remove canvas (can't remove last one)
     removeCanvas: (canvasId) => update((state) => {
       if (state.canvases.length <= 1) return state;
