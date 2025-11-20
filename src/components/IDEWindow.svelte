@@ -10,6 +10,7 @@
   import { outputStore } from '../stores/outputStore.js';
   import { browserLogger } from '../utils/browserLogger.js';
   import ActivityBar from './ActivityBar.svelte';
+  import ModeSwitcher from './ModeSwitcher.svelte';
   import WorkspaceSwitcher from './WorkspaceSwitcher.svelte';
   import CanvasSwitcher from './CanvasSwitcher.svelte';
   import FileExplorer from './FileExplorer.svelte';
@@ -920,6 +921,9 @@
       <WorkspaceSwitcher />
       <CanvasSwitcher />
     </div>
+    <div class="header-center">
+      <ModeSwitcher />
+    </div>
     <div class="header-right">
       <SSHQuickLauncher onConnect={handleSSHConnect} />
       <button class="chat-toggle-button" on:click={() => chatVisible = !chatVisible} title={chatVisible ? 'Hide Chat' : 'Show Chat'}>
@@ -1036,6 +1040,12 @@
     align-items: center;
     gap: var(--spacing-md);
     justify-self: start;
+  }
+
+  .header-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .header-right {
