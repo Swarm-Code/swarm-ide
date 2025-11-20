@@ -70,6 +70,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // SSH APIs
   sshGetConnections: () => ipcRenderer.invoke('ssh:getConnections'),
   sshSaveConnection: (opts) => ipcRenderer.invoke('ssh:saveConnection', opts),
+  sshUpdateConnection: (opts) => ipcRenderer.invoke('ssh:updateConnection', opts),
   sshRemoveConnection: (id) => ipcRenderer.invoke('ssh:removeConnection', id),
   sshClearAllConnections: () => ipcRenderer.invoke('ssh:clearAllConnections'),
   sshSetTempCredentials: (opts) => ipcRenderer.invoke('ssh:setTempCredentials', opts),

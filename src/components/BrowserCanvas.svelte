@@ -48,6 +48,16 @@
     activeWorkspaceId = state.activeWorkspaceId;
     if (oldId !== activeWorkspaceId) {
       log('Workspace changed', { from: oldId, to: activeWorkspaceId });
+      
+      // Re-filter browsers when workspace changes
+      const allBrowsers = browserStore.getBrowsers?.() || [];
+      browsers = allBrowsers.filter(b => b.workspaceId === activeWorkspaceId);
+      
+      // Auto-select first browser if available
+      if (browsers.length > 0 && !activeBrowserId) {
+        activeBrowserId = browsers[0].id;
+        log('Auto-selected browser after workspace change', activeBrowserId);
+      }
     }
   });
 
@@ -189,12 +199,27 @@
       hasRef: !!browserContentRef
     });
     
-    // Create initial browser if none exist
-    if (browsers.length === 0) {
-      log('No browsers exist, creating initial browser');
+    // Check store directly for existing browsers in this workspace
+    let existingBrowsers = [];
+    const unsubCheck = browserStore.subscribe((state) => {
+      existingBrowsers = state.browsers.filter(b => b.workspaceId === activeWorkspaceId);
+    });
+    unsubCheck();
+    
+    log('Checking existing browsers', { 
+      count: existingBrowsers.length, 
+      ids: existingBrowsers.map(b => b.id) 
+    });
+    
+    // Only create if truly no browsers exist for this workspace
+    if (existingBrowsers.length === 0) {
+      log('No browsers exist for workspace, creating initial browser');
       handleAddBrowser();
     } else {
-      log('Existing browsers found', browsers.map(b => b.id));
+      // Select the first existing browser
+      browsers = existingBrowsers;
+      activeBrowserId = existingBrowsers[0].id;
+      log('Using existing browser', activeBrowserId);
     }
     
     // Reposition on window resize

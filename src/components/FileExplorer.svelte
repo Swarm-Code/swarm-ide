@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { fileExplorerStore } from '../stores/fileExplorerStore.js';
   import { editorStore } from '../stores/editorStore.js';
   import { workspaceStore, activeWorkspacePath } from '../stores/workspaceStore.js';
@@ -20,6 +20,10 @@
   let showMindPanel = false;
   let mindFiles = [];
   let newMindName = '';
+  
+  // Auto-refresh interval
+  let refreshInterval = null;
+  const REFRESH_INTERVAL_MS = 500;
 
   fileExplorerStore.subscribe((state) => {
     console.log('[FileExplorer] 📊 Store updated:', {
@@ -163,9 +167,16 @@
       console.log('[FileExplorer] 💻 Loading local directory on mount');
       await loadDirectory(initialPath);
     }
+    
+    // Start auto-refresh for file system changes
+    startAutoRefresh();
+  });
+  
+  onDestroy(() => {
+    stopAutoRefresh();
   });
 
-  async function loadDirectory(path) {
+  async function loadDirectory(path, silent = false) {
     if (!window.electronAPI) {
       console.error('Electron API not available');
       return;
@@ -176,7 +187,65 @@
       return;
     }
     const items = await window.electronAPI.readDirectory(path);
-    fileExplorerStore.setFileTree(items);
+    
+    // Only update if there are actual changes (compare stringified versions)
+    const currentTreeString = JSON.stringify(fileTree);
+    const newTreeString = JSON.stringify(items);
+    
+    if (currentTreeString !== newTreeString) {
+      if (!silent) {
+        console.log('[FileExplorer] 🔄 File tree changed, updating...');
+      }
+      fileExplorerStore.setFileTree(items);
+    }
+  }
+  
+  async function loadSSHDirectorySilent(connectionId, remotePath) {
+    if (!window.electronAPI) return;
+
+    try {
+      const result = await window.electronAPI.sshSftpReadDir(connectionId, remotePath);
+      
+      if (!result.success) return;
+
+      // Only update if there are actual changes
+      const currentTreeString = JSON.stringify(fileTree);
+      const newTreeString = JSON.stringify(result.items);
+      
+      if (currentTreeString !== newTreeString) {
+        console.log('[FileExplorer] 🔄 SSH file tree changed, updating...');
+        fileExplorerStore.setFileTree(result.items);
+      }
+    } catch (error) {
+      // Silently fail on refresh errors
+    }
+  }
+  
+  function startAutoRefresh() {
+    stopAutoRefresh();
+    
+    refreshInterval = setInterval(async () => {
+      if (activeWorkspace?.isSSH && activeWorkspace?.sshConnection?.id) {
+        // SSH workspace refresh
+        let remotePath = activeWorkspace.path;
+        if (remotePath.startsWith('ssh://')) {
+          const afterProto = remotePath.split('://')[1];
+          const pathStart = afterProto.indexOf('/');
+          remotePath = pathStart >= 0 ? afterProto.substring(pathStart) : '/root';
+        }
+        await loadSSHDirectorySilent(activeWorkspace.sshConnection.id, remotePath);
+      } else if (currentWorkspacePath && !currentWorkspacePath.startsWith('ssh://')) {
+        // Local workspace refresh
+        await loadDirectory(currentWorkspacePath, true);
+      }
+    }, REFRESH_INTERVAL_MS);
+  }
+  
+  function stopAutoRefresh() {
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+      refreshInterval = null;
+    }
   }
 
   async function loadSSHDirectory(connectionId, remotePath, retryCount = 0) {

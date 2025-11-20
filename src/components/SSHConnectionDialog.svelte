@@ -3,6 +3,7 @@
   import { sshStore } from '../stores/sshStore.js';
 
   export let show = false;
+  export let editConnection = null; // Connection to edit (null for new)
   
   const dispatch = createEventDispatcher();
   
@@ -18,24 +19,124 @@
   };
   
   let errors = {};
+  let isEditMode = false;
+
+  // Watch for editConnection changes
+  $: if (editConnection && show) {
+    isEditMode = true;
+    formData = {
+      name: editConnection.name || '',
+      host: editConnection.host || '',
+      port: String(editConnection.port || 22),
+      username: editConnection.username || '',
+      authMethod: editConnection.authMethod || 'password',
+      password: editConnection.credentials?.password || '',
+      privateKey: editConnection.credentials?.privateKey || '',
+      saveCredentials: editConnection.savedCredentials || false
+    };
+  } else if (show && !editConnection) {
+    isEditMode = false;
+    resetForm();
+  }
+
+  function resetForm() {
+    formData = {
+      name: '',
+      host: '',
+      port: '22',
+      username: '',
+      authMethod: 'password',
+      password: '',
+      privateKey: '',
+      saveCredentials: false
+    };
+    errors = {};
+  }
 
   function validateForm() {
     errors = {};
     if (!formData.name.trim()) errors.name = 'Name is required';
     if (!formData.host.trim()) errors.host = 'Host is required';
     if (!formData.username.trim()) errors.username = 'Username is required';
-    if (formData.authMethod === 'password' && !formData.password) {
-      errors.password = 'Password is required';
-    }
-    if (formData.authMethod === 'key' && !formData.privateKey) {
-      errors.privateKey = 'Private key is required';
+    
+    // Only require credentials for new connections or if changing auth method
+    if (!isEditMode || formData.authMethod !== editConnection?.authMethod) {
+      if (formData.authMethod === 'password' && !formData.password) {
+        errors.password = 'Password is required';
+      }
+      if (formData.authMethod === 'key' && !formData.privateKey) {
+        errors.privateKey = 'Private key is required';
+      }
     }
     return Object.keys(errors).length === 0;
   }
 
-  async function handleConnect() {
+  async function handleSave() {
     if (!validateForm()) return;
     
+    if (isEditMode) {
+      await handleUpdate();
+    } else {
+      await handleConnect();
+    }
+  }
+
+  async function handleUpdate() {
+    const updates = {
+      name: formData.name,
+      host: formData.host,
+      port: parseInt(formData.port),
+      username: formData.username,
+      authMethod: formData.authMethod,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Handle credentials
+    if (formData.saveCredentials) {
+      if (formData.password || formData.privateKey) {
+        updates.credentials = {
+          password: formData.authMethod === 'password' ? formData.password : undefined,
+          privateKey: formData.authMethod === 'key' ? formData.privateKey : undefined
+        };
+      }
+    } else {
+      updates.clearCredentials = true;
+    }
+    
+    console.log('[SSHDialog] Updating connection:', editConnection.id);
+    
+    // Update in electron store
+    if (window.electronAPI) {
+      const result = await window.electronAPI.sshUpdateConnection({
+        id: editConnection.id,
+        updates
+      });
+      console.log('[SSHDialog] Update result:', result);
+    }
+    
+    // Update local store
+    const updatedConnection = {
+      ...editConnection,
+      ...updates,
+      savedCredentials: formData.saveCredentials
+    };
+    
+    if (formData.saveCredentials && (formData.password || formData.privateKey)) {
+      updatedConnection.credentials = {
+        password: formData.authMethod === 'password' ? formData.password : undefined,
+        privateKey: formData.authMethod === 'key' ? formData.privateKey : undefined
+      };
+    } else {
+      delete updatedConnection.credentials;
+    }
+    
+    sshStore.addConnection(updatedConnection);
+    
+    dispatch('update', { connection: updatedConnection });
+    handleClose();
+  }
+
+  async function handleConnect() {
     const connection = {
       id: `ssh-${Date.now()}`,
       name: formData.name,
@@ -84,17 +185,8 @@
 
   function handleClose() {
     show = false;
-    formData = {
-      name: '',
-      host: '',
-      port: '22',
-      username: '',
-      authMethod: 'password',
-      password: '',
-      privateKey: '',
-      saveCredentials: false
-    };
-    errors = {};
+    editConnection = null;
+    resetForm();
     dispatch('close');
   }
 
@@ -112,7 +204,7 @@
   <div class="overlay" on:click={handleClose}>
     <div class="dialog" on:click|stopPropagation>
       <div class="dialog-header">
-        <h2>SSH Connection</h2>
+        <h2>{isEditMode ? 'Edit SSH Connection' : 'SSH Connection'}</h2>
         <button class="close-btn" on:click={handleClose}>×</button>
       </div>
       
@@ -192,9 +284,12 @@
               id="password"
               type="password"
               bind:value={formData.password}
-              placeholder="••••••••"
+              placeholder={isEditMode && editConnection?.savedCredentials ? '••••••••' : '••••••••'}
               class:error={errors.password}
             />
+            {#if isEditMode && editConnection?.savedCredentials && !formData.password}
+              <p class="hint">Leave blank to keep existing password</p>
+            {/if}
             {#if errors.password}<span class="error-text">{errors.password}</span>{/if}
           </div>
         {:else}
@@ -212,6 +307,9 @@
                 Browse
               </button>
             </div>
+            {#if isEditMode && editConnection?.savedCredentials && !formData.privateKey}
+              <p class="hint">Leave blank to keep existing key</p>
+            {/if}
             {#if errors.privateKey}<span class="error-text">{errors.privateKey}</span>{/if}
           </div>
         {/if}
@@ -230,7 +328,9 @@
 
       <div class="dialog-footer">
         <button class="secondary-btn" on:click={handleClose}>Cancel</button>
-        <button class="primary-btn" on:click={handleConnect}>Connect</button>
+        <button class="primary-btn" on:click={handleSave}>
+          {isEditMode ? 'Save Changes' : 'Connect'}
+        </button>
       </div>
     </div>
   </div>

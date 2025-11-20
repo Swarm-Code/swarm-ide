@@ -8,6 +8,7 @@
   let showDialog = false;
   let showDropdown = false;
   let savedConnections = [];
+  let editingConnection = null;
 
   $: savedConnections = $sshStore.connections;
 
@@ -37,11 +38,21 @@
 
   function handleNewConnection() {
     showDropdown = false;
+    editingConnection = null;
+    showDialog = true;
+  }
+
+  function handleEditConnection(connection, event) {
+    event.stopPropagation();
+    showDropdown = false;
+    editingConnection = connection;
     showDialog = true;
   }
 
   async function handleRemoveConnection(id, event) {
     event.stopPropagation();
+    if (!confirm('Delete this SSH connection?')) return;
+    
     if (window.electronAPI) {
       await window.electronAPI.sshRemoveConnection(id);
     }
@@ -50,9 +61,15 @@
 
   function handleConnect(event) {
     showDialog = false;
+    editingConnection = null;
     if (onConnect) {
       onConnect(event);
     }
+  }
+
+  function handleDialogClose() {
+    showDialog = false;
+    editingConnection = null;
   }
 
   async function handleClearAll() {
@@ -104,16 +121,28 @@
                   {connection.username}@{connection.host}:{connection.port}
                 </div>
               </div>
-              <button 
-                class="remove-btn"
-                on:click={(e) => handleRemoveConnection(connection.id, e)}
-                title="Remove connection"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                    d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              <div class="connection-actions">
+                <button 
+                  class="edit-btn"
+                  on:click={(e) => handleEditConnection(connection, e)}
+                  title="Edit connection"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+                <button 
+                  class="remove-btn"
+                  on:click={(e) => handleRemoveConnection(connection.id, e)}
+                  title="Delete connection"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
             </button>
           {/each}
         </div>
@@ -144,7 +173,10 @@
 
 <SSHConnectionDialog 
   bind:show={showDialog}
+  editConnection={editingConnection}
   on:connect={handleConnect}
+  on:update={handleConnect}
+  on:close={handleDialogClose}
 />
 
 <style>
@@ -269,6 +301,13 @@
     text-overflow: ellipsis;
   }
 
+  .connection-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .edit-btn,
   .remove-btn {
     flex-shrink: 0;
     width: 24px;
@@ -285,11 +324,17 @@
     justify-content: center;
   }
 
+  .edit-btn:hover {
+    background: rgba(0, 113, 227, 0.1);
+    color: var(--color-accent);
+  }
+
   .remove-btn:hover {
     background: rgba(255, 59, 48, 0.1);
     color: #ff3b30;
   }
 
+  .edit-btn svg,
   .remove-btn svg {
     width: 14px;
     height: 14px;

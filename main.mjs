@@ -1561,6 +1561,47 @@ ipcMain.handle('ssh:saveConnection', (event, connection) => {
   return { success: true };
 });
 
+ipcMain.handle('ssh:updateConnection', (event, { id, updates }) => {
+  const connections = store.get('sshConnections', []);
+  const index = connections.findIndex(c => c.id === id);
+  
+  if (index === -1) {
+    return { success: false, error: 'Connection not found' };
+  }
+  
+  console.log('[SSH] Updating connection:', id, 'updates:', Object.keys(updates));
+  
+  // Create updated connection
+  const updatedConnection = { ...connections[index], ...updates };
+  
+  // Handle credentials update
+  if (updates.credentials) {
+    console.log('[SSH] Encrypting updated credentials...');
+    const encryptedCreds = {};
+    
+    if (updates.credentials.password) {
+      encryptedCreds.password = encrypt(updates.credentials.password);
+    }
+    
+    if (updates.credentials.privateKey) {
+      encryptedCreds.privateKey = encrypt(updates.credentials.privateKey);
+    }
+    
+    updatedConnection.credentials = encryptedCreds;
+    updatedConnection.savedCredentials = true;
+  } else if (updates.clearCredentials) {
+    // Explicitly clear credentials
+    delete updatedConnection.credentials;
+    updatedConnection.savedCredentials = false;
+  }
+  
+  connections[index] = updatedConnection;
+  store.set('sshConnections', connections);
+  
+  console.log('[SSH] Connection updated successfully');
+  return { success: true };
+});
+
 ipcMain.handle('ssh:removeConnection', (event, id) => {
   const connections = store.get('sshConnections', []);
   store.set('sshConnections', connections.filter(c => c.id !== id));
