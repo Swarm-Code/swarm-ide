@@ -197,8 +197,8 @@
         innerHeight: window.innerHeight 
       });
       
-      // Find all browser content areas in the DOM
-      const canvasPanes = document.querySelectorAll('[data-browser-location="canvas-pane"]');
+      // Find all browser content areas in the DOM (both panes and browser canvas)
+      const canvasPanes = document.querySelectorAll('[data-browser-location="canvas-pane"], [data-browser-location="browser-canvas"]');
       console.log('[IDEWindow] 🔍 Found', canvasPanes.length, 'canvas panes');
       
       // Log all workspaces and panes
