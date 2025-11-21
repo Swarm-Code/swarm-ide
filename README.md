@@ -42,4 +42,4 @@ ide /path/to/project
 
 ## License
 
-MIT
+Copyright © 2025 Swarm Code. All rights reserved.
