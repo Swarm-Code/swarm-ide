@@ -241,10 +241,14 @@
   <!-- Tab bar -->
   <div class="browser-tabs">
     {#each browsers as browser (browser.id)}
+      <!-- svelte-ignore a11y-click-events-have-key-events -->
       <div 
         class="browser-tab"
         class:active={browser.id === activeBrowserId}
+        role="button"
+        tabindex="0"
         on:click={() => handleSelectBrowser(browser.id)}
+        on:keydown={(e) => { if (e.key === 'Enter') handleSelectBrowser(browser.id); }}
       >
         <span class="tab-title">{browser.title || new URL(browser.url).hostname}</span>
         <button 

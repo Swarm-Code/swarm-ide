@@ -46,7 +46,8 @@
   </button>
 
   {#if showSettings}
-    <div class="settings-backdrop" on:click={() => showSettings = false}></div>
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <div class="settings-backdrop" on:click={() => showSettings = false} role="presentation"></div>
     <div class="settings-panel">
       <div class="settings-header">
         <h3>Icon Theme</h3>

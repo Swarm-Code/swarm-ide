@@ -1,6 +1,7 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import * as monaco from 'monaco-editor';
+  import { zoomStore } from '../stores/zoomStore.js';
   import { lspManager } from '../lsp/LspManager.js';
   import { monacoLspAdapter } from '../lsp/MonacoLspAdapter.js';
   import { getLspConfig, hasLspSupport } from '../lsp/lsp-config.js';
@@ -20,6 +21,8 @@
   let currentLanguage = language;
   let isScrolling = false;
   let saveCallback = onSave; // Track save callback for updates
+  let currentZoom = 1;
+  const BASE_FONT_SIZE = 14;
 
   async function initializeLsp() {
     if (!hasLspSupport(language)) {
@@ -189,8 +192,29 @@
     // Initialize LSP if supported
     await initializeLsp();
 
+    // Subscribe to zoom level changes
+    const unsubscribeZoom = zoomStore.subscribe((state) => {
+      console.log(`[MonacoEditor] Store update - editorZoomLevel: ${state.editorZoomLevel}, currentZoom: ${currentZoom}, editor exists: ${!!editor}`);
+      
+      if (state.editorZoomLevel !== currentZoom && editor) {
+        currentZoom = state.editorZoomLevel;
+        const newFontSize = BASE_FONT_SIZE * currentZoom;
+        console.log(`[MonacoEditor] 🔍 Applying zoom: ${(currentZoom * 100).toFixed(0)}% (font: ${newFontSize.toFixed(1)}px)`);
+        
+        editor.updateOptions({ fontSize: newFontSize });
+        console.log(`[MonacoEditor] ✅ Updated editor fontSize to ${newFontSize}`);
+      } else {
+        if (!editor) {
+          console.log(`[MonacoEditor] ⚠️ Editor not yet initialized`);
+        } else {
+          console.log(`[MonacoEditor] No zoom change - levels match or already applied`);
+        }
+      }
+    });
+
     return () => {
       mediaQuery.removeEventListener('change', handleThemeChange);
+      unsubscribeZoom();
     };
   });
 
@@ -231,7 +255,16 @@
   $: if (editor && content !== currentContent) {
     currentContent = content;
     const position = editor.getPosition();
-    editor.setValue(content);
+    const model = editor.getModel();
+    if (model) {
+      model.pushEditOperations(
+        [],
+        [{ range: model.getFullModelRange(), text: content }],
+        () => []
+      );
+    } else {
+      editor.setValue(content);
+    }
     if (position) {
       editor.setPosition(position);
     }

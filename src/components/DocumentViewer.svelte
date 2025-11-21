@@ -651,10 +651,10 @@
         
         {#if activeTool === 'draw'}
           <div class="tool-options">
-            <label>Color:</label>
-            <input type="color" bind:value={drawColor} title="Draw color" />
-            <label>Width:</label>
-            <input type="range" min="1" max="10" bind:value={drawLineWidth} title="Line width" class="line-width-slider" />
+            <label for="draw-color">Color:</label>
+            <input id="draw-color" type="color" bind:value={drawColor} title="Draw color" />
+            <label for="draw-width">Width:</label>
+            <input id="draw-width" type="range" min="1" max="10" bind:value={drawLineWidth} title="Line width" class="line-width-slider" />
           </div>
         {/if}
         
@@ -805,7 +805,6 @@
     text-align: center;
   }
 
-  .loading-message svg,
   .error-message svg {
     width: 48px;
     height: 48px;

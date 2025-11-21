@@ -3,8 +3,9 @@ import { writable } from 'svelte/store';
 // Browser store - keeps ALL browsers across all workspaces
 function createBrowserStore() {
   const { subscribe, set, update } = writable({
-    browsers: [], // Array of { id, url, title, workspaceId, canGoBack, canGoForward, isLoading }
+    browsers: [], // Array of { id, url, title, workspaceId, canGoBack, canGoForward, isLoading, zoomLevel }
     activeBrowserId: null,
+    globalZoomLevel: 1, // Global zoom for all browsers (100% = 1.0)
   });
 
   return {
@@ -19,7 +20,8 @@ function createBrowserStore() {
         workspaceId,
         canGoBack: false,
         canGoForward: false,
-        isLoading: false
+        isLoading: false,
+        zoomLevel: state.globalZoomLevel
       }],
       activeBrowserId: id,
     })),
@@ -57,6 +59,34 @@ function createBrowserStore() {
         b.id === id ? { ...b, url, isLoading: true } : b
       ),
     })),
+
+    setGlobalZoomLevel: (level) => update((state) => {
+      // Clamp zoom between 0.5 (50%) and 2.0 (200%)
+      const clampedLevel = Math.max(0.5, Math.min(2.0, level));
+      return {
+        ...state,
+        globalZoomLevel: clampedLevel,
+        browsers: state.browsers.map(b => ({ ...b, zoomLevel: clampedLevel }))
+      };
+    }),
+
+    incrementZoom: () => update((state) => {
+      const newLevel = Math.max(0.5, Math.min(2.0, state.globalZoomLevel + 0.1));
+      return {
+        ...state,
+        globalZoomLevel: newLevel,
+        browsers: state.browsers.map(b => ({ ...b, zoomLevel: newLevel }))
+      };
+    }),
+
+    decrementZoom: () => update((state) => {
+      const newLevel = Math.max(0.5, Math.min(2.0, state.globalZoomLevel - 0.1));
+      return {
+        ...state,
+        globalZoomLevel: newLevel,
+        browsers: state.browsers.map(b => ({ ...b, zoomLevel: newLevel }))
+      };
+    }),
 
     // Get browsers for a specific workspace (derived)
     getWorkspaceBrowsers: (workspaceId) => {

@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { Terminal } from 'xterm';
   import { FitAddon } from '@xterm/addon-fit';
+  import { terminalStore } from '../stores/terminalStore.js';
   import 'xterm/css/xterm.css';
 
   export let terminalId;
@@ -16,6 +17,8 @@
   let fitAddon;
   let dataListener;
   let exitListener;
+  let currentZoom = 1;
+  const BASE_FONT_SIZE = 14;
   
   // Export method to refresh terminal (for when it becomes visible)
   export function refresh() {
@@ -276,6 +279,42 @@
       });
     }
 
+    // Subscribe to zoom level changes
+    const unsubscribeZoom = terminalStore.subscribe((state) => {
+      console.log(`[Terminal ${terminalId}] Store update - globalZoomLevel: ${state.globalZoomLevel}, currentZoom: ${currentZoom}, terminal exists: ${!!terminal}`);
+      
+      if (state.globalZoomLevel !== currentZoom && terminal) {
+        currentZoom = state.globalZoomLevel;
+        const newFontSize = BASE_FONT_SIZE * currentZoom;
+        console.log(`[Terminal ${terminalId}] 🔍 Applying zoom: ${(currentZoom * 100).toFixed(0)}% (font: ${newFontSize.toFixed(1)}px)`);
+        
+        terminal.options.fontSize = newFontSize;
+        console.log(`[Terminal ${terminalId}] ✅ Set terminal.options.fontSize to ${newFontSize}`);
+        
+        // Refit terminal after font size change
+        if (fitAddon) {
+          try {
+            fitAddon.fit();
+            console.log(`[Terminal ${terminalId}] ✅ Refit addon applied - cols: ${terminal.cols}, rows: ${terminal.rows}`);
+            
+            if (window.electronAPI) {
+              if (isSSH) {
+                window.electronAPI.sshResize({ terminalId, cols: terminal.cols, rows: terminal.rows });
+              } else {
+                window.electronAPI.terminalResize({ terminalId, cols: terminal.cols, rows: terminal.rows });
+              }
+            }
+          } catch (error) {
+            console.error(`[Terminal ${terminalId}] ❌ Error refitting after zoom:`, error);
+          }
+        }
+      } else {
+        if (!terminal) {
+          console.log(`[Terminal ${terminalId}] ⚠️ Terminal not yet initialized`);
+        }
+      }
+    });
+
     // Handle window resize
     const resizeObserver = new ResizeObserver(() => {
       if (!fitAddon || !terminal || !terminalElement) return;
@@ -317,6 +356,7 @@
 
     return () => {
       resizeObserver.disconnect();
+      unsubscribeZoom();
       if (terminalElement) {
         terminalElement.removeEventListener('contextmenu', handleContextMenu);
         terminalElement.removeEventListener('keydown', handleKeydown);

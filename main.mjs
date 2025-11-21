@@ -18,6 +18,14 @@ const __dirname = path.dirname(__filename);
 
 const store = new Store();
 
+// Performance profiling flag
+const enableProfiling = process.argv.includes('--profile');
+let mainWindow = null;
+
+if (enableProfiling) {
+  console.log('[PROFILING] 🎯 ENABLED - Recording performance data');
+}
+
 // SSH connection management - using proper architecture
 const sshConnectionManager = new SSHConnectionManager();
 const sshTerminals = new Map(); // terminalId -> { stream, connectionId }
@@ -90,6 +98,14 @@ function createWindow() {
   });
 
   mainWindow.removeMenu();
+
+  // Enable performance profiling if --profile flag is passed
+  if (enableProfiling) {
+    setTimeout(() => {
+      mainWindow.webContents.startProfiling();
+      console.log('[PROFILING] ✅ CPU profiling started');
+    }, 500);
+  }
 
   // Prevent Ctrl+R and F5 from reloading the entire Electron app
   // BUT: Only intercept when main window has focus, not when browser views are focused

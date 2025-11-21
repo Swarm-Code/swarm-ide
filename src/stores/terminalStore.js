@@ -3,8 +3,9 @@ import { writable } from 'svelte/store';
 // Terminal store - keeps ALL terminals across all workspaces
 function createTerminalStore() {
   const { subscribe, set, update } = writable({
-    terminals: [], // Array of { id, title, workspaceId }
+    terminals: [], // Array of { id, title, workspaceId, zoomLevel }
     activeTerminalId: null,
+    globalZoomLevel: 1, // Global zoom for all terminals (100% = 1.0)
   });
 
   return {
@@ -15,7 +16,8 @@ function createTerminalStore() {
       terminals: [...state.terminals, { 
         id, 
         title: `Terminal ${state.terminals.filter(t => t.workspaceId === workspaceId).length + 1}`,
-        workspaceId 
+        workspaceId,
+        zoomLevel: state.globalZoomLevel
       }],
       activeTerminalId: id,
     })),
@@ -45,6 +47,34 @@ function createTerminalStore() {
         t.id === id ? { ...t, title } : t
       ),
     })),
+
+    setGlobalZoomLevel: (level) => update((state) => {
+      // Clamp zoom between 0.5 (50%) and 2.0 (200%)
+      const clampedLevel = Math.max(0.5, Math.min(2.0, level));
+      return {
+        ...state,
+        globalZoomLevel: clampedLevel,
+        terminals: state.terminals.map(t => ({ ...t, zoomLevel: clampedLevel }))
+      };
+    }),
+
+    incrementZoom: () => update((state) => {
+      const newLevel = Math.max(0.5, Math.min(2.0, state.globalZoomLevel + 0.1));
+      return {
+        ...state,
+        globalZoomLevel: newLevel,
+        terminals: state.terminals.map(t => ({ ...t, zoomLevel: newLevel }))
+      };
+    }),
+
+    decrementZoom: () => update((state) => {
+      const newLevel = Math.max(0.5, Math.min(2.0, state.globalZoomLevel - 0.1));
+      return {
+        ...state,
+        globalZoomLevel: newLevel,
+        terminals: state.terminals.map(t => ({ ...t, zoomLevel: newLevel }))
+      };
+    }),
 
     // Get terminals for a specific workspace (derived)
     getWorkspaceTerminals: (workspaceId) => {

@@ -216,10 +216,14 @@
           <div class="section-title">Unstaged ({unstagedFiles.length})</div>
           <div class="file-list">
             {#each unstagedFiles as file}
+              <!-- svelte-ignore a11y-click-events-have-key-events -->
               <div 
                 class="file-item" 
                 class:selected={selectedFile?.path === file.path && !selectedFileStaged}
+                role="button"
+                tabindex="0"
                 on:click={() => handleFileClick(file, false)}
+                on:keydown={(e) => { if (e.key === 'Enter') handleFileClick(file, false); }}
               >
                 <span class="status-icon" style="color: {getStatusColor(file)}">{getStatusIcon(file)}</span>
                 <span class="file-path">{file.path}</span>
@@ -246,10 +250,14 @@
           </div>
           <div class="file-list">
             {#each stagedFiles as file}
+              <!-- svelte-ignore a11y-click-events-have-key-events -->
               <div 
                 class="file-item" 
                 class:selected={selectedFile?.path === file.path && selectedFileStaged}
+                role="button"
+                tabindex="0"
                 on:click={() => handleFileClick(file, true)}
+                on:keydown={(e) => { if (e.key === 'Enter') handleFileClick(file, true); }}
               >
                 <span class="status-icon" style="color: {getStatusColor(file)}">{getStatusIcon(file)}</span>
                 <span class="file-path">{file.path}</span>

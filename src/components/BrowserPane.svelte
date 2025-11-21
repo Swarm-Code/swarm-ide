@@ -9,10 +9,37 @@
   export let isActive = false;
 
   let allBrowsers = [];
+  let currentZoomLevel = 1;
   const createdBrowsers = new Set(); // Track which browsers we've created in Electron
 
   browserStore.subscribe((state) => {
+    console.log(`[BrowserPane] Store update - globalZoomLevel: ${state.globalZoomLevel}, currentZoomLevel: ${currentZoomLevel}, activeBrowser: ${activeBrowser?.id}`);
     allBrowsers = state.browsers;
+    
+    // Handle zoom level changes
+    if (state.globalZoomLevel !== currentZoomLevel) {
+      console.log(`[BrowserPane] 🔍 Zoom level changed from ${currentZoomLevel} to ${state.globalZoomLevel}`);
+      currentZoomLevel = state.globalZoomLevel;
+      
+      // Apply zoom to active browser
+      if (activeBrowser && window.electronAPI) {
+        const zoomFactor = currentZoomLevel;
+        console.log(`[BrowserPane] ✅ Calling browserSetZoom for ${activeBrowser.id} with factor ${zoomFactor}`);
+        
+        window.electronAPI.browserSetZoom({
+          browserId: activeBrowser.id,
+          zoomFactor
+        }).then(result => {
+          console.log(`[BrowserPane] ✅ browserSetZoom result:`, result);
+        }).catch(err => {
+          console.error(`[BrowserPane] ❌ Error setting zoom for ${activeBrowser.id}:`, err);
+        });
+      } else {
+        console.log(`[BrowserPane] ⚠️ Cannot apply zoom - activeBrowser: ${!!activeBrowser}, electronAPI: ${!!window.electronAPI}`);
+      }
+    } else {
+      console.log(`[BrowserPane] No zoom change - levels match`);
+    }
   });
 
   // Get browser objects for this pane

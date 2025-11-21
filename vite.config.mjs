@@ -17,10 +17,11 @@ export default defineConfig({
     copyPublicDir: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          monaco: ['monaco-editor'],
-          'mermaid': ['mermaid'],
-          'tiptap': ['@tiptap/core', '@tiptap/starter-kit'],
+        manualChunks: (id) => {
+          // Vendor chunks for better caching
+          if (id.includes('node_modules/monaco-editor')) return 'monaco';
+          if (id.includes('node_modules/mermaid')) return 'mermaid';
+          if (id.includes('node_modules/@tiptap')) return 'tiptap';
         }
       }
     }

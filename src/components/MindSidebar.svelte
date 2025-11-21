@@ -244,7 +244,8 @@
       <!-- Folders -->
       {#each filteredFolders as folder (folder.name)}
         <div class="folder-container">
-          <div class="folder-item" on:click={() => toggleFolder(folder.name)}>
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
+          <div class="folder-item" on:click={() => toggleFolder(folder.name)} on:keydown={(e) => { if (e.key === 'Enter') toggleFolder(folder.name); }} role="button" tabindex="0">
             <div class="folder-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class:expanded={expandedFolders.has(folder.name)}>
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
@@ -266,7 +267,8 @@
           {#if expandedFolders.has(folder.name)}
             <div class="folder-contents">
               {#each folder.files as file (file.fullName)}
-                <div class="note-item nested" on:click={() => handleOpenNote(file)}>
+                <!-- svelte-ignore a11y-click-events-have-key-events -->
+                <div class="note-item nested" on:click={() => handleOpenNote(file)} on:keydown={(e) => { if (e.key === 'Enter') handleOpenNote(file); }} role="button" tabindex="0">
                   <div class="note-icon">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -287,7 +289,8 @@
 
       <!-- Root files -->
       {#each filteredFiles as file (file.name)}
-        <div class="note-item" on:click={() => handleOpenNote(file)}>
+        <!-- svelte-ignore a11y-click-events-have-key-events -->
+        <div class="note-item" on:click={() => handleOpenNote(file)} on:keydown={(e) => { if (e.key === 'Enter') handleOpenNote(file); }} role="button" tabindex="0">
           <div class="note-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -306,7 +309,9 @@
 </div>
 
 {#if showCreateModal}
-  <div class="modal-overlay" on:click={() => { showCreateModal = false; newItemName = ''; selectedFolder = null; }}>
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <div class="modal-overlay" on:click={() => { showCreateModal = false; newItemName = ''; selectedFolder = null; }} role="presentation">
+    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
     <div class="modal" on:click={(e) => e.stopPropagation()} role="dialog" aria-labelledby="modal-title" aria-modal="true">
       <h3 id="modal-title">
         {createMode === 'folder' ? 'New Folder' : selectedFolder ? `New Note in ${selectedFolder}` : 'New Note'}

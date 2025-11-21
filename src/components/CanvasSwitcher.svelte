@@ -88,11 +88,15 @@
 
 <div class="canvas-tabs">
   {#each canvases as canvas (canvas.id)}
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
     <div 
       class="canvas-tab" 
       class:active={canvas.id === activeCanvasId}
+      role="button"
+      tabindex="0"
       on:click={() => handleCanvasSwitch(canvas.id)}
       on:dblclick={(e) => startEditing(canvas, e)}
+      on:keydown={(e) => { if (e.key === 'Enter') handleCanvasSwitch(canvas.id); }}
     >
       <button 
         class="canvas-color-btn" 
@@ -122,7 +126,6 @@
           on:keydown={handleKeydown}
           on:blur={finishEditing}
           on:click={(e) => e.stopPropagation()}
-          autofocus
         />
       {:else}
         <span class="canvas-tab-name">{canvas.name}</span>

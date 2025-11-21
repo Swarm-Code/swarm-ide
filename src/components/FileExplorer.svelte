@@ -724,7 +724,6 @@
           bind:value={searchQuery}
           placeholder="Search files..."
           on:keydown={handleSearchKeydown}
-          autofocus
         />
         {#if searchResults.length > 0}
           <div class="search-results">
@@ -759,15 +758,6 @@
       {/each}
     {/if}
   </div>
-  
-  <!-- Debug overlay -->
-  {#if fileTree.length > 0}
-    <div style="position: fixed; bottom: 10px; right: 10px; background: rgba(0,0,0,0.8); color: white; padding: 10px; font-size: 12px; border-radius: 4px; z-index: 9999;">
-      <div>FileTree items: {fileTree.length}</div>
-      <div>Active workspace: {activeWorkspace?.id || 'none'}</div>
-      <div>Is SSH: {activeWorkspace?.isSSH || false}</div>
-    </div>
-  {/if}
 </div>
 
 <ContextMenu

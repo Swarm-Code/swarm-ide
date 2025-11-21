@@ -739,20 +739,6 @@ import { workspaceStore } from '../stores/workspaceStore.js';
         <p>No file or browser open</p>
       </div>
     {/if}
-    
-    <!-- Fallback container for terminal positioning when terminal is not active tab -->
-    <!-- This ensures terminals can always be positioned even when a different tab type is active -->
-    {#if activeTab && activeTab.type !== 'terminal' && pane.tabs.some(t => t.type === 'terminal')}
-      <div 
-        class="terminal-content" 
-        data-terminal-location="canvas-pane" 
-        data-pane-id={pane.id}
-        data-active-terminal={pane.tabs.find(t => t.type === 'terminal')?.terminalId}
-        style="visibility: hidden; pointer-events: none;"
-      >
-        <!-- Fallback container for positioning when terminal is not the active tab -->
-      </div>
-    {/if}
   </div>
 </div>
 

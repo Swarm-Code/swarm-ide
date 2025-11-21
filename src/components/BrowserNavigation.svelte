@@ -1,7 +1,6 @@
 <script>
   import { onMount, createEventDispatcher } from 'svelte';
   
-  export let browserId = null;
   export let url = '';
   export let canGoBack = false;
   export let canGoForward = false;
@@ -256,10 +255,14 @@
     {#if showHistorySuggestions && searchSuggestions.length > 0}
       <div class="suggestions-dropdown">
         {#each searchSuggestions as suggestion, index}
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
           <div 
             class="suggestion-item"
             class:selected={index === selectedSuggestionIndex}
+            role="button"
+            tabindex="0"
             on:click={() => navigateToUrl(suggestion.url)}
+            on:keydown={(e) => { if (e.key === 'Enter') navigateToUrl(suggestion.url); }}
           >
             <div class="suggestion-icon">
               {#if suggestion.isSearch}

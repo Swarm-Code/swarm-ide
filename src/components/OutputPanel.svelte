@@ -8,8 +8,6 @@
   let logsContainer;
   let compactMode = true;
   let copied = null;
-  let showIconDebug = false;
-  let showPdfDebug = false;
 
   outputStore.subscribe(state => {
     outputState = state;
@@ -111,6 +109,7 @@
           <option value="main">⚙️ Main</option>
           <option value="icon-debug">🎨 Icon Debug</option>
           <option value="pdf-debug">📕 PDF Debug</option>
+          <option value="pane-debug">📐 Pane Debug</option>
         </select>
       </div>
       
@@ -127,64 +126,6 @@
   </div>
 
   <div class="output-container" bind:this={logsContainer}>
-    {#if outputState.pdfDebugLogs && outputState.pdfDebugLogs.length > 0}
-      <div class="pdf-debug-section">
-        <div class="pdf-debug-header">
-          <button class="toggle-btn pdf" on:click={() => showPdfDebug = !showPdfDebug}>
-            {showPdfDebug ? '▼' : '▶'} 📕 PDF Debug ({outputState.pdfDebugLogs.length})
-          </button>
-          <button class="copy-all-btn" on:click={() => {
-            const text = outputState.pdfDebugLogs
-              .map(log => `[${log.timestamp}] [${log.level}] ${log.message}`)
-              .join('\n');
-            navigator.clipboard.writeText(text);
-          }} title="Copy all PDF debug logs">
-            📋 Copy All
-          </button>
-        </div>
-        {#if showPdfDebug}
-          <div class="pdf-debug-logs">
-            {#each outputState.pdfDebugLogs as log (log.id)}
-              <div class="pdf-debug-entry" data-level={log.level}>
-                <span class="log-time">{log.timestamp}</span>
-                <span class="log-badge-level" data-level={log.level}>{log.level[0].toUpperCase()}</span>
-                <span class="log-message">{log.message}</span>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-    {/if}
-
-    {#if outputState.iconDebugLogs && outputState.iconDebugLogs.length > 0}
-      <div class="icon-debug-section">
-        <div class="icon-debug-header">
-          <button class="toggle-btn" on:click={() => showIconDebug = !showIconDebug}>
-            {showIconDebug ? '▼' : '▶'} 🎨 Icon Debug ({outputState.iconDebugLogs.length})
-          </button>
-          <button class="copy-all-btn" on:click={() => {
-            const text = outputState.iconDebugLogs
-              .map(log => `[${log.timestamp}] ${log.message}`)
-              .join('\n');
-            navigator.clipboard.writeText(text);
-          }} title="Copy all icon debug logs">
-            📋 Copy All
-          </button>
-        </div>
-        {#if showIconDebug}
-          <div class="icon-debug-logs">
-            {#each outputState.iconDebugLogs as log (log.id)}
-              <div class="icon-debug-entry" data-level={log.level}>
-                <span class="log-time">{log.timestamp}</span>
-                <span class="log-badge-level" data-level={log.level}>{log.level[0].toUpperCase()}</span>
-                <span class="log-message">{log.message}</span>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-    {/if}
-
     {#if filteredLogs.length === 0}
       <div class="empty-state">
         <p>No logs to display</p>
@@ -195,6 +136,7 @@
       <div 
         class="log-entry" 
         data-level={log.level}
+        role="article"
         on:mouseenter={(e) => e.currentTarget.classList.add('hovered')}
         on:mouseleave={(e) => e.currentTarget.classList.remove('hovered')}
       >
@@ -409,10 +351,6 @@
     background-color: var(--color-surface-secondary);
   }
 
-  .log-entry.hovered .log-copy-btn {
-    opacity: 1;
-  }
-
   .log-line-num {
     color: var(--color-text-tertiary);
     font-size: 10px;
@@ -502,134 +440,4 @@
     color: #10b981;
   }
 
-  .pdf-debug-section {
-    border-bottom: 2px solid #ef4444;
-    margin-bottom: 8px;
-    background-color: rgba(239, 68, 68, 0.05);
-  }
-
-  .pdf-debug-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 12px;
-    background-color: rgba(239, 68, 68, 0.1);
-    border-bottom: 1px solid #ef4444;
-    gap: 8px;
-  }
-
-  .pdf-debug-logs {
-    max-height: 400px;
-    overflow-y: auto;
-    padding: 4px 0;
-  }
-
-  .pdf-debug-entry {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 8px;
-    border-left: 2px solid #ef4444;
-    transition: background-color 100ms ease;
-    min-height: 18px;
-  }
-
-  .pdf-debug-entry[data-level="error"] {
-    border-left-color: #ef4444;
-  }
-
-  .pdf-debug-entry[data-level="warn"] {
-    border-left-color: #f59e0b;
-  }
-
-  .pdf-debug-entry[data-level="log"] {
-    border-left-color: #0071e3;
-  }
-
-  .pdf-debug-entry:hover {
-    background-color: rgba(239, 68, 68, 0.1);
-  }
-
-  .icon-debug-section {
-    border-bottom: 2px solid var(--color-accent);
-    margin-bottom: 8px;
-    background-color: rgba(7, 113, 227, 0.05);
-  }
-
-  .icon-debug-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 12px;
-    background-color: rgba(7, 113, 227, 0.1);
-    border-bottom: 1px solid var(--color-accent);
-    gap: 8px;
-  }
-
-  .toggle-btn {
-    flex: 1;
-    background: none;
-    border: none;
-    color: var(--color-accent);
-    font-weight: 600;
-    font-size: 12px;
-    cursor: pointer;
-    text-align: left;
-    padding: 0;
-    transition: all 100ms ease;
-  }
-
-  .toggle-btn:hover {
-    color: var(--color-accent-hover);
-  }
-
-  .copy-all-btn {
-    padding: 4px 8px;
-    background-color: var(--color-accent);
-    border: none;
-    border-radius: 3px;
-    color: white;
-    font-size: 11px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 100ms ease;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .copy-all-btn:hover {
-    background-color: var(--color-accent-hover);
-  }
-
-  .icon-debug-logs {
-    max-height: 300px;
-    overflow-y: auto;
-    padding: 4px 0;
-  }
-
-  .icon-debug-entry {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 8px;
-    border-left: 2px solid var(--color-accent);
-    transition: background-color 100ms ease;
-    min-height: 18px;
-  }
-
-  .icon-debug-entry[data-level="error"] {
-    border-left-color: #ef4444;
-  }
-
-  .icon-debug-entry[data-level="warn"] {
-    border-left-color: #f59e0b;
-  }
-
-  .icon-debug-entry[data-level="log"] {
-    border-left-color: #0071e3;
-  }
-
-  .icon-debug-entry:hover {
-    background-color: rgba(7, 113, 227, 0.1);
-  }
 </style>

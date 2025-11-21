@@ -5,6 +5,7 @@
   import { canvasStore, activeCanvas } from '../stores/canvasStore.js';
   import { terminalStore } from '../stores/terminalStore.js';
   import { browserStore } from '../stores/browserStore.js';
+  import { zoomStore } from '../stores/zoomStore.js';
   import { editorStore } from '../stores/editorStore.js';
   import { activeWorkspacePath } from '../stores/workspaceStore.js';
   import { outputStore } from '../stores/outputStore.js';
@@ -24,6 +25,12 @@
   import OutputPanel from './OutputPanel.svelte';
   import SSHQuickLauncher from './SSHQuickLauncher.svelte';
   import IconThemeSettings from './IconThemeSettings.svelte';
+  
+  // Pane debug logger
+  function paneLog(message, data = null) {
+    const msg = data ? `${message} ${JSON.stringify(data)}` : message;
+    outputStore.addLog(msg, 'log', 'pane-debug');
+  }
 
   let currentProject = null;
   let explorerVisible = true; // Local state like terminal
@@ -74,6 +81,27 @@
   editorStore.subscribe((state) => {
     currentEditorState = state;
     editorLayout = state.layout;
+    
+    // Log layout changes for debugging
+    if (state.layout) {
+      const panes = [];
+      function collectPanes(node) {
+        if (!node) return;
+        if (node.type === 'pane') {
+          panes.push({
+            id: node.id,
+            activeTabId: node.activeTabId,
+            tabCount: node.tabs?.length || 0,
+            tabs: node.tabs?.map(t => ({ id: t.id, type: t.type, name: t.name || t.title }))
+          });
+        } else if (node.type === 'split') {
+          collectPanes(node.left);
+          collectPanes(node.right);
+        }
+      }
+      collectPanes(state.layout);
+      paneLog('Layout updated', { activePaneId: state.activePaneId, panes });
+    }
   });
 
   activeWorkspacePath.subscribe((path) => {
@@ -90,6 +118,7 @@
   async function positionTerminals() {
     await tick();
     
+    paneLog('positionTerminals() called', { activeWorkspaceId, terminalCount: allTerminals.length });
     console.log('[IDEWindow] positionTerminals() called - activeWorkspaceId:', activeWorkspaceId);
     
     const globalContainer = document.querySelector('.global-terminal-container');
@@ -130,6 +159,18 @@
         }
       }
       
+      // Check if target container is actually visible (not a hidden fallback container)
+      if (targetContainer) {
+        const computedStyle = window.getComputedStyle(targetContainer);
+        const isContainerVisible = computedStyle.visibility !== 'hidden' && 
+                                   computedStyle.display !== 'none' &&
+                                   targetContainer.offsetParent !== null;
+        if (!isContainerVisible) {
+          console.log('[IDEWindow] Target container is hidden, ignoring for terminal', terminalId);
+          targetContainer = null;
+        }
+      }
+      
       // Check if terminal belongs to current workspace
       const terminalWorkspaceId = terminalEl.getAttribute('data-workspace-id');
       const isInCurrentWorkspace = terminalWorkspaceId === activeWorkspaceId;
@@ -143,6 +184,7 @@
         terminalEl.style.width = `${rect.width}px`;
         terminalEl.style.height = `${rect.height}px`;
         terminalEl.style.display = 'block';
+        paneLog('Terminal SHOWN', { terminalId, top: rect.top, left: rect.left, width: rect.width, height: rect.height });
         console.log('[IDEWindow] Positioned terminal', terminalId, 'at', rect);
         
         // If terminal was just made visible, refresh it to fix sizing
@@ -165,6 +207,9 @@
           terminalComponent.blur();
           console.log('[IDEWindow] 🎯 Blurred hidden terminal', terminalId);
         }
+        
+        const reason = !isInCurrentWorkspace ? 'different workspace' : 'no target container';
+        paneLog('Terminal HIDDEN', { terminalId, reason });
         
         if (!isInCurrentWorkspace) {
           console.log('[IDEWindow] Hiding terminal', terminalId, '- different workspace');
@@ -192,6 +237,7 @@
       
       if (!window.electronAPI) return;
       
+      paneLog('positionBrowsers() called', { activeWorkspaceId, browserCount: allBrowsers.length });
       console.log('[IDEWindow] 🌍 positionBrowsers() START - activeWorkspaceId:', activeWorkspaceId);
       console.log('[IDEWindow] 📊 Window dimensions:', { 
         innerWidth: window.innerWidth, 
@@ -201,6 +247,14 @@
       // Find all browser content areas in the DOM (both panes and browser canvas)
       const canvasPanes = document.querySelectorAll('[data-browser-location="canvas-pane"], [data-browser-location="browser-canvas"]');
       console.log('[IDEWindow] 🔍 Found', canvasPanes.length, 'canvas panes');
+      
+      // Log all found containers for debugging
+      const containerInfo = Array.from(canvasPanes).map(c => ({
+        paneId: c.getAttribute('data-pane-id'),
+        browserId: c.getAttribute('data-active-browser'),
+        rect: c.getBoundingClientRect()
+      }));
+      paneLog('Browser containers found', containerInfo);
       
       // Log all workspaces and panes
       console.log('[IDEWindow] 📦 All workspace panes:', {
@@ -231,6 +285,17 @@
           continue;
         }
         
+        // Check if container is actually visible (not a hidden fallback)
+        const computedStyle = window.getComputedStyle(container);
+        const isContainerVisible = computedStyle.visibility !== 'hidden' && 
+                                   computedStyle.display !== 'none' &&
+                                   container.offsetParent !== null;
+        if (!isContainerVisible) {
+          paneLog('Browser container HIDDEN', { browserId, paneId });
+          console.log('[IDEWindow] ⏭️ Container for browser', browserId, 'is hidden, skipping');
+          continue;
+        }
+        
         // Check if this browser belongs to current workspace
         const browser = allBrowsers.find(b => b.id === browserId && b.workspaceId === activeWorkspaceId);
         if (!browser) {
@@ -253,7 +318,6 @@
         
         // Log tab selection and visibility via browserLogger
         const isTabActive = owningPane?.activeTabId === owningTab?.id;
-        const isContainerVisible = container.offsetParent !== null;
         browserLogger.logTabSelection(browserId, paneId, isTabActive, isContainerVisible);
         
         // Log pane dimensions
@@ -371,6 +435,8 @@
           // Cache the bounds we just sent (store CSS pixels for comparison)
           cachedBrowserBounds.set(browserId, bounds);
           
+          paneLog('Browser POSITIONED', { browserId, x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height });
+          
           // Log successful positioning (show both CSS and physical pixels)
           browserLogger.logSetBounds(browserId, scaledBounds, { width: windowWidth, height: windowHeight });
           
@@ -405,9 +471,14 @@
       // This ensures persistence across workspace switches (like terminals)
       for (const browser of allBrowsers) {
         const isInCurrentWorkspace = browser.workspaceId === activeWorkspaceId;
-        const isVisible = Array.from(canvasPanes).some(
-          pane => pane.getAttribute('data-active-browser') === browser.id
-        );
+        const isVisible = Array.from(canvasPanes).some(pane => {
+          if (pane.getAttribute('data-active-browser') !== browser.id) return false;
+          // Also check if the container itself is visible
+          const style = window.getComputedStyle(pane);
+          return style.visibility !== 'hidden' && 
+                 style.display !== 'none' && 
+                 pane.offsetParent !== null;
+        });
         
         // Hide if: wrong workspace OR (correct workspace but not visible in any pane)
         if (!isInCurrentWorkspace || !isVisible) {
@@ -418,6 +489,7 @@
             
             // Log visibility change via browserLogger
             const reason = !isInCurrentWorkspace ? 'different workspace' : 'not visible in pane';
+            paneLog('Browser HIDDEN', { browserId: browser.id, reason });
             browserLogger.logVisibility(browser.id, false, reason);
             
             if (!isInCurrentWorkspace) {
@@ -601,6 +673,72 @@
       browserId: activeBrowser?.id,
       target: event.target.tagName + (event.target.className ? '.' + event.target.className : '')
     });
+    
+    // Ctrl+Plus or Ctrl+= to zoom in
+    if ((event.ctrlKey || event.metaKey) && (event.key === '+' || event.key === '=')) {
+      event.preventDefault();
+      console.log('[IDEWindow] 🔍 ZOOM IN DETECTED - paneType:', activePane?.paneType, 'tabType:', activeTab?.type);
+      
+      if (activePane?.paneType === 'terminal') {
+        console.log('[IDEWindow] ✅ Calling terminalStore.incrementZoom()');
+        terminalStore.incrementZoom();
+      } else if (activePane?.paneType === 'editor') {
+        if (activeTab?.type === 'browser') {
+          console.log('[IDEWindow] ✅ Calling browserStore.incrementZoom()');
+          browserStore.incrementZoom();
+        } else {
+          console.log('[IDEWindow] ✅ Calling zoomStore.incrementEditorZoom()');
+          zoomStore.incrementEditorZoom();
+        }
+      } else {
+        console.log('[IDEWindow] ⚠️ No active pane or unknown paneType:', activePane?.paneType);
+      }
+      return;
+    }
+    
+    // Ctrl+Minus to zoom out
+    if ((event.ctrlKey || event.metaKey) && event.key === '-') {
+      event.preventDefault();
+      console.log('[IDEWindow] 🔍 ZOOM OUT DETECTED - paneType:', activePane?.paneType, 'tabType:', activeTab?.type);
+      
+      if (activePane?.paneType === 'terminal') {
+        console.log('[IDEWindow] ✅ Calling terminalStore.decrementZoom()');
+        terminalStore.decrementZoom();
+      } else if (activePane?.paneType === 'editor') {
+        if (activeTab?.type === 'browser') {
+          console.log('[IDEWindow] ✅ Calling browserStore.decrementZoom()');
+          browserStore.decrementZoom();
+        } else {
+          console.log('[IDEWindow] ✅ Calling zoomStore.decrementEditorZoom()');
+          zoomStore.decrementEditorZoom();
+        }
+      } else {
+        console.log('[IDEWindow] ⚠️ No active pane or unknown paneType:', activePane?.paneType);
+      }
+      return;
+    }
+    
+    // Ctrl+0 to reset zoom
+    if ((event.ctrlKey || event.metaKey) && event.key === '0') {
+      event.preventDefault();
+      console.log('[IDEWindow] 🔍 ZOOM RESET DETECTED - paneType:', activePane?.paneType, 'tabType:', activeTab?.type);
+      
+      if (activePane?.paneType === 'terminal') {
+        console.log('[IDEWindow] ✅ Calling terminalStore.setGlobalZoomLevel(1)');
+        terminalStore.setGlobalZoomLevel(1);
+      } else if (activePane?.paneType === 'editor') {
+        if (activeTab?.type === 'browser') {
+          console.log('[IDEWindow] ✅ Calling browserStore.setGlobalZoomLevel(1)');
+          browserStore.setGlobalZoomLevel(1);
+        } else {
+          console.log('[IDEWindow] ✅ Calling zoomStore.setEditorZoomLevel(1)');
+          zoomStore.setEditorZoomLevel(1);
+        }
+      } else {
+        console.log('[IDEWindow] ⚠️ No active pane or unknown paneType:', activePane?.paneType);
+      }
+      return;
+    }
     
     // Check for Alt+Arrow navigation (with Shift modifier for pane-only mode)
     if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || 
@@ -959,6 +1097,9 @@
         class="sidebar-resize-handle" 
         on:mousedown={handleSidebarResizeStart}
         class:resizing={isResizingSidebar}
+        role="button"
+        aria-label="Resize sidebar"
+        tabindex="0"
       ></div>
     </div>
     <div class="main-area">
@@ -971,6 +1112,9 @@
           class="output-resize-handle" 
           on:mousedown={handleOutputResizeStart}
           class:resizing={isResizingOutput}
+          role="button"
+          aria-label="Resize output panel"
+          tabindex="0"
         ></div>
         <OutputPanel />
       </div>
@@ -1116,36 +1260,6 @@
     background-color: var(--color-accent);
   }
 
-  .ssh-placeholder {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    padding: var(--spacing-xl);
-    text-align: center;
-    color: var(--color-text-secondary);
-  }
-
-  .ssh-placeholder svg {
-    width: 64px;
-    height: 64px;
-    margin-bottom: var(--spacing-lg);
-    opacity: 0.5;
-  }
-
-  .ssh-placeholder h3 {
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-primary);
-    margin-bottom: var(--spacing-sm);
-  }
-
-  .ssh-placeholder p {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-tertiary);
-  }
-
   .main-area {
     flex: 1;
     overflow: hidden;
@@ -1157,56 +1271,6 @@
     width: 100%;
     overflow: hidden;
     transition: height var(--transition-fast);
-  }
-
-  .bottom-panel-container {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    border-top: 1px solid var(--color-border);
-  }
-
-  .bottom-panel-tabs {
-    display: flex;
-    gap: var(--spacing-xs);
-    padding: var(--spacing-xs);
-    background-color: var(--color-surface-secondary);
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .bottom-panel-tabs.hidden {
-    display: none;
-  }
-
-  .panel-tab {
-    padding: var(--spacing-xs) var(--spacing-md);
-    background-color: transparent;
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    border-radius: var(--radius-sm);
-    transition: all var(--transition-fast);
-  }
-
-  .panel-tab:hover {
-    background-color: var(--color-surface-hover);
-    color: var(--color-text-primary);
-  }
-
-  .panel-tab.active {
-    background-color: var(--color-accent);
-    color: white;
-  }
-
-  .terminal-area,
-  .diagnostics-area {
-    flex: 1;
-    overflow: hidden;
-  }
-
-  .terminal-area.hidden,
-  .diagnostics-area.hidden {
-    display: none;
   }
 
   .output-panel-container {

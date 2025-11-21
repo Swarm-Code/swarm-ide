@@ -735,11 +735,6 @@
     color: white;
   }
 
-  .file-icon svg {
-    width: 16px;
-    height: 16px;
-  }
-
   .file-name {
     font-size: var(--font-size-sm);
     color: var(--color-text-primary);

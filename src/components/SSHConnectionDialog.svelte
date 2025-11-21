@@ -201,10 +201,18 @@
 </script>
 
 {#if show}
-  <div class="overlay" on:click={handleClose}>
-    <div class="dialog" on:click|stopPropagation>
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <div class="overlay" on:click={handleClose} role="presentation">
+    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+    <div 
+      class="dialog" 
+      on:click|stopPropagation 
+      role="dialog" 
+      aria-modal="true" 
+      aria-labelledby="ssh-dialog-title"
+    >
       <div class="dialog-header">
-        <h2>{isEditMode ? 'Edit SSH Connection' : 'SSH Connection'}</h2>
+        <h2 id="ssh-dialog-title">{isEditMode ? 'Edit SSH Connection' : 'SSH Connection'}</h2>
         <button class="close-btn" on:click={handleClose}>×</button>
       </div>
       
@@ -258,8 +266,9 @@
         </div>
 
         <div class="form-group">
-          <label>Authentication Method</label>
-          <div class="auth-tabs">
+          <fieldset>
+            <legend>Authentication Method</legend>
+            <div class="auth-tabs">
             <button
               class="auth-tab"
               class:active={formData.authMethod === 'password'}
@@ -275,6 +284,7 @@
               Private Key
             </button>
           </div>
+          </fieldset>
         </div>
 
         {#if formData.authMethod === 'password'}
