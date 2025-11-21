@@ -1,4 +1,44 @@
+# Dependencies
 node_modules
 dist
+
+# OS
 .DS_Store
+
+# Logs
 *.log
+
+# Dev/Debug files
+*.cpuprofile
+Trace*.json
+*.zip
+
+# IDE/Editor
+.swarm
+.tmp
+.vscode
+
+# Reference/Example code (not part of source)
+example-code/
+reference-code/
+terminaltexteffects/
+tte-repo/
+
+# Documentation dumps (keep only README.md)
+AGENTS.md
+*_SUMMARY.md
+*_ANALYSIS.md
+*_GUIDE.md
+*_INDEX.md
+*_REFERENCE.md
+*_CHECKLIST.md
+*_COMPLETE.md
+*_DELIVERABLES.md
+*_FIX.md
+*_FIXED.md
+CRUSH.md
+README-LSP.md
+test-markdown.md
+
+# Build artifacts
+package-lock.json

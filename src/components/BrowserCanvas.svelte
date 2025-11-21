@@ -128,6 +128,12 @@
     const browserId = `browser-${Date.now()}`;
     log('➕ Creating new browser', { browserId, activeWorkspaceId });
     
+    // Hide previous browser before switching
+    if (activeBrowserId && window.electronAPI?.browserHide) {
+      window.electronAPI.browserHide({ browserId: activeBrowserId });
+      log('👁️ Hidden previous browser', activeBrowserId);
+    }
+    
     browserStore.addBrowser(browserId, 'https://www.google.com', activeWorkspaceId);
     activeBrowserId = browserId;
     
@@ -145,7 +151,15 @@
   }
 
   function handleSelectBrowser(browserId) {
+    const previousBrowserId = activeBrowserId;
     activeBrowserId = browserId;
+    log('🔄 Selected browser', { previousBrowserId, newBrowserId: browserId });
+    
+    // Hide the previous browser
+    if (previousBrowserId && previousBrowserId !== browserId && window.electronAPI?.browserHide) {
+      window.electronAPI.browserHide({ browserId: previousBrowserId });
+      log('👁️ Hidden previous browser', previousBrowserId);
+    }
   }
 
   function handleCloseBrowser(browserId, event) {

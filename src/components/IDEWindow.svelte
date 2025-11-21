@@ -162,9 +162,22 @@
       // Check if target container is actually visible (not a hidden fallback container)
       if (targetContainer) {
         const computedStyle = window.getComputedStyle(targetContainer);
-        const isContainerVisible = computedStyle.visibility !== 'hidden' && 
-                                   computedStyle.display !== 'none' &&
-                                   targetContainer.offsetParent !== null;
+        const visibility = computedStyle.visibility;
+        const display = computedStyle.display;
+        const offsetParent = targetContainer.offsetParent;
+        const isContainerVisible = visibility !== 'hidden' && 
+                                   display !== 'none' &&
+                                   offsetParent !== null;
+        
+        paneLog('Terminal container check', { 
+          terminalId, 
+          visibility, 
+          display, 
+          hasOffsetParent: offsetParent !== null,
+          offsetParentTag: offsetParent?.tagName,
+          isContainerVisible 
+        });
+        
         if (!isContainerVisible) {
           console.log('[IDEWindow] Target container is hidden, ignoring for terminal', terminalId);
           targetContainer = null;
@@ -287,11 +300,24 @@
         
         // Check if container is actually visible (not a hidden fallback)
         const computedStyle = window.getComputedStyle(container);
-        const isContainerVisible = computedStyle.visibility !== 'hidden' && 
-                                   computedStyle.display !== 'none' &&
-                                   container.offsetParent !== null;
+        const visibility = computedStyle.visibility;
+        const display = computedStyle.display;
+        const offsetParent = container.offsetParent;
+        const isContainerVisible = visibility !== 'hidden' && 
+                                   display !== 'none' &&
+                                   offsetParent !== null;
+        
+        paneLog('Browser container check', { 
+          browserId, 
+          paneId,
+          visibility, 
+          display, 
+          hasOffsetParent: offsetParent !== null,
+          offsetParentTag: offsetParent?.tagName,
+          isContainerVisible 
+        });
+        
         if (!isContainerVisible) {
-          paneLog('Browser container HIDDEN', { browserId, paneId });
           console.log('[IDEWindow] ⏭️ Container for browser', browserId, 'is hidden, skipping');
           continue;
         }
